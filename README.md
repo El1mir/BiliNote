@@ -273,11 +273,35 @@ mv .env.example .env
 
 #### 2. 启动后端（FastAPI）
 
+后端使用 [uv](https://docs.astral.sh/uv/) 管理 **Python 3.11** 虚拟环境
+
 ```bash
+# 安装 uv（已安装可跳过）
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 cd backend
-pip install -r requirements.txt
-python main.py
+
+# 创建 Python 3.11 虚拟环境（生成 backend/.venv）
+uv venv --python 3.11 .venv
+
+# 安装依赖
+uv pip install -r requirements.txt
+
+# ⚠️ 必须锁定 setuptools<81：
+# ctranslate2 仍通过 pkg_resources 加载，而新版 setuptools 已移除该模块，
+# 不锁会报 ModuleNotFoundError: No module named 'pkg_resources'
+uv pip install "setuptools<81"
+
+# 启动后端
+.venv\Scripts\python.exe main.py            # Windows
+# source .venv/bin/activate && python main.py  # macOS / Linux
 ```
+
+> 在 `backend/` 目录下执行 `uv pip install <包名>` 会自动使用 `.venv`，无需手动激活。
+> Windows 用户也可以直接双击项目根目录的 `run.bat`，它会用 `.venv` 启动后端并同时拉起前端。
 
 #### 3. 启动前端（Vite + React）
 

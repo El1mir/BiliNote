@@ -16,7 +16,7 @@
 
 | 路径 | 内容 | 主要命令 |
 |---|---|---|
-| `backend/` | Python 3.11 + FastAPI | `pip install -r requirements.txt && python main.py` |
+| `backend/` | Python 3.11 + FastAPI（uv 管理环境） | `uv venv --python 3.11 .venv && uv pip install -r requirements.txt && uv pip install "setuptools<81" && .venv\Scripts\python.exe main.py` |
 | `BillNote_frontend/` | React 19 + Vite | `pnpm install && pnpm dev` |
 | `BillNote_extension/` | Vue 3 + Vite + WebExtension MV3 | `pnpm install && pnpm dev` |
 

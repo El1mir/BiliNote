@@ -8,12 +8,15 @@ BiliNote is an AI video note generation tool. It extracts content from video lin
 
 ## Development Commands
 
-### Backend (Python 3.11 + FastAPI)
+### Backend (Python 3.11 + FastAPI, 用 uv 管理环境)
 ```bash
 cd backend
-pip install -r requirements.txt
-python main.py                    # Starts on 0.0.0.0:8483
-pytest                            # Run tests in backend/tests/
+uv venv --python 3.11 .venv       # 创建 Python 3.11 虚拟环境（首次）
+uv pip install -r requirements.txt
+uv pip install "setuptools<81"    # ctranslate2 依赖 pkg_resources，必须锁 <81
+.venv\Scripts\python.exe main.py # Starts on 0.0.0.0:8483（Windows）
+# source .venv/bin/activate && python main.py   # macOS / Linux
+.venv\Scripts\python.exe -m pytest             # Run tests in backend/tests/
 pytest tests/test_request_chunker.py::test_name   # Run a single test
 ```
 
