@@ -96,6 +96,8 @@ class NoteGenerator:
         video_understanding: bool = False,
         video_interval: int = 0,
         grid_size: Optional[List[int]] = None,
+        sampling_mode: str = "interval",
+        max_frames: int = 60,
     ) -> NoteResult | None:
         """
         主流程：按步骤依次下载、转写、GPT 总结、截图/链接处理、存库、返回 NoteResult。
@@ -186,6 +188,7 @@ class NoteGenerator:
                 video_interval=video_interval,
                 grid_size=grid_size,
                 skip_download=not need_full_download,
+                sampling_mode=sampling_mode,
             )
 
             # 3. 如果前面没拿到字幕，走转写流程
@@ -198,6 +201,30 @@ class NoteGenerator:
                     status_phase=TaskStatus.TRANSCRIBING,
                     task_id=task_id,
                 )
+
+            # spec 002：smart 采样需要字幕分段，因此在转写完成后抽帧拼图
+            if video_understanding and sampling_mode == "smart" and self.video_path and grid_size:
+                try:
+                    frame_interval = video_interval if video_interval and video_interval > 0 else 6
+                    subtitle_starts = [
+                        seg.start for seg in (transcript.segments if transcript else [])
+                    ]
+                    logger.info(f"高价值帧采样：字幕分段 {len(subtitle_starts)} 个")
+                    self.video_img_urls = VideoReader(
+                        video_path=str(self.video_path),
+                        grid_size=tuple(grid_size),
+                        frame_interval=frame_interval,
+                        unit_width=960,
+                        unit_height=540,
+                        save_quality=80,
+                        sampling_mode="smart",
+                        max_frames=max_frames,
+                        subtitle_starts=subtitle_starts,
+                    ).run()
+                except Exception as exc:
+                    logger.error(f"高价值帧采样失败：{exc}")
+                    self._handle_exception(task_id, exc)
+                    raise
 
             # 3. GPT 总结
             markdown = self._summarize_text(
@@ -374,6 +401,7 @@ class NoteGenerator:
         video_interval: int,
         grid_size: List[int],
         skip_download: bool = False,
+        sampling_mode: str = "interval",
     ) -> AudioDownloadResult | None:
         """
         1. 检查音频缓存；若不存在，则根据需要下载音频或视频（若需截图/可视化）。
@@ -438,7 +466,7 @@ class NoteGenerator:
                 self.video_path = Path(video_path_str)
                 logger.info(f"视频下载完成：{self.video_path}")
 
-                if grid_size:
+                if grid_size and sampling_mode != "smart":
                     self.video_img_urls = VideoReader(
                         video_path=str(self.video_path),
                         grid_size=tuple(grid_size),
@@ -447,6 +475,8 @@ class NoteGenerator:
                         unit_height=540,
                         save_quality=80,
                     ).run()
+                elif grid_size:
+                    logger.info("smart 采样需要字幕，抽帧将在转写完成后进行")
                 else:
                     logger.info("未指定 grid_size，跳过缩略图生成")
             except Exception as exc:

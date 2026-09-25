@@ -73,6 +73,39 @@ def resolve_bilibili_short_url(short_url: str) -> Optional[str]:
         return None
 
 
+def parse_bilibili_collection_url(url: str) -> Optional[dict]:
+    """
+    解析 B 站合集/系列 URL。
+
+    支持：
+      - https://space.bilibili.com/{mid}/lists/{sid}?type=season   （合集，默认）
+      - https://space.bilibili.com/{mid}/lists/{sid}?type=series   （系列）
+      - https://space.bilibili.com/{mid}/channel/collectiondetail?sid={sid}  （合集）
+      - https://space.bilibili.com/{mid}/channel/seriesdetail?sid={sid}      （系列）
+
+    :return: {"kind": "season"|"series", "mid": str, "sid": str}，非合集链接返回 None
+    """
+    if not url:
+        return None
+
+    # /lists/{sid} 形式；type 缺省视为 season（与 yt-dlp 的默认 IE 一致）
+    m = re.search(r"space\.bilibili\.com/(\d+)/lists/(\d+)", url)
+    if m:
+        kind = "series" if re.search(r"[?&]type=series(?:[&#]|$)", url) else "season"
+        return {"kind": kind, "mid": m.group(1), "sid": m.group(2)}
+
+    # /channel/collectiondetail?sid= / /channel/seriesdetail?sid=
+    m = re.search(
+        r"space\.bilibili\.com/(\d+)/channel/(collectiondetail|seriesdetail)\?[^#]*sid=(\d+)",
+        url,
+    )
+    if m:
+        kind = "series" if m.group(2) == "seriesdetail" else "season"
+        return {"kind": kind, "mid": m.group(1), "sid": m.group(3)}
+
+    return None
+
+
 def extract_bilibili_p_number(url: str) -> Optional[int]:
     """
     从 B 站分 P 视频 URL 中提取 p 参数（分 P 序号）。

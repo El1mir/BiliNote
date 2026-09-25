@@ -12,6 +12,12 @@ BACKEND_PORT= os.getenv("BACKEND_PORT", 8483)
 BACKEND_BASE_URL = f"{api_path}:{BACKEND_PORT}"
 
 from typing import Optional
+
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
 def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index: int) -> str:
     """
     使用 ffmpeg 生成截图，返回生成图片路径
@@ -24,19 +30,22 @@ def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index:
 
     command = [
         "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",   # 静音：截图失败靠 returncode 判断，不刷屏
+        "-nostats",
+        "-y",
         "-ss", str(timestamp),
         "-i", str(video_path),
         "-frames:v", "1",
         "-q:v", "2",
         str(output_path),
-        "-y"
     ]
 
-    print("Running command:", command)
+    logger.debug("Running command: %s", command)
     result = subprocess.run(command, capture_output=True, text=True)
 
     if result.returncode != 0:
-        print("ffmpeg failed:", result.stderr)
+        logger.error("ffmpeg 截图失败 (ts=%s): %s", timestamp, (result.stderr or "").strip())
 
     return str(output_path)
 

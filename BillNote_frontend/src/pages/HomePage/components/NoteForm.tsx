@@ -15,6 +15,8 @@ import { z } from 'zod'
 import { Info, Loader2, Plus } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx'
 import { generateNote } from '@/services/note.ts'
+import type { BatchGenerateResult } from '@/services/note.ts'
+import BatchImportDialog from './BatchImportDialog'
 import { uploadFile } from '@/services/upload.ts'
 import { useTaskStore } from '@/store/taskStore'
 import { useModelStore } from '@/store/modelStore'
@@ -58,6 +60,9 @@ const formSchema = z
     extras: z.string().optional(),
     video_understanding: z.boolean().optional(),
     video_interval: z.coerce.number().min(1).max(30).default(6).optional(),
+    sampling_mode: z.enum(['interval', 'smart']).default('interval').optional(),
+    max_frames: z.coerce.number().min(5).max(300).default(60).optional(),
+    batch_mode: z.boolean().optional(),
     grid_size: z
       .tuple([z.coerce.number().min(1).max(10), z.coerce.number().min(1).max(10)])
       .default([2, 2])
@@ -135,6 +140,7 @@ const NoteForm = () => {
   const navigate = useNavigate();
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
   /* ---- 全局状态 ---- */
   const { addPendingTask, currentTaskId, setCurrentTask, getCurrentTask, retryTask } =
     useTaskStore()
@@ -149,6 +155,9 @@ const NoteForm = () => {
       model_name: modelList[0]?.model_name || '',
       style: 'minimal',
       video_interval: 6,
+      sampling_mode: 'interval',
+      max_frames: 60,
+      batch_mode: false,
       grid_size: [2, 2],
       format: [],
     },
@@ -158,6 +167,8 @@ const NoteForm = () => {
   /* ---- 派生状态（只 watch 一次，提高性能） ---- */
   const platform = useWatch({ control: form.control, name: 'platform' }) as string
   const videoUnderstandingEnabled = useWatch({ control: form.control, name: 'video_understanding' })
+  const samplingMode = useWatch({ control: form.control, name: 'sampling_mode' })
+  const batchMode = useWatch({ control: form.control, name: 'batch_mode' })
   const editing = currentTask && currentTask.id
 
   const goModelAdd = () => {
@@ -186,6 +197,9 @@ const NoteForm = () => {
       link: formData.link ?? false,
       video_understanding: formData.video_understanding ?? false,
       video_interval: formData.video_interval ?? 6,
+      sampling_mode: formData.sampling_mode ?? 'interval',
+      max_frames: formData.max_frames ?? 60,
+      batch_mode: formData.batch_mode ?? false,
       grid_size: formData.grid_size ?? [2, 2],
       format: formData.format ?? [],
     })
@@ -221,6 +235,10 @@ const NoteForm = () => {
   }
 
   const onSubmit = async (values: NoteFormValues) => {
+    if (values.batch_mode || batchMode) {
+      setBatchOpen(true)
+      return
+    }
     console.log('Not even go here')
     const payload: NoteFormValues = {
       ...values,
@@ -270,12 +288,13 @@ const NoteForm = () => {
     return (
       <div className="flex gap-2">
         <Button
-          type="submit"
-          className={!editing ? 'w-full' : 'w-2/3' + ' bg-primary'}
+          type={batchMode ? 'button' : 'submit'}
+          className={(!editing ? 'flex-1' : 'w-2/3') + ' bg-primary'}
           disabled={generating}
+          onClick={batchMode ? () => setBatchOpen(true) : undefined}
         >
           {generating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {label}
+          {batchMode ? '展开预览' : label}
         </Button>
 
         {editing && (
@@ -288,6 +307,35 @@ const NoteForm = () => {
     )
   }
 
+  const batchDefaults = () => {
+    const values = form.getValues()
+    const providerId =
+      modelList.find(m => m.model_name === values.model_name)?.provider_id || ''
+    return {
+      quality: values.quality,
+      model_name: values.model_name,
+      provider_id: providerId,
+      format: values.format,
+      style: values.style,
+      extras: values.extras,
+      screenshot: values.screenshot,
+      link: values.link,
+      video_understanding: values.video_understanding,
+      video_interval: values.video_interval,
+      grid_size: values.grid_size,
+      sampling_mode: values.sampling_mode,
+      max_frames: values.max_frames,
+    }
+  }
+
+  const handleBatchSubmitted = (results: BatchGenerateResult[]) => {
+    const values = form.getValues()
+    results
+      .filter(r => r.status === 'queued' && r.task_id)
+      .forEach(r => {
+        addPendingTask(r.task_id as string, 'bilibili', { ...values })
+      })
+  }
   /* -------------------- 渲染 -------------------- */
   return (
     <div className="h-full w-full">
@@ -298,6 +346,17 @@ const NoteForm = () => {
 
           {/* 视频链接 & 平台 */}
           <SectionHeader title="视频链接" tip="支持 B 站、YouTube 等平台" />
+          <div className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={!!batchMode}
+              onCheckedChange={v => {
+                const on = !!v
+                form.setValue('batch_mode', on)
+                if (on) form.setValue('platform', 'bilibili')
+              }}
+            />
+            <span>批量模式</span>
+          </div>
           <div className="flex gap-2">
             {/* 平台选择 */}
 
@@ -318,7 +377,10 @@ const NoteForm = () => {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {videoPlatforms?.map(p => (
+                      {(batchMode
+                        ? videoPlatforms?.filter(p => p.value === 'bilibili')
+                        : videoPlatforms
+                      )?.map(p => (
                         <SelectItem key={p.value} value={p.value}>
                           <div className="flex items-center justify-center gap-2">
                             <div className="h-4 w-4">{p.logo()}</div>
@@ -495,18 +557,58 @@ const NoteForm = () => {
             />
 
             <div className="grid grid-cols-2 gap-4">
-              {/* 采样间隔 */}
+              {/* 采样方式 */}
               <FormField
                 control={form.control}
-                name="video_interval"
+                name="sampling_mode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>采样间隔（秒）</FormLabel>
-                    <Input disabled={!videoUnderstandingEnabled} type="number" {...field} />
+                    <FormLabel>采样方式</FormLabel>
+                    <Select
+                      disabled={!videoUnderstandingEnabled}
+                      value={field.value || 'interval'}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="interval">间隔采样</SelectItem>
+                        <SelectItem value="smart">高价值帧采样</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              {/* 间隔采样：采样间隔；高价值：最大帧数 */}
+              {samplingMode === 'smart' ? (
+                <FormField
+                  control={form.control}
+                  name="max_frames"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>最大帧数</FormLabel>
+                      <Input disabled={!videoUnderstandingEnabled} type="number" {...field} />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <FormField
+                  control={form.control}
+                  name="video_interval"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>采样间隔（秒）</FormLabel>
+                      <Input disabled={!videoUnderstandingEnabled} type="number" {...field} />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               {/* 拼图大小 */}
               <FormField
                 control={form.control}
@@ -577,6 +679,14 @@ const NoteForm = () => {
           />
         </form>
       </Form>
+
+      <BatchImportDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        defaults={batchDefaults()}
+        initialUrl={(form.getValues().video_url as string) || ''}
+        onSubmitted={handleBatchSubmitted}
+      />
     </div>
   )
 }

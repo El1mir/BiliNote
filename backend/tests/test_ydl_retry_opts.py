@@ -30,26 +30,44 @@ DOWNLOADER_SOURCES = ["youtube_downloader.py", "bilibili_downloader.py"]
 
 
 def _load_base():
-    """Load app/downloaders/base.py with its app-level imports stubbed out."""
-    for name, attrs in {
+    """Load app/downloaders/base.py with its app-level imports stubbed out.
+
+    用强制覆盖而不是 ``setdefault``：全量跑测试时，其它测试可能已经在
+    ``sys.modules`` 里留下半初始化的 ``app.models.transcriber_model``，
+    导致 ``from app.models.transcriber_model import ...`` 失败。执行完
+    恢复原状，避免本测试污染其它测试。
+    """
+    stubs = {
         "app": {},
         "app.enmus": {},
         "app.models": {},
         "app.enmus.note_enums": {"DownloadQuality": str},
         "app.models.notes_model": {"AudioDownloadResult": object},
-        "app.models.transcriber_model": {"TranscriptResult": object},
-    }.items():
-        module = types.ModuleType(name)
-        for key, value in attrs.items():
-            setattr(module, key, value)
-        sys.modules.setdefault(name, module)
+        "app.models.transcriber_model": {
+            "TranscriptResult": object,
+            "TranscriptSegment": object,
+        },
+    }
+    saved = {name: sys.modules.get(name) for name in stubs}
+    try:
+        for name, attrs in stubs.items():
+            module = types.ModuleType(name)
+            for key, value in attrs.items():
+                setattr(module, key, value)
+            sys.modules[name] = module
 
-    spec = importlib.util.spec_from_file_location("dl_base", DOWNLOADERS / "base.py")
-    if spec is None or spec.loader is None:
-        raise ImportError("base module spec not found")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+        spec = importlib.util.spec_from_file_location("dl_base", DOWNLOADERS / "base.py")
+        if spec is None or spec.loader is None:
+            raise ImportError("base module spec not found")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name, previous in saved.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
 
 
 class RetryOptsValueTest(unittest.TestCase):

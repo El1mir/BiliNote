@@ -1,6 +1,7 @@
 # app/routers/note.py
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -17,7 +18,17 @@ from app.exceptions.note import NoteError
 from app.services.note import NoteGenerator, logger
 from app.services.task_serial_executor import task_serial_executor
 from app.utils.response import ResponseWrapper as R
-from app.utils.url_parser import extract_video_id, normalize_video_url
+from app.downloaders.bilibili_expand import (
+    build_video_id,
+    build_video_url,
+    fetch_collection,
+    fetch_video_parts,
+)
+from app.utils.url_parser import (
+    extract_video_id,
+    normalize_video_url,
+    parse_bilibili_collection_url,
+)
 from app.validators.video_url_validator import is_supported_video_url
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
@@ -50,6 +61,9 @@ class VideoRequest(BaseModel):
     video_understanding: Optional[bool] = False
     video_interval: Optional[int] = 0
     grid_size: Optional[list] = []
+    # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
+    sampling_mode: Optional[str] = "interval"
+    max_frames: Optional[int] = 60
     # 客户端（如浏览器插件）已经在用户浏览器里抓到字幕，直接传给后端复用，
     # 跳过 download_subtitles 和音频转写。形如：
     #   {"language": "zh", "full_text": "...", "segments": [{"start","end","text"}, ...]}
@@ -79,6 +93,122 @@ class VideoRequest(BaseModel):
 
 NOTE_OUTPUT_DIR = os.getenv("NOTE_OUTPUT_DIR", "note_results")
 UPLOAD_DIR = "uploads"
+
+# 任务级自动重试：首次 + NOTE_MAX_RETRIES 次重试（spec §7）
+NOTE_MAX_RETRIES = int(os.getenv("NOTE_MAX_RETRIES", "3"))
+NOTE_RETRY_BACKOFF = [5, 15, 45]  # 秒，指数退避
+
+
+# 进行中状态：这些状态下不允许对同一视频重复提交（否则并发互踩，见 spec 001 §12）
+_IN_FLIGHT_STATUSES = {
+    TaskStatus.PENDING.value,
+    TaskStatus.PARSING.value,
+    TaskStatus.DOWNLOADING.value,
+    TaskStatus.TRANSCRIBING.value,
+    TaskStatus.SUMMARIZING.value,
+    TaskStatus.FORMATTING.value,
+    TaskStatus.SAVING.value,
+}
+
+
+def _get_task_record(video_id: str, platform: str):
+    """返回 (task_id, status)；无记录/无状态文件时 status 为 None。"""
+    if not video_id:
+        return None, None
+    try:
+        task_id = get_task_by_video(video_id, platform)
+    except Exception:
+        logger.warning(f"查询去重记录失败 video_id={video_id}", exc_info=True)
+        return None, None
+    if not task_id:
+        return None, None
+    status_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.status.json")
+    if not os.path.exists(status_path):
+        return task_id, None
+    try:
+        with open(status_path, "r", encoding="utf-8") as f:
+            return task_id, json.load(f).get("status")
+    except Exception:
+        return task_id, None
+
+
+def _is_generated_task(video_id: str, platform: str) -> bool:
+    """已成功生成过（spec 001 §6）。"""
+    _, status = _get_task_record(video_id, platform)
+    return status == TaskStatus.SUCCESS.value
+
+
+def _is_task_in_flight(video_id: str, platform: str) -> bool:
+    """是否有同一视频的任务正在跑（spec 001 §12：进行中也跳过，避免并发互踩）。"""
+    _, status = _get_task_record(video_id, platform)
+    return status in _IN_FLIGHT_STATUSES
+
+
+def _expand_video_entry(bvid: str, title: str = "", duration: int = 0, cover: str = "") -> dict:
+    """把一个视频展开成 video entry（含分P、去重标记、单条错误隔离）。"""
+    try:
+        parts = fetch_video_parts(bvid)
+    except Exception as e:
+        logger.warning(f"获取分P失败 bvid={bvid}: {e}")
+        parts = []
+
+    if not parts:
+        return {
+            "bvid": bvid,
+            "title": title,
+            "duration": duration,
+            "cover": cover,
+            "parts": [],
+            "error": "未获取到分P信息（视频可能已删除或需要 Cookie）",
+        }
+
+    parts_count = len(parts)
+    part_dicts = []
+    for part in parts:
+        video_id = build_video_id(bvid, part.p, parts_count)
+        part_dicts.append({
+            "p": part.p,
+            "title": part.title,
+            "duration": part.duration,
+            "video_id": video_id,
+            "url": build_video_url(bvid, part.p, parts_count),
+            "already_generated": _is_generated_task(video_id, "bilibili"),
+        })
+
+    return {
+        "bvid": bvid,
+        "title": title or (parts[0].title if parts else ""),
+        "duration": duration or sum(p.duration for p in parts),
+        "cover": cover,
+        "parts": part_dicts,
+        "error": None,
+    }
+
+
+def _execute_note_with_retry(task_id: str, generator, execute_fn):
+    """执行笔记任务；失败自动重试 NOTE_MAX_RETRIES 次（首次 + N 次重试）。"""
+    for attempt in range(NOTE_MAX_RETRIES + 1):
+        note = task_serial_executor.run(execute_fn)
+        if note and getattr(note, "markdown", None):
+            return note
+        if attempt >= NOTE_MAX_RETRIES:
+            logger.error(f"任务 {task_id} 重试 {NOTE_MAX_RETRIES} 次后仍失败")
+            return None
+        retry_no = attempt + 1
+        delay = NOTE_RETRY_BACKOFF[min(attempt, len(NOTE_RETRY_BACKOFF) - 1)]
+        logger.warning(
+            f"任务 {task_id} 失败，第 {retry_no}/{NOTE_MAX_RETRIES} 次重试（{delay}s 后）"
+        )
+        try:
+            generator._update_status(
+                task_id, TaskStatus.PENDING,
+                message=f"重试中 ({retry_no}/{NOTE_MAX_RETRIES})",
+            )
+        except Exception:
+            pass
+        if delay > 0:
+            time.sleep(delay)
+    return None
 
 
 def save_note_to_file(task_id: str, note):
@@ -124,14 +254,16 @@ def _persist_prefetched_transcript(task_id: str, transcript: dict) -> None:
 def run_note_task(task_id: str, video_url: str, platform: str, quality: DownloadQuality,
                   link: bool = False, screenshot: bool = False, model_name: str = None, provider_id: str = None,
                   _format: list = None, style: str = None, extras: str = None, video_understanding: bool = False,
-                  video_interval=0, grid_size=[]
+                  video_interval=0, grid_size=[], sampling_mode="interval", max_frames=60
                   ):
 
     if not model_name or not provider_id:
         raise HTTPException(status_code=400, detail="请选择模型和提供者")
 
+    generator = NoteGenerator()
+
     def _execute_note_task():
-        return NoteGenerator().generate(
+        return generator.generate(
             video_url=video_url,
             platform=platform,
             quality=quality,
@@ -146,10 +278,12 @@ def run_note_task(task_id: str, video_url: str, platform: str, quality: Download
             video_understanding=video_understanding,
             video_interval=video_interval,
             grid_size=grid_size,
+            sampling_mode=sampling_mode,
+            max_frames=max_frames,
         )
 
     logger.info(f"任务进入执行队列 (task_id={task_id})")
-    note = task_serial_executor.run(_execute_note_task)
+    note = _execute_note_with_retry(task_id, generator, _execute_note_task)
     logger.info(f"Note generated: {task_id}")
     if not note or not note.markdown:
         logger.warning(f"任务 {task_id} 执行失败，跳过保存")
@@ -209,6 +343,16 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
                 )
 
         video_id = extract_video_id(data.video_url, data.platform)
+
+        # 同一视频正在生成时不再重复起任务（spec 001 §12）：
+        # 并发跑同一视频会互踩 data/data/<id>.mp4 与抽帧目录。
+        if not data.task_id and _is_task_in_flight(video_id, data.platform):
+            return R.error(
+                msg="该视频正在生成中，请稍候",
+                code=300103,
+                data={"reason": "task_in_progress"},
+            )
+
         # if not video_id:
         #     raise HTTPException(status_code=400, detail="无法提取视频 ID")
         # existing = get_task_by_video(video_id, data.platform)
@@ -237,11 +381,150 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
 
         background_tasks.add_task(run_note_task, task_id, data.video_url, data.platform, data.quality, data.link,
                                   data.screenshot, data.model_name, data.provider_id, data.format, data.style,
-                                  data.extras, data.video_understanding, data.video_interval, data.grid_size)
+                                  data.extras, data.video_understanding, data.video_interval, data.grid_size,
+                                  data.sampling_mode, data.max_frames)
         return R.success({"task_id": task_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class ExpandRequest(BaseModel):
+    url: str
+
+
+class BatchItem(BaseModel):
+    bvid: str
+    p: int = 1
+    video_id: Optional[str] = None
+    url: Optional[str] = None
+
+
+class BatchGenerateRequest(BaseModel):
+    """批量生成请求（spec §5.2）。items 为前端勾选后的明确列表。"""
+
+    platform: str = "bilibili"
+    items: list[BatchItem]
+    quality: DownloadQuality = DownloadQuality.fast
+    model_name: str
+    provider_id: str
+    format: Optional[list] = []
+    style: Optional[str] = None
+    extras: Optional[str] = None
+    screenshot: Optional[bool] = False
+    link: Optional[bool] = False
+    video_understanding: Optional[bool] = False
+    video_interval: Optional[int] = 0
+    grid_size: Optional[list] = []
+    # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
+    sampling_mode: Optional[str] = "interval"
+    max_frames: Optional[int] = 60
+
+
+@router.post("/expand")
+def expand(data: ExpandRequest):
+    """两阶段流程第一阶段：把合集/多P 链接展开成可勾选的视频+分P 列表。"""
+    try:
+        url = (data.url or "").strip()
+        if not url:
+            return R.error(msg="链接不能为空", code=400)
+
+        ref = parse_bilibili_collection_url(url)
+        if ref:
+            info = fetch_collection(ref["mid"], ref["sid"], ref["kind"])
+            videos = [
+                _expand_video_entry(v.bvid, v.title, v.duration, v.cover)
+                for v in info.videos
+            ]
+            return R.success({
+                "platform": "bilibili",
+                "type": "collection",
+                "title": info.title,
+                "cover": info.cover,
+                "owner": {"mid": info.owner_mid, "name": info.owner_name},
+                "videos": videos,
+            })
+
+        bvid = extract_video_id(url, "bilibili")
+        if not bvid:
+            return R.error(msg="无法从链接中解析 BV 号", code=400)
+        entry = _expand_video_entry(bvid)
+        return R.success({
+            "platform": "bilibili",
+            "type": "video",
+            "title": entry.get("title") or "",
+            "cover": entry.get("cover") or "",
+            "owner": {"mid": "", "name": ""},
+            "videos": [entry],
+        })
+    except Exception as e:
+        logger.error(f"展开失败: {e}", exc_info=True)
+        return R.error(msg=f"展开失败: {e}")
+
+
+@router.post("/generate_notes")
+def generate_notes(data: BatchGenerateRequest, background_tasks: BackgroundTasks):
+    """两阶段流程第二阶段：接收勾选列表，去重后逐条入队。"""
+    try:
+        if not data.model_name or not data.provider_id:
+            return R.error(msg="请选择模型和提供者", code=400)
+
+        # 就绪门禁：与单条 /generate_note 保持一致
+        from app.services.transcriber_config_manager import TranscriberConfigManager
+        readiness = TranscriberConfigManager().is_model_ready()
+        if not readiness["ready"]:
+            logger.warning(f"拒绝 generate_notes：{readiness['reason']}")
+            return R.error(
+                msg=readiness["reason"],
+                code=300102,
+                data={
+                    "reason": "transcriber_model_not_ready",
+                    "transcriber_type": readiness["transcriber_type"],
+                    "model_size": readiness["model_size"],
+                    "downloading": readiness["downloading"],
+                },
+            )
+
+        results = []
+        for item in data.items:
+            video_id = item.video_id or item.bvid
+
+            if _is_generated_task(video_id, data.platform):
+                results.append({
+                    "video_id": video_id,
+                    "status": "skipped",
+                    "reason": "already_generated",
+                })
+                continue
+
+            if _is_task_in_flight(video_id, data.platform):
+                results.append({
+                    "video_id": video_id,
+                    "status": "skipped",
+                    "reason": "in_progress",
+                })
+                continue
+
+            if item.url:
+                note_url = item.url
+            elif item.video_id and "_p" in item.video_id:
+                note_url = f"https://www.bilibili.com/video/{item.bvid}?p={item.p}"
+            else:
+                note_url = f"https://www.bilibili.com/video/{item.bvid}"
+
+            task_id = str(uuid.uuid4())
+            NoteGenerator()._update_status(task_id, TaskStatus.PENDING)
+            background_tasks.add_task(
+                run_note_task, task_id, note_url, data.platform, data.quality, data.link,
+                data.screenshot, data.model_name, data.provider_id, data.format, data.style,
+                data.extras, data.video_understanding, data.video_interval, data.grid_size,
+                data.sampling_mode, data.max_frames,
+            )
+            results.append({"video_id": video_id, "task_id": task_id, "status": "queued"})
+
+        return R.success({"results": results})
+    except Exception as e:
+        logger.error(f"批量生成失败: {e}", exc_info=True)
+        return R.error(msg=f"批量生成失败: {e}")
 
 @router.get("/task_status/{task_id}")
 def get_task_status(task_id: str):

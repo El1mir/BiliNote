@@ -2,7 +2,9 @@ import base64
 import hashlib
 import os
 import re
+import shutil
 import subprocess
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import ffmpeg
 from PIL import Image, ImageDraw, ImageFont
@@ -22,7 +24,10 @@ class VideoReader:
                  save_quality=90,
                  font_path="fonts/arial.ttf",
                  frame_dir=None,
-                 grid_dir=None):
+                 grid_dir=None,
+                 sampling_mode="interval",
+                 max_frames=60,
+                 subtitle_starts=None):
         self.video_path = video_path
         self.grid_size = grid_size
         self.frame_interval = frame_interval
@@ -30,9 +35,17 @@ class VideoReader:
         self.unit_width = unit_width
         self.unit_height = unit_height
         self.save_quality = save_quality
-        self.frame_dir = frame_dir or get_app_dir("output_frames")
-        self.grid_dir = grid_dir or get_app_dir("grid_output")
-        print(f"视频路径：{video_path}",self.frame_dir,self.grid_dir)
+        # 每个 VideoReader 实例用独立子目录：并发任务共用全局 output_frames 时，
+        # run() 的清空逻辑会删掉对方正在用的帧文件（曾导致 frame_xx_yy.jpg 找不到）。
+        self._owns_frame_dir = frame_dir is None
+        self._owns_grid_dir = grid_dir is None
+        _token = uuid.uuid4().hex[:12]
+        self.frame_dir = frame_dir or get_app_dir(os.path.join("output_frames", _token))
+        self.grid_dir = grid_dir or get_app_dir(os.path.join("grid_output", _token))
+        # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
+        self.sampling_mode = sampling_mode
+        self.max_frames = int(max_frames or 60)
+        self.subtitle_starts = list(subtitle_starts or [])
         self.font_path = font_path
 
     @staticmethod
@@ -60,19 +73,26 @@ class VideoReader:
         time_label = self.format_time(ts)
         output_path = os.path.join(self.frame_dir, f"frame_{time_label}.jpg")
         cmd = ["ffmpeg", "-ss", str(ts), "-i", self.video_path, "-frames:v", "1", "-q:v", "2", "-y", output_path,
-               "-hide_banner", "-loglevel", "error"]
+               "-hide_banner", "-loglevel", "quiet"]
         try:
             subprocess.run(cmd, check=True)
             return output_path
         except subprocess.CalledProcessError:
             return None
 
-    def extract_frames(self, max_frames=1000) -> list[str]:
+    def extract_frames(self, max_frames=1000, timestamps=None) -> list[str]:
 
         try:
             os.makedirs(self.frame_dir, exist_ok=True)
-            duration = float(ffmpeg.probe(self.video_path)["format"]["duration"])
-            timestamps = [i for i in range(0, int(duration), self.frame_interval)][:max_frames]
+            if timestamps is None:
+                duration = float(ffmpeg.probe(self.video_path, loglevel="quiet")["format"]["duration"])
+                timestamps = [i for i in range(0, int(duration), self.frame_interval)][:max_frames]
+            else:
+                timestamps = [int(t) for t in timestamps][:max_frames]
+
+            if not timestamps:
+                logger.warning("没有可抽帧的时间点，跳过抽帧")
+                return []
 
             # 并行提取帧
             max_workers = min(os.cpu_count() or 4, 8, len(timestamps))
@@ -148,21 +168,26 @@ class VideoReader:
         logger.info("开始提取视频帧...")
         try:
             # 确保目录存在
-            print(self.frame_dir,self.grid_dir)
             os.makedirs(self.frame_dir, exist_ok=True)
             os.makedirs(self.grid_dir, exist_ok=True)
             #清空帧文件夹
             for file in os.listdir(self.frame_dir):
                 if file.startswith("frame_"):
                     os.remove(os.path.join(self.frame_dir, file))
-            print(self.frame_dir,self.grid_dir)
             #清空网格文件夹
             for file in os.listdir(self.grid_dir):
                 if file.startswith("grid_"):
                     os.remove(os.path.join(self.grid_dir, file))
-            print(self.frame_dir,self.grid_dir)
-            self.extract_frames()
-            print("2#3",self.frame_dir,self.grid_dir)
+            if self.sampling_mode == "smart":
+                from app.utils.frame_sampler import select_smart_timestamps
+                timestamps = select_smart_timestamps(
+                    self.video_path,
+                    subtitle_starts=self.subtitle_starts,
+                    max_frames=self.max_frames,
+                )
+                self.extract_frames(timestamps=timestamps)
+            else:
+                self.extract_frames()
             logger.info("开始拼接网格图...")
             image_paths = []
             groups = self.group_images()
@@ -179,5 +204,16 @@ class VideoReader:
         except Exception as e:
             logger.error(f"发生错误：{str(e)}")
             raise ValueError("视频处理失败")
+        finally:
+            self._cleanup_temp_dirs()
+
+    def _cleanup_temp_dirs(self):
+        """清理本实例自动创建的临时目录（外部显式传入的目录不动）。"""
+        for owns, path in (
+            (self._owns_frame_dir, self.frame_dir),
+            (self._owns_grid_dir, self.grid_dir),
+        ):
+            if owns and os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
 
 

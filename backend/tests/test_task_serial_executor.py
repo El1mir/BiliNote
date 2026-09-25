@@ -16,7 +16,7 @@ SerialTaskExecutor = task_serial_executor.SerialTaskExecutor
 
 
 class TestTaskSerialExecutor(unittest.TestCase):
-    def test_executor_runs_tasks_one_by_one(self):
+    def test_executor_runs_tasks_concurrently(self):
         executor = SerialTaskExecutor()
         state_lock = threading.Lock()
         state = {"active": 0, "peak_active": 0}
@@ -35,7 +35,8 @@ class TestTaskSerialExecutor(unittest.TestCase):
         for t in threads:
             t.join()
 
-        self.assertEqual(state["peak_active"], 1)
+        # 执行器是线程池（默认 5），两个任务应并发而非串行
+        self.assertEqual(state["peak_active"], 2)
 
 
 if __name__ == "__main__":

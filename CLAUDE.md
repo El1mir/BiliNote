@@ -104,8 +104,26 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 - **Vite proxy**: Dev server proxies `/api` and `/static` to backend (configured in `vite.config.ts`, reads env from parent dir; falls back to current dir when `DOCKER_BUILD` is set)
 - **CORS**: `backend/main.py` uses a regex (`CORS_ORIGIN_REGEX`) that allows localhost, `tauri.localhost`, and `chrome-extension://` / `moz-extension://` origins — required for the desktop app and the browser extension.
 
+## Specs & Tickets
+
+非平凡改动在 `specs/` 下落档。**默认在当前 spec 内修正**；只有当 (a) 明确开启一个新需求，或 (b) 要修正的内容不属于当前 spec 时，才新建目录（`NNN-slug`，编号递增）：
+
+- `specs/<NNN>-<slug>/spec.md` —— 设计规格：背景 / 目标 / 非目标 / 已定决策 / 接口草案 / 流程 / 测试要点。状态标 `draft` / `approved` / `implemented`。
+- `specs/<NNN>-<slug>/tickets/*.md` —— 实现工单，按顺序编号，每个含「依赖 / 关联 spec 章节 / 目标 / 改动点 / 验收」。
+- `specs/README.md` —— 合集索引，新增目录后在里面登记。
+
+Rules:
+
+- **默认不新建 spec**：只有「明确开启新需求」或「要修正不属于当前 spec 的内容」时才新建目录；bug 修复、决策调整、补测试等只要不脱离当前 spec，就直接改当前 spec（在 spec 里注明日期与来源，并与既有决策交叉引用）。
+- **spec 稳定、ticket 易变**：实现细节写 ticket，不塞进 spec。
+- **决策不沉默**：已拍板的写「已定决策」，未拍板的写「待确认问题」，不留隐含假设。
+- ticket 完成后，在 `spec.md` 的「实现清单」里更新状态，并在 `specs/README.md` 索引里同步。
+- 测试与实现同一 ticket，并**按改动分目录**：后端 `backend/tests/<NNN>-<slug>/`、前端 `BillNote_frontend/tests/<NNN>-<slug>/`，编号与 `specs/<NNN>-<slug>/` 对应。
+- 完成后 spec 状态改 `implemented`。
+
 ## Code Style
 
 - **Frontend**: ESLint + Prettier (2 spaces, single quotes, 100 char width, Tailwind plugin). TypeScript strict mode.
 - **Backend**: Python with type hints. No configured linter. Uses Pydantic models for validation.
 - **Note**: The frontend directory is named `BillNote_frontend` (not "Bili").
+- **Specs**: Non-trivial changes are documented under `specs/`. **Default to amending the current spec**; only create a new `specs/<NNN>-<slug>/` when starting an explicitly new requirement or correcting something outside the current spec's scope.
