@@ -10,11 +10,15 @@ DEFAULT_ASR_CHUNK_MB = 18          # 超过该大小就切割成多段分别转�
 DEFAULT_SPEECH_MAX_CHUNKS = 120    # 按说话切片时最多切多少段
 DEFAULT_SILENCE_NOISE_DB = -30.0   # silencedetect 噪声门限（dB）
 DEFAULT_MIN_SILENCE_SECONDS = 0.5  # 多长的停顿算一次「说完了」
+DEFAULT_ASR_MAX_RPM = 30           # 每分钟最多请求次数（防 429）
+DEFAULT_ASR_CHUNK_CONCURRENCY = 4  # 切片转写的并发请求数（1-32，1 即串行）
+ASR_CHUNK_CONCURRENCY_MAX = 32
 
 # 允许通过 update_openai_asr 修改的字段
 _ASR_EDITABLE_FIELDS = (
     "name", "base_url", "api_key", "model", "timeout", "chunk_size_mb", "api_style",
-    "max_speech_chunks", "silence_noise_db", "min_silence_seconds",
+    "max_speech_chunks", "silence_noise_db", "min_silence_seconds", "max_rpm",
+    "chunk_concurrency",
 )
 
 # 接口风格：transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
@@ -102,6 +106,15 @@ class TranscriberConfigManager:
             "min_silence_seconds": _as_float(
                 raw.get("min_silence_seconds"), DEFAULT_MIN_SILENCE_SECONDS
             ),
+            "max_rpm": _as_int(raw.get("max_rpm"), DEFAULT_ASR_MAX_RPM),
+            # 并发数按范围收敛，避免旧配置/手改配置把并发开到荒谬的值
+            "chunk_concurrency": max(
+                1,
+                min(
+                    ASR_CHUNK_CONCURRENCY_MAX,
+                    _as_int(raw.get("chunk_concurrency"), DEFAULT_ASR_CHUNK_CONCURRENCY),
+                ),
+            ),
         }
 
     def _endpoints(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -147,6 +160,16 @@ class TranscriberConfigManager:
                 raise ValueError
         except (TypeError, ValueError):
             raise ValueError("最短静音时长必须大于 0")
+        try:
+            if int(endpoint.get("max_rpm")) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("每分钟请求数必须为正整数")
+        try:
+            if int(endpoint.get("chunk_concurrency")) <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError("切片并发数必须为正整数")
 
     def list_openai_asr(self) -> List[Dict[str, Any]]:
         return self._endpoints(self._read())
@@ -175,6 +198,8 @@ class TranscriberConfigManager:
         max_speech_chunks: int = DEFAULT_SPEECH_MAX_CHUNKS,
         silence_noise_db: float = DEFAULT_SILENCE_NOISE_DB,
         min_silence_seconds: float = DEFAULT_MIN_SILENCE_SECONDS,
+        max_rpm: int = DEFAULT_ASR_MAX_RPM,
+        chunk_concurrency: int = DEFAULT_ASR_CHUNK_CONCURRENCY,
     ) -> str:
         endpoint = self._normalize_endpoint({
             "id": uuid.uuid4().hex,
@@ -188,6 +213,8 @@ class TranscriberConfigManager:
             "max_speech_chunks": max_speech_chunks,
             "silence_noise_db": silence_noise_db,
             "min_silence_seconds": min_silence_seconds,
+            "max_rpm": max_rpm,
+            "chunk_concurrency": chunk_concurrency,
         })
         self._validate_endpoint(endpoint)
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import glob
 import os
+from concurrent.futures import ThreadPoolExecutor
+
 import re
 import subprocess
 import tempfile
@@ -66,7 +68,7 @@ def split_audio(input_path: str, segment_seconds: float) -> tuple[list[str], str
 
     def _run(pattern: str, codec_args: list) -> list:
         cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-y",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-y", "-threads", "0", "-vn",
             "-i", input_path,
             "-f", "segment",
             "-segment_time", f"{segment_seconds:.3f}",
@@ -116,7 +118,7 @@ def detect_speech_regions(
     失败 / 检测不到静音时返回 []，由调用方决定怎么退化。
     """
     cmd = [
-        "ffmpeg", "-hide_banner", "-nostats",
+        "ffmpeg", "-hide_banner", "-nostats", "-threads", "0", "-vn",
         "-i", input_path,
         "-af", f"silencedetect=noise={noise_db}dB:d={min_silence}",
         "-f", "null", "-",
@@ -167,11 +169,12 @@ def cut_audio_regions(input_path: str, regions: list) -> tuple:
     """
     ext = os.path.splitext(input_path)[1].lower() or ".mp3"
     temp_dir = tempfile.mkdtemp(prefix="asr_speech_")
-    out = []
+    workers = max(1, min(8, os.cpu_count() or 4))
 
     def _cut(start: float, end: float, target: str, codec_args: list) -> bool:
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-y",
+            "-threads", "0", "-vn",
             "-ss", f"{start:.3f}", "-i", input_path,
             "-t", f"{max(0.05, end - start):.3f}",
             *codec_args, target,
@@ -182,12 +185,21 @@ def cut_audio_regions(input_path: str, regions: list) -> tuple:
         except Exception:  # noqa: BLE001
             return False
 
-    for idx, (start, end) in enumerate(regions):
+    def _cut_one(item):
+        idx, (start, end) = item
         path = os.path.join(temp_dir, f"chunk_{idx:04d}{ext}")
         if not _cut(start, end, path, ["-c", "copy"]):
             path = os.path.join(temp_dir, f"chunk_{idx:04d}.mp3")
             if not _cut(start, end, path, ["-c:a", "libmp3lame", "-b:a", "64k"]):
-                continue
-        out.append((float(start), float(end), path))
+                return None
+        return (float(start), float(end), path)
 
+    out = []
+    # 240 个区间串行启动 240 次 ffmpeg 很慢；这里限制并发度，保持顺序返回。
+    logger.info("开始切片：%d 段，并发 %d", len(regions), workers)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for item in executor.map(_cut_one, enumerate(regions)):
+            if item:
+                out.append(item)
+    logger.info("切片完成：成功 %d/%d 段", len(out), len(regions))
     return out, temp_dir

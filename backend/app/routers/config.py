@@ -64,6 +64,10 @@ class OpenAISREndpointRequest(BaseModel):
     max_speech_chunks: Optional[int] = None
     silence_noise_db: Optional[float] = None
     min_silence_seconds: Optional[float] = None
+    # 每分钟最多请求次数，防止触发服务端 429
+    max_rpm: Optional[int] = None
+    # 切片转写的并发请求数（1-32，1 即串行）；并发只填满 max_rpm 允许的额度
+    chunk_concurrency: Optional[int] = None
 
 
 AVAILABLE_TRANSCRIBER_TYPES = [
@@ -159,6 +163,10 @@ def add_openai_asr(data: OpenAISREndpointRequest):
             max_speech_chunks=data.max_speech_chunks if data.max_speech_chunks is not None else 120,
             silence_noise_db=data.silence_noise_db if data.silence_noise_db is not None else -30.0,
             min_silence_seconds=data.min_silence_seconds if data.min_silence_seconds is not None else 0.5,
+            max_rpm=data.max_rpm if data.max_rpm is not None else 30,
+            chunk_concurrency=(
+                data.chunk_concurrency if data.chunk_concurrency is not None else 4
+            ),
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -181,6 +189,8 @@ def update_openai_asr(endpoint_id: str, data: OpenAISREndpointRequest):
             max_speech_chunks=data.max_speech_chunks,
             silence_noise_db=data.silence_noise_db,
             min_silence_seconds=data.min_silence_seconds,
+            max_rpm=data.max_rpm,
+            chunk_concurrency=data.chunk_concurrency,
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -221,6 +231,8 @@ def test_openai_asr(endpoint_id: str):
             max_speech_chunks=endpoint.get("max_speech_chunks") or 120,
             silence_noise_db=endpoint.get("silence_noise_db") or -30.0,
             min_silence_seconds=endpoint.get("min_silence_seconds") or 0.5,
+            max_rpm=endpoint.get("max_rpm") or 30,
+            chunk_concurrency=endpoint.get("chunk_concurrency") or 4,
         )
         result = transcriber.transcript(file_path=wav_path)
         preview = (result.full_text or "").strip()[:50]

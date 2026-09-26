@@ -20,6 +20,8 @@ class Xiaoyuzhoufm_download(Downloader):
         video_url: str,
         output_dir: Union[str, None] = None,
         quality: DownloadQuality = "fast",
-        need_video:Optional[bool]=False
+        need_video: Optional[bool] = False,
+        skip_download: bool = False,
     ) -> AudioDownloadResult:
+        # 小宇宙是纯音频站点，元信息即音频；skip_download 只为对齐下载器接口（spec 006 ticket 05）
         pass

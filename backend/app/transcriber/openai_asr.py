@@ -16,6 +16,10 @@ import math
 import os
 import re
 import shutil
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 from typing import Any, List, Optional, Tuple
 
 from app.decorators.timeit import timeit
@@ -48,6 +52,30 @@ _MAX_CHUNKS = 200
 _DEFAULT_SPEECH_MAX_CHUNKS = 120
 _DEFAULT_SILENCE_NOISE_DB = -30.0
 _DEFAULT_MIN_SILENCE_SECONDS = 0.5
+
+# 切片转写并发（可在「音频转写配置」里按端点覆盖）：并发只用来填满 max_rpm 允许的
+# 请求预算，真正的节流仍由线程安全的 _RateLimiter 负责（spec 006 决策 2/5）。
+_DEFAULT_CHUNK_CONCURRENCY = 4
+_CHUNK_CONCURRENCY_MAX = 32
+
+
+class _RateLimiter:
+    """线程安全的匀速限流器，按每分钟请求数计算间隔。"""
+
+    def __init__(self, max_per_minute: float = 30.0):
+        self.max_per_minute = max(0.1, float(max_per_minute or 30.0))
+        self.interval = 60.0 / self.max_per_minute
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            delay = max(0.0, self._next_allowed - now)
+            self._next_allowed = max(now, self._next_allowed) + self.interval
+        if delay > 0:
+            time.sleep(delay)
+
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
@@ -128,6 +156,8 @@ class OpenAIASRTranscriber(Transcriber):
         max_speech_chunks: int = _DEFAULT_SPEECH_MAX_CHUNKS,
         silence_noise_db: float = _DEFAULT_SILENCE_NOISE_DB,
         min_silence_seconds: float = _DEFAULT_MIN_SILENCE_SECONDS,
+        max_rpm: Optional[float] = None,
+        chunk_concurrency: Optional[int] = None,
     ):
         if not str(model or "").strip():
             raise ValueError("OpenAI 兼容 ASR 未配置模型名")
@@ -143,6 +173,35 @@ class OpenAIASRTranscriber(Transcriber):
         self.max_speech_chunks = int(max_speech_chunks or _DEFAULT_SPEECH_MAX_CHUNKS)
         self.silence_noise_db = float(silence_noise_db or _DEFAULT_SILENCE_NOISE_DB)
         self.min_silence_seconds = float(min_silence_seconds or _DEFAULT_MIN_SILENCE_SECONDS)
+        # API 调用限流：优先使用设置页配置；兼容旧的 OPENAI_ASR_MAX_QPS 环境变量。
+        configured_rpm = max_rpm
+        if configured_rpm is None:
+            legacy_qps = os.getenv("OPENAI_ASR_MAX_QPS")
+            configured_rpm = (
+                float(legacy_qps) * 60
+                if legacy_qps
+                else float(os.getenv("OPENAI_ASR_MAX_RPM", "30"))
+            )
+        self.max_rpm = max(1.0, float(configured_rpm or 30.0))
+        # 切片转写并发数：显式参数 → 环境变量 → 默认 4；范围 1-32（1 即旧的串行行为）
+        if chunk_concurrency is None:
+            chunk_concurrency = os.getenv(
+                "OPENAI_ASR_CHUNK_CONCURRENCY", _DEFAULT_CHUNK_CONCURRENCY
+            )
+        try:
+            self.chunk_concurrency = max(
+                1, min(_CHUNK_CONCURRENCY_MAX, int(chunk_concurrency))
+            )
+        except (TypeError, ValueError):
+            self.chunk_concurrency = _DEFAULT_CHUNK_CONCURRENCY
+        self._rate_limiter = _RateLimiter(self.max_rpm)
+        logger.info(
+            "ASR 请求限流：%.0f 次/分钟，间隔 %.2fs；切片并发 %d",
+            self.max_rpm,
+            60.0 / self.max_rpm,
+            self.chunk_concurrency,
+        )
+
 
     # ---------------- 主流程 ----------------
 
@@ -153,6 +212,8 @@ class OpenAIASRTranscriber(Transcriber):
             base_url=self.base_url,
             key_label=f"{self.name} 的 API Key",
             timeout=self.timeout,
+            max_retries=0,
+
         )
 
         limit = self._chunk_limit_bytes()
@@ -176,13 +237,50 @@ class OpenAIASRTranscriber(Transcriber):
             if temp_dir:
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
+    def _map_concurrently(self, func, items, label: str = "转写进度"):
+        """按 chunk_concurrency 并发执行并保持输入顺序；并发 1 时退化为串行。
+
+        进度用线程安全计数器上报「已完成 done/total 段」；并发只用于填满限流器
+        允许的请求预算，真正的节流由 _RateLimiter 负责（spec 006 决策 2/5）。
+        """
+        total = len(items)
+        if total <= 0:
+            return []
+        workers = max(1, min(self.chunk_concurrency, os.cpu_count() or 4, total))
+        state = {"done": 0}
+        lock = threading.Lock()
+        self._report_progress(0, total, f"{label}：共 {total} 段，并发 {workers}")
+
+        def _wrapped(item):
+            result = func(item)
+            with lock:
+                state["done"] += 1
+                done = state["done"]
+            logger.info("%s %d/%d 完成", label, done, total)
+            self._report_progress(done, total, f"已完成 {done}/{total} 段")
+            return result
+
+        if workers <= 1:
+            return [_wrapped(item) for item in items]
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="asr") as pool:
+            return list(pool.map(_wrapped, items))
+
     def _transcribe_by_speech(self, client, file_path: str, limit: int):
         """按静音边界切片后逐片转写；没有可用语音区间时返回 None（由调用方退化）。"""
+        logger.info("开始静音检测（需要完整解码音频，耗时与音频时长成正比）")
+        detect_started = time.perf_counter()
+
         regions = detect_speech_regions(
             file_path,
             noise_db=self.silence_noise_db,
             min_silence=self.min_silence_seconds,
         )
+        logger.info(
+            "静音检测完成：%d 个语音区间，耗时 %.1fs",
+            len(regions),
+            time.perf_counter() - detect_started,
+        )
+
         if len(regions) < 1:
             logger.info("未检测到语音区间，退回按时长均分切片")
             return None
@@ -203,8 +301,23 @@ class OpenAIASRTranscriber(Transcriber):
             if not cuts:
                 return None
             parts = []
-            for start, end, path in cuts:
+            total = len(cuts)
+            workers = max(1, min(self.chunk_concurrency, os.cpu_count() or 4, total))
+            logger.info(
+                "开始逐段转写：%d 段（并发 %d，受 %.0f 次/分钟限流）",
+                total,
+                workers,
+                self.max_rpm,
+            )
+
+            def _transcribe_cut(cut):
+                start, end, path = cut
+                segment_started = time.perf_counter()
                 result = self._safe_transcribe(client, path)
+                logger.info(
+                    "单段转写完成，耗时 %.1fs",
+                    time.perf_counter() - segment_started,
+                )
                 # chat 只回文字 → 用切片时的真实边界当时间轴
                 if len(result.segments) == 1:
                     result = TranscriptResult(
@@ -217,7 +330,9 @@ class OpenAIASRTranscriber(Transcriber):
                         ],
                         raw=result.raw,
                     )
-                parts.append((0.0, result))
+                return (0.0, result)
+
+            parts = self._map_concurrently(_transcribe_cut, cuts, "转写进度")
             return self._merge(parts) if parts else None
         except Exception:
             raise
@@ -269,22 +384,43 @@ class OpenAIASRTranscriber(Transcriber):
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise RuntimeError("音频切割失败：请确认 ffmpeg 可用，或该音频格式是否支持切割")
 
-        parts: List[Tuple[float, TranscriptResult]] = []
+        items = []
         offset = 0.0
+        for chunk in chunks:
+            items.append((offset, chunk))
+            offset += probe_duration_seconds(chunk) or segment_seconds
+
         try:
-            for chunk in chunks:
-                parts.append((offset, self._safe_transcribe(client, chunk)))
-                offset += probe_duration_seconds(chunk) or segment_seconds
+            parts = self._map_concurrently(
+                lambda item: (item[0], self._safe_transcribe(client, item[1])),
+                items,
+                "转写进度",
+            )
         except Exception:
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise
         return parts, temp_dir
 
+    def _report_progress(self, current: int, total: int, message: str = "") -> None:
+        """把逐段进度回调给 NoteGenerator；没有回调时静默忽略。"""
+        callback = getattr(self, "progress_callback", None)
+        if not callable(callback):
+            return
+        try:
+            callback(current, total, message)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("转写进度回调失败：%s", exc)
+
+
     def _safe_transcribe(self, client, path: str) -> TranscriptResult:
         try:
             return self._transcribe_one(client, path)
         except Exception as exc:  # noqa: BLE001 - 统一翻成人话再抛给上层
-            raise RuntimeError(_friendly_error(exc)) from exc
+            error = RuntimeError(_friendly_error(exc))
+            # 429/鉴权/模型不存在等错误重试整条流程只会重复下载和切片，直接标记不可重试。
+            if getattr(exc, "status_code", None) in (400, 401, 403, 404, 429):
+                error.non_retryable = True  # type: ignore[attr-defined]
+            raise error from exc
 
     def _transcribe_one(self, client, path: str) -> TranscriptResult:
         if self.api_style == "chat":
@@ -336,6 +472,8 @@ class OpenAIASRTranscriber(Transcriber):
         last_error: Optional[Exception] = None
         for response_format in _RESPONSE_FORMATS:
             try:
+                self._rate_limiter.wait()
+
                 with open(upload_path, "rb") as f:
                     return client.audio.transcriptions.create(
                         file=(os.path.basename(upload_path), f.read()),
@@ -353,6 +491,7 @@ class OpenAIASRTranscriber(Transcriber):
 
     def _create_chat_completion(self, client, upload_path: str):
         """chat/completions + input_audio（小米 MiMo-V2.5-ASR 等）。"""
+        self._rate_limiter.wait()
         with open(upload_path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode("ascii")
         mime = "audio/mpeg" if upload_path.lower().endswith(".mp3") else "audio/wav"

@@ -6,7 +6,44 @@ import toast from 'react-hot-toast'
 import { get, set, del } from 'idb-keyval'
 
 
-export type TaskStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILD'
+export type TaskStatus =
+  | 'PENDING'
+  | 'PARSING'
+  | 'DOWNLOADING'
+  | 'TRANSCRIBING'
+  | 'SUMMARIZING'
+  | 'FORMATTING'
+  | 'SAVING'
+  | 'RUNNING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'FAILD'
+
+export type TaskStage =
+  | 'queued'
+  | 'parsing'
+  | 'fetching_subtitles'
+  | 'downloading_video'
+  | 'downloading_audio'
+  | 'transcribing'
+  | 'planning_frames'
+  | 'extracting_frames'
+  | 'building_grids'
+  | 'summarizing'
+  | 'post_processing'
+  | 'saving'
+  | 'success'
+  | 'failed'
+
+export interface TaskProgress {
+  stage?: TaskStage | string | null
+  stageLabel?: string | null
+  progress?: number | null
+  stageProgress?: number | null
+  message?: string | null
+  detail?: string | null
+  updatedAt?: string | null
+}
 
 export interface AudioMeta {
   cover_url: string
@@ -43,6 +80,13 @@ export interface Task {
   markdown: string|Markdown [] //为了兼容之前的笔记
   transcript: Transcript
   status: TaskStatus
+    stage?: TaskStage | string | null
+    stageLabel?: string | null
+    progress?: number | null
+    stageProgress?: number | null
+    message?: string | null
+    detail?: string | null
+    updatedAt?: string | null
   audioMeta: AudioMeta
   createdAt: string
   formData: {
@@ -64,9 +108,9 @@ interface TaskStore {
   removeTask: (id: string) => void
   clearTasks: () => void
   setCurrentTask: (taskId: string | null) => void
-  getCurrentTask: () => Task | null
-  retryTask: (id: string) => void
-}
+    getCurrentTask: () => Task | null
+    retryTask: (id: string) => void
+  }
 
 export const useTaskStore = create<TaskStore>()(
   persist(
@@ -82,6 +126,10 @@ export const useTaskStore = create<TaskStore>()(
               formData: formData,
               id: taskId,
               status: 'PENDING',
+                stage: 'queued',
+                stageLabel: '等待处理',
+                progress: 0,
+                stageProgress: 0,
               markdown: '',
               platform: platform,
               transcript: {
@@ -111,7 +159,15 @@ export const useTaskStore = create<TaskStore>()(
             tasks: state.tasks.map(task => {
               if (task.id !== id) return task
 
-              if (task.status === 'SUCCESS' && data.status === 'SUCCESS') return task
+                // 成功状态默认幂等；但如果这次带了 markdown，则允许把结果补写进去，
+                // 避免“先写 SUCCESS、后写 markdown”被早退规则吞掉。
+                if (
+                  task.status === 'SUCCESS' &&
+                  data.status === 'SUCCESS' &&
+                  !data.markdown
+                ) {
+                  return task
+                }
 
               // 如果是 markdown 字符串，封装为版本
               if (typeof data.markdown === 'string') {

@@ -30,7 +30,8 @@ class VideoReader:
                  frames_per_second=2,
                  frame_limit_mode="total",
                  subtitle_starts=None,
-                 llm_timestamps=None):
+                 llm_timestamps=None,
+                 progress_callback=None):
         self.video_path = video_path
         self.grid_size = grid_size
         self.frame_interval = frame_interval
@@ -45,21 +46,22 @@ class VideoReader:
         _token = uuid.uuid4().hex[:12]
         self.frame_dir = frame_dir or get_app_dir(os.path.join("output_frames", _token))
         self.grid_dir = grid_dir or get_app_dir(os.path.join("grid_output", _token))
+        self.progress_callback = progress_callback
         # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
         self.sampling_mode = sampling_mode
         self.max_frames = int(max_frames or 60)
-        # spec 002 修正：高价值采样限制方式二选一——
-        #   total：只用 max_frames（全片上限）；per_second：只用 frames_per_second（每秒上限）
         self.frames_per_second = int(frames_per_second or 1)
         self.frame_limit_mode = frame_limit_mode or "total"
-        # 高价值采样已经按内容挑过帧了，再做逐帧 MD5 去重会把长静态画面（PPT / 口播课）
-        # 全删掉（实测 40 分钟课程被删到只剩几张），所以 smart 模式关闭这个兜底去重。
         if self.sampling_mode in ("smart", "hybrid"):
             self.dedupe_enabled = False
         self.subtitle_starts = list(subtitle_starts or [])
-        # 综合采样：LLM 读字幕挑出来的时间点
         self.llm_timestamps = list(llm_timestamps or [])
         self.font_path = font_path
+
+    def _report_progress(self, stage: str, current: int | None = None, total: int | None = None, message: str = ""):
+        if self.progress_callback:
+            self.progress_callback(stage, current=current, total=total, message=message)
+
 
     @staticmethod
     def _calculate_file_md5(file_path: str) -> str:
@@ -136,6 +138,12 @@ class VideoReader:
                 for future in as_completed(futures):
                     ts = futures[future]
                     frame_results[ts] = future.result()
+                    self._report_progress(
+                        "extracting_frames",
+                        current=len(frame_results),
+                        total=len(timestamps),
+                        message=f"已抽取 {len(frame_results)} / {len(timestamps)} 帧",
+                    )
 
             # 按时间戳顺序整理结果，并进行去重
             image_paths = []
@@ -214,13 +222,38 @@ class VideoReader:
         grid_img.save(save_path, quality=self.save_quality)
         return save_path
 
-    def encode_images_to_base64(self, image_paths: list[str]) -> list[str]:
-        base64_images = []
-        for path in image_paths:
+    def encode_images_to_base64(self, image_paths: list[str], report=None) -> list[str]:
+        """并发读取并编码为 data URL。
+
+        :param image_paths: 待编码图片路径（顺序即返回顺序）
+        :param report: 可选回调 ``report(done, total)``，用于进度回报
+        :return: ``data:image/jpeg;base64,...`` 列表，顺序与入参一致
+        """
+        total = len(image_paths)
+        if not total:
+            return []
+
+        def _encode_one(path: str) -> str:
             with open(path, "rb") as img_file:
                 encoded_string = base64.b64encode(img_file.read()).decode("utf-8")
-                base64_images.append(f"data:image/jpeg;base64,{encoded_string}")
-        return base64_images
+            return f"data:image/jpeg;base64,{encoded_string}"
+
+        results: list[str] = []
+        workers = max(1, min(os.cpu_count() or 4, 8, total))
+        if workers == 1:
+            for idx, path in enumerate(image_paths, start=1):
+                results.append(_encode_one(path))
+                if report:
+                    report(idx, total)
+            return results
+
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="b64") as pool:
+            # map 保序：编码结果必须与网格图顺序一致（LLM 看到的图序不能乱）。
+            for idx, encoded in enumerate(pool.map(_encode_one, image_paths), start=1):
+                results.append(encoded)
+                if report:
+                    report(idx, total)
+        return results
 
     def run(self)->list[str]:
         logger.info("开始提取视频帧...")
@@ -260,20 +293,64 @@ class VideoReader:
                         frame_limit_mode=self.frame_limit_mode,
                         duration=duration,
                     )
+                self._report_progress(
+                    "planning_frames", current=1, total=1, message=f"已规划 {len(timestamps)} 个采样时间点"
+                )
                 # per_second 模式下不设总量上限，帧数可能超过 extract_frames 的默认 1000
                 self.extract_frames(timestamps=timestamps, max_frames=len(timestamps))
             else:
                 self.extract_frames()
             logger.info("开始拼接网格图...")
-            image_paths = []
             groups = self.group_images()
-            for idx, group in enumerate(groups, start=1):
-                out_path = self.concat_images(group, f"grid_{idx}")
-                if out_path:
-                    image_paths.append(out_path)
+            # 进度分母 = 网格组数 + 待编码图像数（两者都在开始时已知，避免虚假/回退进度）
+            frame_total = sum(len(group) for group in groups)
+            total_units = len(groups) + frame_total
+            grid_paths: list[str | None] = []
 
+            def _concat_item(item: tuple[int, list[str]]) -> str | None:
+                idx, group = item
+                return self.concat_images(group, f"grid_{idx}")
+
+            if groups:
+                workers = max(1, min(os.cpu_count() or 4, 8, len(groups)))
+                items = list(enumerate(groups, start=1))
+                if workers == 1:
+                    for idx, group in items:
+                        grid_paths.append(self.concat_images(group, f"grid_{idx}"))
+                        self._report_progress(
+                            "building_grids",
+                            current=len(grid_paths),
+                            total=total_units,
+                            message=f"已拼接 {len(grid_paths)} / {len(groups)} 个网格图",
+                        )
+                else:
+                    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="grid") as pool:
+                        for out_path in pool.map(_concat_item, items):
+                            grid_paths.append(out_path)
+                            self._report_progress(
+                                "building_grids",
+                                current=len(grid_paths),
+                                total=total_units,
+                                message=f"已拼接 {len(grid_paths)} / {len(groups)} 个网格图",
+                            )
+
+            image_paths = [path for path in grid_paths if path]
             logger.info("📤 开始编码图像...")
-            urls = self.encode_images_to_base64(image_paths)
+            urls = self.encode_images_to_base64(
+                image_paths,
+                report=lambda done, total: self._report_progress(
+                    "building_grids",
+                    current=len(groups) + done,
+                    total=total_units,
+                    message=f"正在编码第 {done} / {total} 张图像",
+                ),
+            )
+            self._report_progress(
+                "building_grids",
+                current=total_units,
+                total=total_units,
+                message=f"网格图与图像编码完成，共 {len(urls)} 张",
+            )
             return urls
         except Exception as e:
             logger.error(f"发生错误：{str(e)}")

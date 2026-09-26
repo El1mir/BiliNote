@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Loader2, AlertTriangle, RotateCcw, Clipboard } from 'lucide-react'
 import { useBackendEvents } from '@/components/BackendHealth/useBackendEvents'
@@ -66,6 +66,7 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
               <AlertTriangle className="w-5 h-5" />
               后端启动失败
             </DialogTitle>
+            <DialogDescription className="sr-only">后端服务初始化状态</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 mt-2 text-sm">
             <p className="text-muted-foreground">
@@ -142,6 +143,7 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
             <Loader2 className="animate-spin w-5 h-5" />
             后端正在初始化中…
           </DialogTitle>
+            <DialogDescription className="sr-only">后端服务初始化状态</DialogDescription>
         </DialogHeader>
         <p className="text-muted-foreground mt-2">
           请稍候，系统正在启动后端服务。首次启动可能需要 10-30 秒解压依赖。

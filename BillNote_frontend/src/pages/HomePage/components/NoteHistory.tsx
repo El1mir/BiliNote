@@ -6,6 +6,7 @@ import { Trash } from 'lucide-react'
 import { Button } from '@/components/ui/button.tsx'
 import PinyinMatch from 'pinyin-match'
 import Fuse from 'fuse.js'
+import { asText } from '@/utils/text'
 
 import {
   Tooltip,
@@ -92,7 +93,7 @@ const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId }) => {
               {task.platform === 'local' ? (
                 <img
                   src={
-                    task.audioMeta.cover_url ? `${task.audioMeta.cover_url}` : '/placeholder.png'
+                    task.audioMeta?.cover_url ? `${task.audioMeta?.cover_url}` : '/placeholder.png'
                   }
                   alt="封面"
                   className="h-10 w-12 rounded-md object-cover"
@@ -101,8 +102,8 @@ const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId }) => {
                   <LazyImage
 
                       src={
-                        task.audioMeta.cover_url
-                            ? `${baseURL}/image_proxy?url=${encodeURIComponent(task.audioMeta.cover_url)}`
+                        task.audioMeta?.cover_url
+                            ? `${baseURL}/image_proxy?url=${encodeURIComponent(task.audioMeta?.cover_url)}`
                             : '/placeholder.png'
                       }
                       alt="封面"
@@ -116,11 +117,11 @@ const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId }) => {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="line-clamp-2 max-w-[180px] flex-1 overflow-hidden text-sm text-ellipsis">
-                        {task.audioMeta.title || '未命名笔记'}
+                        {asText(task.audioMeta?.title, '未命名笔记')}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{task.audioMeta.title || '未命名笔记'}</p>
+                      <p>{asText(task.audioMeta?.title, '未命名笔记')}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

@@ -74,7 +74,8 @@ def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
                                timeout=600, chunk_size_mb=18, name: str = "",
                                api_style: str = "transcriptions",
                                max_speech_chunks: int = 120, silence_noise_db: float = -30.0,
-                               min_silence_seconds: float = 0.5):
+                               min_silence_seconds: float = 0.5, max_rpm: float = 30,
+                               chunk_concurrency: int | None = None):
     """OpenAI 兼容 ASR。所有参数都是标量，保证 _init_transcriber 的配置缓存能正确失效。
 
     api_style: transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
@@ -92,6 +93,8 @@ def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
         max_speech_chunks=max_speech_chunks,
         silence_noise_db=silence_noise_db,
         min_silence_seconds=min_silence_seconds,
+        max_rpm=max_rpm,
+        **({"chunk_concurrency": chunk_concurrency} if chunk_concurrency is not None else {}),
     )
 
 def get_whisper_transcriber(model_size="base", device="cuda"):
@@ -169,6 +172,8 @@ def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="cu
             max_speech_chunks=options.get("max_speech_chunks", 120),
             silence_noise_db=options.get("silence_noise_db", -30.0),
             min_silence_seconds=options.get("min_silence_seconds", 0.5),
+            max_rpm=options.get("max_rpm", 30),
+            chunk_concurrency=options.get("chunk_concurrency"),
         )
 
     # fallback

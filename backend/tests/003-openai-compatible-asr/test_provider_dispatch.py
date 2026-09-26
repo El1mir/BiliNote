@@ -5,7 +5,7 @@ from app.transcriber import transcriber_provider as provider
 class FakeOpenAIASR:
     def __init__(self, base_url, api_key, model, timeout=600, chunk_size_mb=18, name="",
                  api_style="transcriptions", max_speech_chunks=120, silence_noise_db=-30.0,
-                 min_silence_seconds=0.5):
+                 min_silence_seconds=0.5, max_rpm=30):
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
@@ -15,6 +15,7 @@ class FakeOpenAIASR:
         self.max_speech_chunks = max_speech_chunks
         self.silence_noise_db = silence_noise_db
         self.min_silence_seconds = min_silence_seconds
+        self.max_rpm = max_rpm
 
 
 def _reset(monkeypatch):

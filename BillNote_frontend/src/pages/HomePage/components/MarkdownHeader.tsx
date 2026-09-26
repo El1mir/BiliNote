@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
+import { asText } from '@/utils/text'
 
 interface VersionNote {
   ver_id: string
@@ -65,7 +66,7 @@ export function MarkdownHeader({
     setCopied(true)
   }
 
-  const styleName = noteStyles.find(v => v.value === style)?.label || style
+  const styleName = asText(noteStyles.find(v => v.value === style)?.label || style, '未知风格')
 
   const reversedMarkdown: VersionNote[] = Array.isArray(currentTask?.markdown)
     ? [...currentTask!.markdown].reverse()
@@ -115,7 +116,7 @@ export function MarkdownHeader({
         )}
 
         <Badge variant="secondary" className="bg-pink-100 text-pink-700 hover:bg-pink-200">
-          {modelName}
+          {asText(modelName, '未知模型')}
         </Badge>
         <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
           {styleName}

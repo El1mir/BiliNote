@@ -1,7 +1,9 @@
 import json
-import logging
 import os
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional, Tuple, Union, Any
@@ -17,7 +19,14 @@ from app.downloaders.local_downloader import LocalDownloader
 from app.downloaders.youtube_downloader import YoutubeDownloader
 from app.db.video_task_dao import delete_task_by_video, insert_video_task
 from app.enmus.exception import NoteErrorEnum, ProviderErrorEnum
-from app.enmus.task_status_enums import TaskStatus
+from app.enmus.task_status_enums import (
+    TaskStage,
+    TaskStatus,
+    global_progress,
+    normalize_progress,
+    stage_for_status,
+    stage_label,
+)
 from app.enmus.note_enums import DownloadQuality
 from app.exceptions.note import NoteError
 from app.exceptions.provider import ProviderError
@@ -33,6 +42,7 @@ from app.services.provider import ProviderService
 from app.transcriber.base import Transcriber
 from app.transcriber.transcriber_provider import get_transcriber, _transcribers
 from app.utils.note_helper import replace_content_markers, prepend_source_link
+from app.utils.logger import get_logger
 from app.utils.screenshot_marker import extract_screenshot_timestamps
 from app.utils.status_code import StatusCode
 from app.utils.transcript_helper import densify_segments
@@ -56,9 +66,9 @@ IMAGE_OUTPUT_DIR = os.getenv("OUT_DIR", "./static/screenshots")
 # 图片基础 URL（用于生成 Markdown 中的图片链接，需前端静态目录对应）
 IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "/static/screenshots")
 
-# 日志配置
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+# 日志配置：统一走 app.utils.logger，保证控制台与 logs/app.log 双写、
+# 并且带 `时间 [级别] 模块名 -` 前缀（裸 logging.getLogger 会因为无 handler 丢掉全部 INFO）。
+logger = get_logger(__name__)
 
 
 class NoteGenerator:
@@ -76,6 +86,9 @@ class NoteGenerator:
         self.transcriber: Transcriber = self._init_transcriber()
         self.video_path: Optional[Path] = None
         self.video_img_urls=[]
+        # 429/鉴权等错误不应触发任务级重试，否则会重复下载和切片。
+        self.last_error_non_retryable = False
+
         logger.info("NoteGenerator 初始化完成")
 
 
@@ -131,6 +144,8 @@ class NoteGenerator:
             grid_size = []
 
         try:
+            self.last_error_non_retryable = False
+
             logger.info(f"开始生成笔记 (task_id={task_id})")
             self._update_status(task_id, TaskStatus.PARSING)
 
@@ -163,6 +178,12 @@ class NoteGenerator:
 
             # 缓存没有，尝试获取平台字幕
             if transcript is None:
+                self._update_status(
+                    task_id,
+                    TaskStatus.PARSING,
+                    message="正在获取平台字幕",
+                    stage=TaskStage.FETCHING_SUBTITLES,
+                )
                 logger.info("尝试获取平台字幕（优先于音频下载）...")
                 try:
                     transcript = downloader.download_subtitles(video_url)
@@ -199,6 +220,7 @@ class NoteGenerator:
                 sampling_mode=sampling_mode,
                 frames_per_second=frames_per_second,
                 frame_limit_mode=frame_limit_mode,
+                task_id=task_id,
             )
 
             # 3. 如果前面没拿到字幕，走转写流程
@@ -210,6 +232,8 @@ class NoteGenerator:
                     transcript_cache_file=transcript_cache_file,
                     status_phase=TaskStatus.TRANSCRIBING,
                     task_id=task_id,
+                    # 上面已经探测过一次平台字幕，这里不再重复请求。
+                    subtitle_attempted=True,
                 )
 
             # spec 002：smart / hybrid 采样需要字幕，因此在转写完成后抽帧拼图
@@ -223,6 +247,13 @@ class NoteGenerator:
                     )
                     subtitle_starts = [seg.start for seg in plan_segments]
                     llm_timestamps = []
+                    self._update_status(
+                        task_id,
+                        TaskStatus.DOWNLOADING,
+                        stage=TaskStage.PLANNING_FRAMES,
+                        message=f"正在规划采样时间点，共 {len(subtitle_starts)} 个字幕分段",
+                        detail={"subtitle_segments": len(subtitle_starts), "mode": sampling_mode},
+                    )
                     if sampling_mode == "hybrid":
                         logger.info(f"综合采样：字幕分段 {len(subtitle_starts)} 个")
                         llm_timestamps = self._plan_frames_with_llm(
@@ -243,6 +274,7 @@ class NoteGenerator:
                         frame_limit_mode=frame_limit_mode,
                         subtitle_starts=subtitle_starts,
                         llm_timestamps=llm_timestamps,
+                        progress_callback=self._video_progress_callback(task_id),
                     ).run()
                 except Exception as exc:
                     logger.error(f"视频理解抽帧失败：{exc}")
@@ -261,22 +293,39 @@ class NoteGenerator:
                 style=style,
                 extras=extras,
                 video_img_urls=self.video_img_urls,
+                task_id=task_id,
             )
 
             # 4. 截图 & 链接替换
             if _format:
+                self._update_status(
+                    task_id,
+                    TaskStatus.FORMATTING,
+                    stage=TaskStage.POST_PROCESSING,
+                    message="正在整理截图和视频链接",
+                    stage_progress=0,
+                    detail={"formats": _format},
+                )
                 markdown = self._post_process_markdown(
                     markdown=markdown,
                     video_path=self.video_path,
                     formats=_format,
                     audio_meta=audio_meta,
                     platform=platform,
+                    task_id=task_id,
                 )
 
             markdown = prepend_source_link(markdown, str(video_url))
 
             # 5. 保存记录到数据库
-            self._update_status(task_id, TaskStatus.SAVING)
+            self._update_status(
+                task_id,
+                TaskStatus.SAVING,
+                stage=TaskStage.SAVING,
+                message="正在保存笔记和任务记录",
+                stage_progress=10,
+                detail={"step": "save_metadata"},
+            )
             self._save_metadata(video_id=audio_meta.video_id, platform=platform, task_id=task_id)
 
             # 6. 完成
@@ -287,6 +336,8 @@ class NoteGenerator:
         except Exception as exc:
             logger.error(f"生成笔记流程异常 (task_id={task_id})：{exc}", exc_info=True)
             self._update_status(task_id, TaskStatus.FAILED, message=str(exc))
+            self.last_error_non_retryable = bool(getattr(exc, "non_retryable", False))
+
             return None
 
     @staticmethod
@@ -401,45 +452,59 @@ class NoteGenerator:
         logger.info(f"使用下载器：{downloader_cls.__class__}")
         return instance
 
-    def _update_status(self, task_id: Optional[str], status: Union[str, TaskStatus], message: Optional[str] = None):
-        """
-        创建或更新 {task_id}.status.json，记录当前任务状态
-
-        :param task_id: 任务唯一 ID
-        :param status: TaskStatus 枚举或自定义状态字符串
-        :param message: 可选消息，用于记录失败原因等
-        """
+    def _update_status(
+        self,
+        task_id: Optional[str],
+        status: Union[str, TaskStatus],
+        message: Optional[str] = None,
+        *,
+        stage: Optional[TaskStage | str] = None,
+        progress: Optional[float] = None,
+        stage_progress: Optional[float] = None,
+        detail: Optional[dict] = None,
+    ):
+        """Write a backward-compatible task status with optional stage metadata."""
         if not task_id:
             return
 
         NOTE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         status_file = NOTE_OUTPUT_DIR / f"{task_id}.status.json"
-        print(f"写入状态文件: {status_file} 当前状态: {status}")
-        data = {"status": status.value if isinstance(status, TaskStatus) else status}
-        if message:
-            data["message"] = message
+        status_value = status.value if isinstance(status, TaskStatus) else str(status)
+        resolved_stage = stage or stage_for_status(status_value)
+        try:
+            resolved_stage = TaskStage(resolved_stage)
+        except (TypeError, ValueError):
+            resolved_stage = stage_for_status(status_value)
+
+        normalized_stage_progress = normalize_progress(stage_progress)
+        normalized_progress = normalize_progress(progress)
+        if normalized_progress is None:
+            normalized_progress = global_progress(resolved_stage, normalized_stage_progress)
+
+        data = {
+            "status": status_value,
+            "stage": resolved_stage.value,
+            "stage_label": stage_label(resolved_stage),
+            "progress": normalized_progress,
+            "stage_progress": normalized_stage_progress,
+            "message": message or "",
+            "detail": detail or {},
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
         try:
-            # 临时文件带唯一后缀：万一同一 task_id 被并发跑（历史 bug），
-            # 也不会两个进程抢同一个 .tmp 导致 Permission denied。
+            # Keep a unique temporary file so concurrent writes cannot collide.
             temp_file = status_file.with_name(f"{status_file.name}.{uuid.uuid4().hex[:8]}.tmp")
-
-            # Write to temporary file
-            with temp_file.open('w', encoding='utf-8') as f:
+            with temp_file.open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-
-            # Atomic rename operation
             temp_file.replace(status_file)
-
-            print(f"状态文件写入成功: {status_file}")
         except Exception as e:
             logger.error(f"写入状态文件失败 (task_id={task_id})：{e}")
-            # Try to write error to file directly as fallback
             try:
-                with status_file.open('w', encoding='utf-8') as f:
-                    f.write(f"Error writing status: {str(e)}")
-            except:
-                logger.error(f"写入错误  {e}")
+                with status_file.open("w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                logger.exception("写入状态文件兜底失败 (task_id=%s)", task_id)
 
     def _handle_exception(self, task_id, exc):
         logger.error(f"任务异常 (task_id={task_id})", exc_info=True)
@@ -450,6 +515,41 @@ class NoteGenerator:
             except:
                 error_message = str(error_message)
         self._update_status(task_id, TaskStatus.FAILED, message=error_message)
+
+    def _video_progress_callback(self, task_id: str):
+        def report(stage: str, current=None, total=None, message: str = ""):
+            stage_progress = None
+            if current is not None and total:
+                stage_progress = current / total * 100
+            self._update_status(
+                task_id,
+                TaskStatus.DOWNLOADING,
+                message=message,
+                stage=stage,
+                stage_progress=stage_progress,
+                detail={"current": current, "total": total, "unit": "frames" if "frame" in stage else "grids"},
+            )
+
+        return report
+
+    def _transcriber_progress_callback(self, task_id: str):
+        """把逐段转写进度写回任务状态，供日志和前端进度条使用。"""
+
+        def report(current, total, message: str = ""):
+            stage_progress = None
+            if current is not None and total:
+                stage_progress = current / total * 100
+            self._update_status(
+                task_id,
+                TaskStatus.TRANSCRIBING,
+                message=message or f"正在转写 {current}/{total}",
+                stage=TaskStage.TRANSCRIBING,
+                stage_progress=stage_progress,
+                detail={"current": current, "total": total, "unit": "segments"},
+            )
+
+        return report
+
 
     def _download_media(
         self,
@@ -468,6 +568,7 @@ class NoteGenerator:
         sampling_mode: str = "interval",
         frames_per_second: int = 2,
         frame_limit_mode: str = "total",
+        task_id: Optional[str] = None,
     ) -> AudioDownloadResult | None:
         """
         1. 检查音频缓存；若不存在，则根据需要下载音频或视频（若需截图/可视化）。
@@ -485,10 +586,10 @@ class NoteGenerator:
         :param video_understanding: 是否需要生成缩略图
         :param video_interval: 视频截帧间隔
         :param grid_size: 缩略图网格尺寸
+        :param task_id: 任务 ID（由调用方显式传入，不再从缓存文件名反推，避免写错状态文件）
         :return: AudioDownloadResult 对象
         """
-        task_id = audio_cache_file.stem.split("_")[0]
-        self._update_status(task_id, status_phase)
+        self._update_status(task_id, status_phase, stage=TaskStage.DOWNLOADING_AUDIO, message="准备下载音频")
 
         # 已有缓存，尝试加载
         if audio_cache_file.exists():
@@ -527,12 +628,24 @@ class NoteGenerator:
         frame_interval = video_interval if video_interval and video_interval > 0 else 6
         if need_video:
             try:
+                self._update_status(
+                    task_id,
+                    TaskStatus.DOWNLOADING,
+                    stage=TaskStage.DOWNLOADING_VIDEO,
+                    message="正在下载视频",
+                )
                 logger.info("开始下载视频")
                 video_path_str = downloader.download_video(video_url)
                 self.video_path = Path(video_path_str)
                 logger.info(f"视频下载完成：{self.video_path}")
 
-                if grid_size and sampling_mode != "smart":
+                if grid_size and sampling_mode not in ("smart", "hybrid"):
+                    self._update_status(
+                        task_id,
+                        TaskStatus.DOWNLOADING,
+                        message="正在抽取视频画面并拼接网格图",
+                        stage=TaskStage.EXTRACTING_FRAMES,
+                    )
                     self.video_img_urls = VideoReader(
                         video_path=str(self.video_path),
                         grid_size=tuple(grid_size),
@@ -540,6 +653,7 @@ class NoteGenerator:
                         unit_width=960,
                         unit_height=540,
                         save_quality=80,
+                        progress_callback=self._video_progress_callback(task_id),
                     ).run()
                 elif grid_size:
                     logger.info("smart 采样需要字幕，抽帧将在转写完成后进行")
@@ -552,6 +666,12 @@ class NoteGenerator:
 
         # 下载音频
         try:
+            self._update_status(
+                task_id,
+                TaskStatus.DOWNLOADING,
+                stage=TaskStage.DOWNLOADING_AUDIO,
+                message="正在下载音频",
+            )
             logger.info("开始下载音频")
             audio = downloader.download(
                 video_url=video_url,
@@ -576,6 +696,7 @@ class NoteGenerator:
         transcript_cache_file: Path,
         status_phase: TaskStatus,
         task_id: Optional[str] = None,
+        subtitle_attempted: bool = False,
     ) -> TranscriptResult | None:
         """
         优先获取平台字幕，没有则 fallback 到音频转写
@@ -586,6 +707,7 @@ class NoteGenerator:
         :param transcript_cache_file: 缓存文件路径
         :param status_phase: 状态枚举
         :param task_id: 任务 ID
+        :param subtitle_attempted: 调用方是否已经探测过平台字幕（避免重复网络请求）
         :return: TranscriptResult 对象
         """
         self._update_status(task_id, status_phase)
@@ -600,28 +722,38 @@ class NoteGenerator:
             except Exception as e:
                 logger.warning(f"加载转写缓存失败，将重新获取：{e}")
 
-        # 1. 先尝试获取平台字幕
-        logger.info("尝试获取平台字幕...")
-        try:
-            transcript = downloader.download_subtitles(video_url)
-            if transcript and transcript.segments:
-                logger.info(f"成功获取平台字幕，共 {len(transcript.segments)} 段")
-                # 缓存结果
-                transcript_cache_file.write_text(
-                    json.dumps(asdict(transcript), ensure_ascii=False, indent=2),
-                    encoding="utf-8"
-                )
-                return transcript
-            else:
-                logger.info("平台无可用字幕，将使用音频转写")
-        except Exception as e:
-            logger.warning(f"获取平台字幕失败: {e}，将使用音频转写")
+        # 1. 先尝试获取平台字幕（调用方已试过时跳过，避免重复请求）
+        if subtitle_attempted:
+            logger.info("平台字幕已探测过（无可用字幕），跳过重复请求")
+        else:
+            logger.info("尝试获取平台字幕...")
+            try:
+                transcript = downloader.download_subtitles(video_url)
+                if transcript and transcript.segments:
+                    logger.info(f"成功获取平台字幕，共 {len(transcript.segments)} 段")
+                    # 缓存结果
+                    transcript_cache_file.write_text(
+                        json.dumps(asdict(transcript), ensure_ascii=False, indent=2),
+                        encoding="utf-8"
+                    )
+                    return transcript
+                else:
+                    logger.info("平台无可用字幕，将使用音频转写")
+            except Exception as e:
+                logger.warning(f"获取平台字幕失败: {e}，将使用音频转写")
 
         # 2. Fallback 到音频转写
+        self._update_status(
+            task_id,
+            TaskStatus.TRANSCRIBING,
+            stage=TaskStage.TRANSCRIBING,
+            message="平台无可用字幕，开始音频转写",
+        )
         return self._transcribe_audio(
             audio_file=audio_file,
             transcript_cache_file=transcript_cache_file,
             status_phase=status_phase,
+            task_id=task_id,
         )
 
     def _transcribe_audio(
@@ -629,6 +761,7 @@ class NoteGenerator:
         audio_file: str,
         transcript_cache_file: Path,
         status_phase: TaskStatus,
+        task_id: Optional[str] = None,
     ) -> TranscriptResult | None:
         """
         1. 检查转写缓存；若存在则尝试加载，否则调用转写器生成并缓存。
@@ -637,9 +770,9 @@ class NoteGenerator:
         :param audio_file: 音频文件本地路径
         :param transcript_cache_file: 转写结果缓存路径
         :param status_phase: 对应的状态枚举，如 TaskStatus.TRANSCRIBING
+        :param task_id: 任务 ID（由调用方传入，不再从文件名反推）
         :return: TranscriptResult 对象
         """
-        task_id = transcript_cache_file.stem.split("_")[0]
         self._update_status(task_id, status_phase)
 
         # 已有缓存，尝试加载
@@ -655,7 +788,26 @@ class NoteGenerator:
         # 调用转写器
         try:
             logger.info("开始转写音频")
-            transcript = self.transcriber.transcript(file_path=audio_file)
+            # 转写器是单例：必须在调用前安装回调，调用后复原，
+            # 否则进度回调要么收不到、要么把上一个任务的 task_id 带到下一个任务。
+            had_callback = hasattr(self.transcriber, "progress_callback")
+            previous_callback = getattr(self.transcriber, "progress_callback", None)
+            setattr(
+                self.transcriber,
+                "progress_callback",
+                self._transcriber_progress_callback(task_id),
+            )
+            try:
+                transcript = self.transcriber.transcript(file_path=audio_file)
+            finally:
+                if had_callback:
+                    setattr(self.transcriber, "progress_callback", previous_callback)
+                else:
+                    try:
+                        delattr(self.transcriber, "progress_callback")
+                    except AttributeError:
+                        pass
+
             transcript_cache_file.write_text(json.dumps(asdict(transcript), ensure_ascii=False, indent=2), encoding="utf-8")
             logger.info(f"转写并缓存成功 ({transcript_cache_file})")
             return transcript
@@ -676,6 +828,7 @@ class NoteGenerator:
         style: Optional[str],
         extras: Optional[str],
             video_img_urls: List[str],
+        task_id: Optional[str] = None,
     ) -> str | None:
         """
         调用 GPT 对转写结果进行总结，生成 Markdown 文本并缓存。
@@ -689,10 +842,20 @@ class NoteGenerator:
         :param formats: 包含 'link' 或 'screenshot' 的列表
         :param style: GPT 输出风格
         :param extras: GPT 额外参数
+        :param task_id: 真实任务 ID（用于状态文件与 checkpoint key）
         :return: 生成的 Markdown 字符串
         """
-        task_id = markdown_cache_file.stem
-        self._update_status(task_id, TaskStatus.SUMMARIZING)
+        self._update_status(
+            task_id,
+            TaskStatus.SUMMARIZING,
+            stage=TaskStage.SUMMARIZING,
+            message=f"正在调用模型生成笔记（{len(transcript.segments) if transcript else 0} 段字幕）",
+            detail={
+                "title": audio_meta.title,
+                "segments": len(transcript.segments) if transcript else 0,
+                "video_images": len(video_img_urls or []),
+            },
+        )
 
         source = GPTSource(
             title=audio_meta.title,
@@ -724,6 +887,7 @@ class NoteGenerator:
         formats: List[str],
         audio_meta: AudioDownloadResult,
         platform: str,
+        task_id: Optional[str] = None,
     ) -> str:
         """
         对生成的 Markdown 做后期处理：插入截图和/或插入链接。
@@ -733,11 +897,12 @@ class NoteGenerator:
         :param formats: 包含 'link' 或 'screenshot' 的列表
         :param audio_meta: AudioDownloadResult 元信息，用于链接替换
         :param platform: 平台标识，用于链接替换
+        :param task_id: 任务 ID（用于阶段进度回报）
         :return: 处理后的 Markdown 字符串
         """
         if "screenshot" in formats and video_path:
             try:
-                markdown = self._insert_screenshots(markdown, video_path)
+                markdown = self._insert_screenshots(markdown, video_path, task_id=task_id)
             except Exception as exc:
                 logger.warning("截图插入失败，跳过该步骤")
 
@@ -747,28 +912,83 @@ class NoteGenerator:
             except Exception as e:
                 logger.warning(f"链接插入失败，跳过该步骤：{e}")
 
+        self._update_status(
+            task_id,
+            TaskStatus.FORMATTING,
+            stage=TaskStage.POST_PROCESSING,
+            message="截图与链接处理完成",
+            stage_progress=100,
+        )
         return markdown
 
-    def _insert_screenshots(self, markdown: str, video_path: Path) -> str | None | Any:
+    def _insert_screenshots(
+        self,
+        markdown: str,
+        video_path: Path,
+        task_id: Optional[str] = None,
+    ) -> str | None | Any:
         """
         扫描 Markdown 文本中所有 Screenshot 标记，并替换为实际生成的截图链接。
 
+        截图由 ffmpeg 逐标记生成，属于纯等待型工作，因此并发执行；
+        结果按标记出现顺序回填，保证 URL 顺序与替换位置不变。
+
         :param markdown: 含有 *Screenshot-mm:ss 或 Screenshot-[mm:ss] 标记的 Markdown 文本
         :param video_path: 本地视频文件路径
+        :param task_id: 任务 ID（用于阶段进度回报）
         :return: 替换后的 Markdown 字符串
         """
         matches: List[Tuple[str, int]] = extract_screenshot_timestamps(markdown)
-        for idx, (marker, ts) in enumerate(matches):
-            try:
-                img_path = generate_screenshot(str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx)
-                filename = Path(img_path).name
-                # 构建前端可访问的 URL，例如 /static/screenshots/{filename}
-                img_url = f"{IMAGE_BASE_URL.rstrip('/')}/{filename}"
-                markdown = markdown.replace(marker, f"![]({img_url})", 1)
-            except Exception as exc:
-                logger.error(f"生成截图失败 (timestamp={ts})：{exc}")
-                # self._handle_exception(task_id, exc)
-                return None
+        if not matches:
+            return markdown
+
+        total = len(matches)
+        self._update_status(
+            task_id,
+            TaskStatus.FORMATTING,
+            stage=TaskStage.POST_PROCESSING,
+            message=f"正在生成 {total} 张截图",
+            stage_progress=0,
+            detail={"current": 0, "total": total, "unit": "screenshots"},
+        )
+
+        counter_lock = threading.Lock()
+        completed = 0
+
+        def _render(item: Tuple[int, Tuple[str, int]]) -> Tuple[str, str]:
+            nonlocal completed
+            idx, (marker, ts) = item
+            img_path = generate_screenshot(str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx)
+            filename = Path(img_path).name
+            # 构建前端可访问的 URL，例如 /static/screenshots/{filename}
+            img_url = f"{IMAGE_BASE_URL.rstrip('/')}/{filename}"
+            with counter_lock:
+                completed += 1
+                current = completed
+            self._update_status(
+                task_id,
+                TaskStatus.FORMATTING,
+                stage=TaskStage.POST_PROCESSING,
+                message=f"正在生成截图 {current}/{total}",
+                stage_progress=current / total * 100,
+                detail={"current": current, "total": total, "unit": "screenshots"},
+            )
+            return marker, img_url
+
+        workers = max(1, min(8, os.cpu_count() or 4, total))
+        try:
+            if workers == 1:
+                rendered = [_render(item) for item in enumerate(matches)]
+            else:
+                with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="screenshot") as executor:
+                    rendered = list(executor.map(_render, list(enumerate(matches))))
+        except Exception as exc:
+            logger.error(f"生成截图失败：{exc}")
+            # self._handle_exception(task_id, exc)
+            return None
+
+        for marker, img_url in rendered:
+            markdown = markdown.replace(marker, f"![]({img_url})", 1)
         return markdown
 
     @staticmethod

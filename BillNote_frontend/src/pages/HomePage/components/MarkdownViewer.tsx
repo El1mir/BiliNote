@@ -6,8 +6,9 @@ import { toast } from 'react-hot-toast'
 import Error from '@/components/Lottie/error.tsx'
 import Loading from '@/components/Lottie/Loading.tsx'
 import Idle from '@/components/Lottie/Idle.tsx'
-import StepBar from '@/pages/HomePage/components/StepBar.tsx'
+
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import ProgressTimeline from '@/pages/HomePage/components/ProgressTimeline.tsx'
 import { atomDark as codeStyle } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import Zoom from 'react-medium-image-zoom'
 import 'react-medium-image-zoom/dist/styles.css'
@@ -26,6 +27,7 @@ import MarkmapEditor from '@/pages/HomePage/components/MarkmapComponent.tsx'
 import ChatPanel from '@/pages/HomePage/components/ChatPanel.tsx'
 import VideoBanner from '@/pages/HomePage/components/VideoBanner.tsx'
 import { normalizeMathDelimiters } from '@/utils/markdown'
+import { asText } from '@/utils/text'
 
 interface VersionNote {
   ver_id: string
@@ -39,15 +41,6 @@ interface MarkdownViewerProps {
   content: string | VersionNote[]
   status: 'idle' | 'loading' | 'success' | 'failed'
 }
-
-const steps = [
-  { label: '解析链接', key: 'PARSING' },
-  { label: '下载音频', key: 'DOWNLOADING' },
-  { label: '转写文字', key: 'TRANSCRIBING' },
-  { label: '总结内容', key: 'SUMMARIZING' },
-  { label: '保存完成', key: 'SUCCESS' },
-]
-
 const remarkPlugins = [gfm, remarkMath]
 const rehypePlugins = [rehypeKatex, rehypeSlug]
 
@@ -342,10 +335,10 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
 
     if (!isMultiVersion) {
       setCurrentVerId('') // 清空旧版本 ID
-      setModelName(currentTask.formData.model_name)
-      setStyle(currentTask.formData.style)
+      setModelName(asText(currentTask.formData?.model_name, '未知模型'))
+      setStyle(asText(currentTask.formData?.style, '未知风格'))
       setCreateTime(currentTask.createdAt)
-      setSelectedContent(currentTask?.markdown)
+      setSelectedContent(typeof currentTask?.markdown === 'string' ? currentTask.markdown : '')
     } else {
       const latestVersion = [...currentTask.markdown].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -361,10 +354,10 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
 
     const currentVer = currentTask.markdown.find(v => v.ver_id === currentVerId)
     if (currentVer) {
-      setModelName(currentVer.model_name)
-      setStyle(currentVer.style)
+      setModelName(asText(currentVer.model_name, '未知模型'))
+      setStyle(asText(currentVer.style, '未知风格'))
       setCreateTime(currentVer.created_at || '')
-      setSelectedContent(currentVer.content)
+      setSelectedContent(typeof currentVer.content === 'string' ? currentVer.content : '')
     }
   }, [currentVerId, currentTask?.id])
   const handleCopy = async () => {
@@ -419,7 +412,7 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
   if (status === 'loading') {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center space-y-4 text-neutral-500">
-        <StepBar steps={steps} currentStep={taskStatus} />
+        {currentTask && <ProgressTimeline task={currentTask} />}
         <Loading className="h-5 w-5" />
         <div className="text-center text-sm">
           <p className="text-lg font-bold">正在生成笔记，请稍候…</p>
@@ -485,7 +478,7 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
               value={selectedContent}
               onChange={() => {}}
               height="100%" // 根据需求可以设定百分比或固定高度
-              title={currentTask?.audioMeta?.title || '思维导图'}
+              title={asText(currentTask?.audioMeta?.title, '思维导图')}
             />
           </div>
         </div>

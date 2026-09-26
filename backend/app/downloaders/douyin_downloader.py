@@ -212,7 +212,8 @@ class DouyinDownloader(Downloader):
             video_url: str,
             output_dir: Union[str, None] = None,
             quality: DownloadQuality = "fast",
-            need_video: Optional[bool] = False
+            need_video: Optional[bool] = False,
+            skip_download: bool = False,
     ) -> AudioDownloadResult:
         try:
             print(
@@ -227,10 +228,36 @@ class DouyinDownloader(Downloader):
             output_path = os.path.join(output_dir, "%(id)s.%(ext)s")
 
             video_data = self.fetch_video_info(video_url)
+            video_id = video_data['aweme_detail']['aweme_id']
             output_path = output_path % {
-                "id": video_data['aweme_detail']['aweme_id'],
+                "id": video_id,
                 "ext": "mp3",
             }
+            if skip_download:
+                # 只取元信息：不请求音频流（spec 006 ticket 05）
+                video = video_data['aweme_detail']['video']
+                tag_names = [
+                    tag['tag_name']
+                    for tag in video_data['aweme_detail'].get('video_tag', [])
+                    if tag.get('tag_name')
+                ]
+                cover = (
+                    video['cover_original_scale']['url_list'][0]
+                    if video.get('cover_original_scale')
+                    else ''
+                )
+                return AudioDownloadResult(
+                    file_path=output_path,
+                    title=video_data['aweme_detail'].get('item_title'),
+                    duration=video.get('duration', 0),
+                    cover_url=cover,
+                    platform="douyin",
+                    video_id=video_id,
+                    raw_info={
+                        'tags': video_data['aweme_detail'].get('caption', '') + ''.join(tag_names),
+                    },
+                    video_path=None,
+                )
             url = video_data['aweme_detail']['music']['play_url']['uri']
             # 下载音频
             audio_data = requests.get(url)

@@ -21,7 +21,8 @@ class KuaiShouDownloader(Downloader, ABC):
             video_url: str,
             output_dir: Union[str, None] = None,
             quality: str = "fast",
-            need_video: Optional[bool] = False
+            need_video: Optional[bool] = False,
+            skip_download: bool = False,
     ) -> AudioDownloadResult:
         if output_dir is None:
             output_dir = get_data_dir()
@@ -37,6 +38,36 @@ class KuaiShouDownloader(Downloader, ABC):
         title = photo_info['caption'].strip().replace('\n', '').replace(' ', '_')[:50]
         mp4_path = os.path.join(output_dir, f"{video_id}.mp4")
         mp3_path = os.path.join(output_dir, f"{video_id}.mp3")
+
+        if skip_download:
+            # 只取元信息：不下载视频、不做 ffmpeg 转码（spec 006 ticket 05）
+            return AudioDownloadResult(
+                file_path=mp3_path,
+                title=photo_info['caption'],
+                duration=photo_info['duration'],
+                cover_url=photo_info['coverUrl'],
+                platform="kuaishou",
+                video_id=video_id,
+                raw_info={
+                    'tags': ','.join(tag['name'] for tag in video_raw_info.get('tags', []) if tag.get('name'))
+                },
+                video_path=mp4_path if os.path.exists(mp4_path) else None,
+            )
+
+        if skip_download:
+            # 只取元信息：不下载视频、不做 ffmpeg 转码（spec 006 ticket 05）
+            return AudioDownloadResult(
+                file_path=mp3_path,
+                title=photo_info['caption'],
+                duration=photo_info['duration'],
+                cover_url=photo_info['coverUrl'],
+                platform="kuaishou",
+                video_id=video_id,
+                raw_info={
+                    'tags': ','.join(tag['name'] for tag in video_raw_info.get('tags', []) if tag.get('name'))
+                },
+                video_path=mp4_path if os.path.exists(mp4_path) else None,
+            )
 
         if os.path.exists(mp3_path):
             print(f"[已存在] 跳过下载: {mp3_path}")

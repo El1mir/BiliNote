@@ -14,6 +14,7 @@ from app.exceptions.exception_handlers import register_exception_handlers
 # from app.db.model_dao import init_model_table
 # from app.db.provider_dao import init_provider_table
 from app.utils.logger import get_logger
+from app.utils.access_log_filter import install_task_status_access_log_filter
 from app import create_app
 from app.services.transcriber_config_manager import TranscriberConfigManager
 from events import register_handler
@@ -40,6 +41,7 @@ if not os.path.exists(out_dir):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动序列拆成 5 步、每步独立日志 + 异常时打明确的 [startup N/5 FAILED] 标记。
+    install_task_status_access_log_filter()
     # 目的：用户 docker logs 一眼能看出后端死在哪一步，避免「容器一直重启但看不出原因」。
     try:
         logger.info("[startup 1/5] register_handler() — 注册事件处理器")

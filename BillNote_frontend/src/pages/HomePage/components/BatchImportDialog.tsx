@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -201,6 +202,7 @@ export default function BatchImportDialog({
       <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>批量导入（B 站合集 / 多P）</DialogTitle>
+            <DialogDescription className="sr-only">选择要批量生成笔记的视频分P</DialogDescription>
         </DialogHeader>
 
         {!result ? (

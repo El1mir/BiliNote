@@ -32,3 +32,5 @@ specs/
 | 002 | [002-video-understanding-sampling](./002-video-understanding-sampling/spec.md) | implemented | 视频理解采样方式 + 批量模式融入表单 |
 | 003 | [003-openai-compatible-asr](./003-openai-compatible-asr/spec.md) | implemented | OpenAI 兼容 ASR 引擎（替代本地 ASR） |
 | 004 | [004-note-math-rendering](./004-note-math-rendering/spec.md) | implemented | 笔记里的 LaTeX 公式渲染（`\(...\)` → `$...$`） |
+| 005 | [005-modern-dark-ui-and-task-progress](./005-modern-dark-ui-and-task-progress/spec.md) | approved | 现代暗色核心界面与任务阶段进度 |
+| 006 | [006-note-pipeline-performance](./006-note-pipeline-performance/spec.md) | implemented | 笔记生成流水线耗时优化（ASR/拼图/截图并发、下载冗余消除、索引移出关键路径） |

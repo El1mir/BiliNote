@@ -20,6 +20,10 @@ export interface OpenAIASREndpoint {
   silence_noise_db: number
   /** 多长的停顿算一次「说完了」（秒） */
   min_silence_seconds: number
+  /** 每分钟最多请求次数，防止触发服务端 429 */
+  max_rpm: number
+  /** 切片转写的并发请求数（1-32，1 即串行）；并发只填满 max_rpm 允许的额度 */
+  chunk_concurrency: number
 }
 
 export interface OpenAIASREndpointInput {
@@ -33,6 +37,8 @@ export interface OpenAIASREndpointInput {
   max_speech_chunks?: number
   silence_noise_db?: number
   min_silence_seconds?: number
+  max_rpm?: number
+  chunk_concurrency?: number
 }
 
 export interface TranscriberConfig {

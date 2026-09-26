@@ -29,6 +29,7 @@ import {
   TranscriberConfig,
   ModelStatus,
   OpenAIASREndpoint,
+  OpenAIASRStyle,
 } from '@/services/transcriber'
 
 const isWhisperType = (type: string) =>
@@ -42,10 +43,12 @@ interface AsrFormState {
   model: string
   timeout: string
   chunk_size_mb: string
-  api_style: string
+  api_style: OpenAIASRStyle
   max_speech_chunks: string
   silence_noise_db: string
   min_silence_seconds: string
+  max_rpm: string
+  chunk_concurrency: string
 }
 
 const emptyAsrForm: AsrFormState = {
@@ -60,6 +63,8 @@ const emptyAsrForm: AsrFormState = {
   max_speech_chunks: '120',
   silence_noise_db: '-30',
   min_silence_seconds: '0.5',
+  max_rpm: '30',
+  chunk_concurrency: '4',
 }
 
 /** 表单字段：上方 label + 下方输入框（+ 可选说明），避免只靠 placeholder 看不出含义。 */
@@ -283,6 +288,8 @@ export default function Transcriber() {
       max_speech_chunks: String(endpoint.max_speech_chunks ?? 120),
       silence_noise_db: String(endpoint.silence_noise_db ?? -30),
       min_silence_seconds: String(endpoint.min_silence_seconds ?? 0.5),
+      max_rpm: String(endpoint.max_rpm ?? 30),
+      chunk_concurrency: String(endpoint.chunk_concurrency ?? 4),
     })
   }
 
@@ -314,6 +321,8 @@ export default function Transcriber() {
         max_speech_chunks: Number(asrForm.max_speech_chunks) || 120,
         silence_noise_db: Number(asrForm.silence_noise_db) || -30,
         min_silence_seconds: Number(asrForm.min_silence_seconds) || 0.5,
+        max_rpm: Number(asrForm.max_rpm) || 30,
+        chunk_concurrency: Number(asrForm.chunk_concurrency) || 4,
       }
       if (asrForm.id) {
         await updateOpenaiAsr(asrForm.id, payload)
@@ -642,7 +651,7 @@ export default function Transcriber() {
                 <Field label="接口类型">
                   <Select
                     value={asrForm.api_style}
-                    onValueChange={v => setAsrForm({ ...asrForm, api_style: v })}
+                    onValueChange={v => setAsrForm({ ...asrForm, api_style: v as OpenAIASRStyle })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -705,6 +714,34 @@ export default function Transcriber() {
                     placeholder="18"
                     value={asrForm.chunk_size_mb}
                     onChange={e => setAsrForm({ ...asrForm, chunk_size_mb: e.target.value })}
+                  />
+                </Field>
+
+                <Field
+                  label="每分钟请求上限"
+                  hint="防止服务端 429，默认 30 次/分钟"
+                >
+                  <Input
+                    type="number"
+                    placeholder="30"
+                    value={asrForm.max_rpm}
+                    onChange={e => setAsrForm({ ...asrForm, max_rpm: e.target.value })}
+                  />
+                </Field>
+
+                <Field
+                  label="并发请求数"
+                  hint="切片转写同时发起的请求数（1-32，默认 4）；设 1 即串行，只在「每分钟请求上限」允许的范围内并发"
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    max={32}
+                    placeholder="4"
+                    value={asrForm.chunk_concurrency}
+                    onChange={e =>
+                      setAsrForm({ ...asrForm, chunk_concurrency: e.target.value })
+                    }
                   />
                 </Field>
 

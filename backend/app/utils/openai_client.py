@@ -23,6 +23,7 @@ def build_openai_client(
     *,
     key_label: str = "API Key",
     timeout: Optional[float] = None,
+    max_retries: Optional[int] = None,
 ) -> OpenAI:
     """构造 OpenAI 客户端。api_key 为空直接抛清晰错误；代理已配置则注入。
 
@@ -34,6 +35,9 @@ def build_openai_client(
     kwargs = {"api_key": str(api_key).strip(), "base_url": base_url}
     if timeout is not None:
         kwargs["timeout"] = timeout
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+
 
     proxy_url = ProxyConfigManager().get_proxy_url()
     if proxy_url:

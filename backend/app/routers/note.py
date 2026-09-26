@@ -15,7 +15,8 @@ from app.db.video_task_dao import get_task_by_video
 from app.enmus.exception import NoteErrorEnum
 from app.enmus.note_enums import DownloadQuality
 from app.exceptions.note import NoteError
-from app.services.note import NoteGenerator, logger
+from app.services.note import NoteGenerator
+from app.utils.logger import get_logger
 from app.services.task_serial_executor import task_serial_executor
 from app.utils.response import ResponseWrapper as R
 from app.downloaders.bilibili_expand import (
@@ -39,6 +40,9 @@ from app.enmus.task_status_enums import TaskStatus
 # from app.services.whisperer import transcribe_audio
 
 router = APIRouter()
+
+# 统一日志：之前直接复用 app.services.note 的 logger，导致路由层日志都挂在上游模块名下。
+logger = get_logger(__name__)
 
 
 class RecordRequest(BaseModel):
@@ -212,6 +216,10 @@ def _execute_note_with_retry(task_id: str, generator, execute_fn):
         note = task_serial_executor.run(execute_fn)
         if note and getattr(note, "markdown", None):
             return note
+        if getattr(generator, "last_error_non_retryable", False) is True:
+            logger.error(f"任务 {task_id} 遇到不可重试错误，停止自动重试")
+            return None
+
         if attempt >= NOTE_MAX_RETRIES:
             logger.error(f"任务 {task_id} 重试 {NOTE_MAX_RETRIES} 次后仍失败")
             return None
@@ -314,12 +322,10 @@ def run_note_task(task_id: str, video_url: str, platform: str, quality: Download
         return
     save_note_to_file(task_id, note)
 
-    # 自动建立向量索引（用于 AI 问答），失败不影响笔记生成
-    try:
-        from app.services.vector_store import VectorStoreManager
-        VectorStoreManager().index_task(task_id)
-    except Exception as e:
-        logger.warning(f"向量索引失败（不影响笔记）: {e}")
+    # 自动建立向量索引（用于 AI 问答）：放到后台线程池执行，
+    # 不占用任务工作线程，也不影响任务终态（spec 006 ticket 04）。
+    from app.services.vector_store import index_task_in_background
+    index_task_in_background(task_id)
 
 
 @router.post('/delete_task')
@@ -576,6 +582,19 @@ def get_task_status(task_id: str):
 
         status = status_content.get("status")
         message = status_content.get("message", "")
+        # Preserve legacy fields while forwarding optional progress metadata.
+        progress_data = {
+            key: status_content[key]
+            for key in (
+                "stage",
+                "stage_label",
+                "progress",
+                "stage_progress",
+                "detail",
+                "updated_at",
+            )
+            if key in status_content
+        }
 
         if status == TaskStatus.SUCCESS.value:
             # 成功状态的话，继续读取最终笔记内容
@@ -586,24 +605,31 @@ def get_task_status(task_id: str):
                     "status": status,
                     "result": result_content,
                     "message": message,
-                    "task_id": task_id
+                    "task_id": task_id,
+                    **progress_data,
                 })
             else:
                 # 理论上不会出现，保险处理
                 return R.success({
                     "status": TaskStatus.PENDING.value,
                     "message": "任务完成，但结果文件未找到",
-                    "task_id": task_id
+                    "task_id": task_id,
+                    **progress_data,
                 })
 
         if status == TaskStatus.FAILED.value:
-            return R.error(message or "任务失败", code=500)
+            return R.error(
+                message or "任务失败",
+                code=500,
+                data={"status": status, "task_id": task_id, **progress_data},
+            )
 
         # 处理中状态
         return R.success({
             "status": status,
             "message": message,
-            "task_id": task_id
+            "task_id": task_id,
+            **progress_data,
         })
 
     # 没有状态文件，但有结果
@@ -613,14 +639,22 @@ def get_task_status(task_id: str):
         return R.success({
             "status": TaskStatus.SUCCESS.value,
             "result": result_content,
-            "task_id": task_id
+            "task_id": task_id,
+            "stage": "success",
+            "stage_label": "已完成",
+            "progress": 100,
+            "stage_progress": 100,
         })
 
     # 什么都没有，默认PENDING
     return R.success({
         "status": TaskStatus.PENDING.value,
         "message": "任务排队中",
-        "task_id": task_id
+        "task_id": task_id,
+        "stage": "queued",
+        "stage_label": "排队中",
+        "progress": 0,
+        "stage_progress": 0,
     })
 
 

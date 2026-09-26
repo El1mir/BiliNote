@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import chromadb
@@ -12,6 +13,22 @@ logger = get_logger(__name__)
 
 NOTE_OUTPUT_DIR = os.getenv("NOTE_OUTPUT_DIR", "note_results")
 VECTOR_DB_DIR = os.getenv("VECTOR_DB_DIR", "vector_db")
+
+# 向量索引不属于任务结果的一部分：放到独立线程池，避免占用任务工作线程
+# （TASK_MAX_WORKERS 有限，2s+ 的索引会拖慢排队中的任务）。spec 006 ticket 04。
+_vector_index_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="vector-index")
+
+
+def index_task_in_background(task_id: str) -> None:
+    """在后台线程池里建立向量索引：失败只告警，绝不影响任务终态。"""
+
+    def _run() -> None:
+        try:
+            VectorStoreManager().index_task(task_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"后台向量索引失败 (task_id={task_id}): {exc}")
+
+    _vector_index_executor.submit(_run)
 
 
 def _chunk_markdown(markdown: str) -> list[dict]:
