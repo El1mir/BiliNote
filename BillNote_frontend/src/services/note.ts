@@ -16,6 +16,8 @@ export const generateNote = async (data: {
   grid_size: Array<number>
   sampling_mode?: string
   max_frames?: number
+  frames_per_second?: number
+  frame_limit_mode?: string
 }) => {
   try {
     console.log('generateNote', data)
@@ -130,7 +132,12 @@ export interface BatchGeneratePayload {
   video_interval?: number
   grid_size?: Array<number>
   sampling_mode?: string
+  /** smart 采样：单个视频最多抽多少帧（批量时每个视频各自的上限） */
   max_frames?: number
+  /** smart 采样：每秒最多保留多少帧 */
+  frames_per_second?: number
+  /** smart 限制方式二选一：'total'=只用 max_frames；'per_second'=只用 frames_per_second */
+  frame_limit_mode?: string
 }
 
 /** 展开合集 / 多P 链接，返回可勾选的视频+分P 列表。 */

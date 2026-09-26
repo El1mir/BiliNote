@@ -9,6 +9,18 @@ from unittest.mock import patch
 
 
 def _install_stubs():
+    _stub_names = [
+        "app",
+        "app.utils",
+        "app.utils.logger",
+        "app.utils.path_helper",
+        "PIL",
+        "PIL.Image",
+        "PIL.ImageDraw",
+        "PIL.ImageFont",
+        "ffmpeg",
+    ]
+    saved = {name: sys.modules.get(name) for name in _stub_names}
     app_mod = types.ModuleType("app")
     utils_pkg = types.ModuleType("app.utils")
 
@@ -76,18 +88,31 @@ def _install_stubs():
     sys.modules["ffmpeg"] = ffmpeg_mod
     sys.modules["app.utils.logger"] = logger_mod
     sys.modules["app.utils.path_helper"] = path_helper_mod
+    return saved
+
+
+def _restore_stubs(saved):
+    for name, previous in saved.items():
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
 
 
 def _load_video_reader_module():
-    _install_stubs()
+    saved = _install_stubs()
     root = pathlib.Path(__file__).resolve().parents[1]
     module_path = root / "app" / "utils" / "video_reader.py"
     spec = importlib.util.spec_from_file_location("video_reader", module_path)
     if spec is None or spec.loader is None:
         raise ImportError("video_reader module spec not found")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        # 载入完立刻还原，否则 PIL.Image 等假模块会泄漏给后续测试
+        _restore_stubs(saved)
 
 
 video_reader_module = _load_video_reader_module()

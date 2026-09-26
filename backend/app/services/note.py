@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional, Tuple, Union, Any
@@ -34,6 +35,7 @@ from app.transcriber.transcriber_provider import get_transcriber, _transcribers
 from app.utils.note_helper import replace_content_markers, prepend_source_link
 from app.utils.screenshot_marker import extract_screenshot_timestamps
 from app.utils.status_code import StatusCode
+from app.utils.transcript_helper import densify_segments
 from app.utils.video_helper import generate_screenshot
 from app.utils.video_reader import VideoReader
 
@@ -98,6 +100,8 @@ class NoteGenerator:
         grid_size: Optional[List[int]] = None,
         sampling_mode: str = "interval",
         max_frames: int = 60,
+        frames_per_second: int = 2,
+        frame_limit_mode: str = "total",
     ) -> NoteResult | None:
         """
         主流程：按步骤依次下载、转写、GPT 总结、截图/链接处理、存库、返回 NoteResult。
@@ -117,6 +121,10 @@ class NoteGenerator:
         :param video_understanding: 是否需要视频拼图理解（生成缩略图）
         :param video_interval: 视频帧截取间隔（秒），仅在 video_understanding 为 True 时生效
         :param grid_size: 生成缩略图时的网格大小，如 [3, 3]
+        :param sampling_mode: interval=固定间隔抽帧；smart=高价值帧采样
+        :param max_frames: smart 模式下单个视频的最大抽帧数（批量时每个视频各自的上限）
+        :param frames_per_second: smart 模式下每秒最多保留的候选帧数
+        :param frame_limit_mode: smart 限制方式二选一：total=只用 max_frames；per_second=只用 frames_per_second
         :return: NoteResult 对象，包含 markdown 文本、转写结果和音频元信息
         """
         if grid_size is None:
@@ -189,6 +197,8 @@ class NoteGenerator:
                 grid_size=grid_size,
                 skip_download=not need_full_download,
                 sampling_mode=sampling_mode,
+                frames_per_second=frames_per_second,
+                frame_limit_mode=frame_limit_mode,
             )
 
             # 3. 如果前面没拿到字幕，走转写流程
@@ -202,14 +212,24 @@ class NoteGenerator:
                     task_id=task_id,
                 )
 
-            # spec 002：smart 采样需要字幕分段，因此在转写完成后抽帧拼图
-            if video_understanding and sampling_mode == "smart" and self.video_path and grid_size:
+            # spec 002：smart / hybrid 采样需要字幕，因此在转写完成后抽帧拼图
+            if video_understanding and sampling_mode in ("smart", "hybrid") and self.video_path and grid_size:
                 try:
                     frame_interval = video_interval if video_interval and video_interval > 0 else 6
-                    subtitle_starts = [
-                        seg.start for seg in (transcript.segments if transcript else [])
-                    ]
-                    logger.info(f"高价值帧采样：字幕分段 {len(subtitle_starts)} 个")
+                    # 部分 ASR（如 MiMo chat 风格）只返回整段文字、没有逐句时间轴，
+                    # 这里按标点 + 字数比例插值出近似时间轴，供采样和 LLM 选帧使用。
+                    plan_segments = densify_segments(
+                        transcript.segments if transcript else []
+                    )
+                    subtitle_starts = [seg.start for seg in plan_segments]
+                    llm_timestamps = []
+                    if sampling_mode == "hybrid":
+                        logger.info(f"综合采样：字幕分段 {len(subtitle_starts)} 个")
+                        llm_timestamps = self._plan_frames_with_llm(
+                            gpt, plan_segments, self.video_path, max_frames
+                        )
+                    else:
+                        logger.info(f"高价值帧采样：字幕分段 {len(subtitle_starts)} 个")
                     self.video_img_urls = VideoReader(
                         video_path=str(self.video_path),
                         grid_size=tuple(grid_size),
@@ -217,12 +237,15 @@ class NoteGenerator:
                         unit_width=960,
                         unit_height=540,
                         save_quality=80,
-                        sampling_mode="smart",
+                        sampling_mode=sampling_mode,
                         max_frames=max_frames,
+                        frames_per_second=frames_per_second,
+                        frame_limit_mode=frame_limit_mode,
                         subtitle_starts=subtitle_starts,
+                        llm_timestamps=llm_timestamps,
                     ).run()
                 except Exception as exc:
-                    logger.error(f"高价值帧采样失败：{exc}")
+                    logger.error(f"视频理解抽帧失败：{exc}")
                     self._handle_exception(task_id, exc)
                     raise
 
@@ -280,6 +303,33 @@ class NoteGenerator:
 
     # ---------------- 私有方法 ----------------
 
+    def _plan_frames_with_llm(self, gpt, segments, video_path, max_frames) -> list:
+        """综合采样：让 LLM 读字幕挑出值得截图的时间点。
+
+        LLM 不可用 / 调用失败 / 没有字幕时返回 []，综合采样自动退回
+        「高价值 + 均匀」两路，不影响任务本身。
+        """
+        if not segments:
+            logger.info("综合采样：没有字幕分段，跳过 LLM 选帧")
+            return []
+        if not hasattr(gpt, "plan_frame_timestamps"):
+            logger.warning("当前模型客户端不支持 LLM 选帧，综合采样退回高价值 + 均匀")
+            return []
+        try:
+            from app.utils.audio_helper import probe_duration_seconds
+            from app.utils.frame_sampler import HYBRID_LLM_RATIO
+
+            duration = probe_duration_seconds(video_path)
+            max_items = max(1, int(max_frames * HYBRID_LLM_RATIO))
+            picks = gpt.plan_frame_timestamps(
+                segments, duration=duration, max_items=max_items
+            )
+            logger.info(f"综合采样：LLM 选中 {len(picks)} 个截图时间点")
+            return picks
+        except Exception as exc:  # noqa: BLE001 - 选帧失败不应让整个任务失败
+            logger.warning(f"LLM 选帧失败，退回高价值 + 均匀采样：{exc}", exc_info=True)
+            return []
+
     def _init_transcriber(self) -> Transcriber:
         """
         根据环境变量 TRANSCRIBER_TYPE 动态获取并实例化转写器
@@ -289,9 +339,22 @@ class NoteGenerator:
             raise Exception(f"不支持的转写器：{self.transcriber_type}")
 
         logger.info(f"使用转写器：{self.transcriber_type}")
+
+        transcriber_options = None
+        if self.transcriber_type == "openai-asr":
+            # OpenAI 兼容 ASR 的端点配置在「音频转写配置」页维护，取当前选中的那条
+            from app.services.transcriber_config_manager import TranscriberConfigManager
+            endpoint = TranscriberConfigManager().get_active_openai_asr()
+            if not endpoint:
+                raise Exception(
+                    "尚未配置 OpenAI 兼容 ASR，请先在「设置 → 音频转写配置」添加并选择"
+                )
+            transcriber_options = endpoint
+
         return get_transcriber(
             transcriber_type=self.transcriber_type,
             model_size=self.model_size,
+            transcriber_options=transcriber_options,
         )
 
     def _get_gpt(self, model_name: Optional[str], provider_id: Optional[str]) -> GPT:
@@ -357,8 +420,9 @@ class NoteGenerator:
             data["message"] = message
 
         try:
-            # First create a temporary file
-            temp_file = status_file.with_suffix('.tmp')
+            # 临时文件带唯一后缀：万一同一 task_id 被并发跑（历史 bug），
+            # 也不会两个进程抢同一个 .tmp 导致 Permission denied。
+            temp_file = status_file.with_name(f"{status_file.name}.{uuid.uuid4().hex[:8]}.tmp")
 
             # Write to temporary file
             with temp_file.open('w', encoding='utf-8') as f:
@@ -402,6 +466,8 @@ class NoteGenerator:
         grid_size: List[int],
         skip_download: bool = False,
         sampling_mode: str = "interval",
+        frames_per_second: int = 2,
+        frame_limit_mode: str = "total",
     ) -> AudioDownloadResult | None:
         """
         1. 检查音频缓存；若不存在，则根据需要下载音频或视频（若需截图/可视化）。

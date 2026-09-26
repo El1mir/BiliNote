@@ -10,6 +10,19 @@ from pathlib import Path
 
 
 def _install_stubs():
+    _stub_names = [
+        "app",
+        "app.gpt",
+        "app.models",
+        "app.gpt.base",
+        "app.gpt.prompt_builder",
+        "app.gpt.prompt",
+        "app.gpt.utils",
+        "app.gpt.request_chunker",
+        "app.models.gpt_model",
+        "app.models.transcriber_model",
+    ]
+    saved = {name: sys.modules.get(name) for name in _stub_names}
     app_mod = types.ModuleType("app")
     gpt_pkg = types.ModuleType("app.gpt")
     models_pkg = types.ModuleType("app.models")
@@ -80,18 +93,31 @@ def _install_stubs():
     sys.modules["app.gpt.request_chunker"] = request_chunker_mod
     sys.modules["app.models.gpt_model"] = gpt_model_mod
     sys.modules["app.models.transcriber_model"] = transcriber_model_mod
+    return saved
+
+
+def _restore_stubs(saved):
+    for name, previous in saved.items():
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
 
 
 def _load_universal_gpt_class():
-    _install_stubs()
+    saved = _install_stubs()
     root = pathlib.Path(__file__).resolve().parents[1]
     module_path = root / "app" / "gpt" / "universal_gpt.py"
     spec = importlib.util.spec_from_file_location("universal_gpt", module_path)
     if spec is None or spec.loader is None:
         raise ImportError("universal_gpt module spec not found")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.UniversalGPT
+    try:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.UniversalGPT
+    finally:
+        # 载入完就不需要这些 stub 了，立刻还原，避免污染后续测试
+        _restore_stubs(saved)
 
 
 UniversalGPT = _load_universal_gpt_class()

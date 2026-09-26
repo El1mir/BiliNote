@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { expandUrl, generateNotes } from '@/services/note'
+import { generateNotes } from '@/services/note'
 import type {
   BatchGeneratePayload,
   BatchGenerateResult,
@@ -35,13 +35,18 @@ export interface BatchDefaults {
   grid_size?: number[]
   sampling_mode?: string
   max_frames?: number
+  frames_per_second?: number
+  frame_limit_mode?: string
 }
 
 interface BatchImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaults: BatchDefaults
-  initialUrl?: string
+  /** 主表单里「展开预览」已经请求好的结果；对话框只负责展示 / 勾选。 */
+  result: ExpandResult | null
+  /** 主表单里的原始链接，用于从 ?p= 预选某一 P。 */
+  sourceUrl?: string
   onSubmitted: (results: BatchGenerateResult[]) => void
 }
 
@@ -69,13 +74,11 @@ export default function BatchImportDialog({
   open,
   onOpenChange,
   defaults,
-  initialUrl = '',
+  result,
+  sourceUrl = '',
   onSubmitted,
 }: BatchImportDialogProps) {
-  const [url, setUrl] = useState(initialUrl)
-  const [expanding, setExpanding] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState<ExpandResult | null>(null)
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [rangeInput, setRangeInput] = useState('')
 
@@ -96,34 +99,27 @@ export default function BatchImportDialog({
     return list
   }, [result])
 
-  const selectable = (item: FlatPart) => !item.hasError && !item.part.already_generated
-  const selectedCount = flatParts.filter(i => selected[i.key] && selectable(i)).length
-
-  const handleExpand = async () => {
-    const trimmed = url.trim()
-    if (!trimmed) {
-      toast.error('请输入合集或视频链接')
+  // 每次拿到新的展开结果就重置勾选：默认全选；若链接带 ?p= 则只选那一 P。
+  useEffect(() => {
+    if (!result) {
+      setSelected({})
+      setRangeInput('')
       return
     }
-    setExpanding(true)
-    try {
-      const data = await expandUrl(trimmed)
-      setResult(data)
-      const pFromUrl = extractPFromUrl(trimmed)
-      const next: Record<string, boolean> = {}
-      data.videos.forEach(video => {
-        video.parts.forEach(part => {
-          const ok = !video.error && !part.already_generated
-          next[part.video_id] = ok && (!pFromUrl || part.p === pFromUrl)
-        })
+    const pFromUrl = extractPFromUrl(sourceUrl)
+    const next: Record<string, boolean> = {}
+    result.videos.forEach(video => {
+      video.parts.forEach(part => {
+        const ok = !video.error && !part.already_generated
+        next[part.video_id] = ok && (!pFromUrl || part.p === pFromUrl)
       })
-      setSelected(next)
-    } catch (e) {
-      console.error('展开失败', e)
-    } finally {
-      setExpanding(false)
-    }
-  }
+    })
+    setSelected(next)
+    setRangeInput('')
+  }, [result, sourceUrl])
+
+  const selectable = (item: FlatPart) => !item.hasError && !item.part.already_generated
+  const selectedCount = flatParts.filter(i => selected[i.key] && selectable(i)).length
 
   const setAll = (value: boolean) => {
     const next: Record<string, boolean> = {}
@@ -177,6 +173,8 @@ export default function BatchImportDialog({
       grid_size: defaults.grid_size,
       sampling_mode: defaults.sampling_mode,
       max_frames: defaults.max_frames,
+      frames_per_second: defaults.frames_per_second,
+      frame_limit_mode: defaults.frame_limit_mode,
     }
 
     setSubmitting(true)
@@ -205,22 +203,11 @@ export default function BatchImportDialog({
           <DialogTitle>批量导入（B 站合集 / 多P）</DialogTitle>
         </DialogHeader>
 
-        <div className="flex gap-2">
-          <Input
-            placeholder="粘贴合集链接或视频链接"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') handleExpand()
-            }}
-          />
-          <Button type="button" onClick={handleExpand} disabled={expanding}>
-            {expanding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            展开
-          </Button>
-        </div>
-
-        {result && (
+        {!result ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            正在获取视频列表…
+          </div>
+        ) : (
           <>
             <div className="text-sm text-muted-foreground">
               {result.type === 'collection' ? '合集' : '视频'}：{result.title || '-'}

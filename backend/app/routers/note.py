@@ -64,6 +64,9 @@ class VideoRequest(BaseModel):
     # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
     sampling_mode: Optional[str] = "interval"
     max_frames: Optional[int] = 60
+    # smart 采样限制方式二选一：total=只用 max_frames；per_second=只用 frames_per_second
+    frames_per_second: Optional[int] = 2
+    frame_limit_mode: Optional[str] = "total"
     # 客户端（如浏览器插件）已经在用户浏览器里抓到字幕，直接传给后端复用，
     # 跳过 download_subtitles 和音频转写。形如：
     #   {"language": "zh", "full_text": "...", "segments": [{"start","end","text"}, ...]}
@@ -272,7 +275,8 @@ def _persist_prefetched_transcript(task_id: str, transcript: dict) -> None:
 def run_note_task(task_id: str, video_url: str, platform: str, quality: DownloadQuality,
                   link: bool = False, screenshot: bool = False, model_name: str = None, provider_id: str = None,
                   _format: list = None, style: str = None, extras: str = None, video_understanding: bool = False,
-                  video_interval=0, grid_size=[], sampling_mode="interval", max_frames=60
+                  video_interval=0, grid_size=[], sampling_mode="interval", max_frames=60,
+                  frames_per_second=2, frame_limit_mode="total"
                   ):
 
     if not model_name or not provider_id:
@@ -298,6 +302,8 @@ def run_note_task(task_id: str, video_url: str, platform: str, quality: Download
             grid_size=grid_size,
             sampling_mode=sampling_mode,
             max_frames=max_frames,
+            frames_per_second=frames_per_second,
+            frame_limit_mode=frame_limit_mode,
         )
 
     logger.info(f"任务进入执行队列 (task_id={task_id})")
@@ -409,7 +415,8 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
         background_tasks.add_task(run_note_task, task_id, data.video_url, data.platform, data.quality, data.link,
                                   data.screenshot, data.model_name, data.provider_id, data.format, data.style,
                                   data.extras, data.video_understanding, data.video_interval, data.grid_size,
-                                  data.sampling_mode, data.max_frames)
+                                  data.sampling_mode, data.max_frames, data.frames_per_second,
+                                  data.frame_limit_mode)
         return R.success({"task_id": task_id})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -445,6 +452,9 @@ class BatchGenerateRequest(BaseModel):
     # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
     sampling_mode: Optional[str] = "interval"
     max_frames: Optional[int] = 60
+    # smart 采样限制方式二选一：total=只用 max_frames；per_second=只用 frames_per_second
+    frames_per_second: Optional[int] = 2
+    frame_limit_mode: Optional[str] = "total"
 
 
 @router.post("/expand")
@@ -544,7 +554,8 @@ def generate_notes(data: BatchGenerateRequest, background_tasks: BackgroundTasks
                 run_note_task, task_id, note_url, data.platform, data.quality, data.link,
                 data.screenshot, data.model_name, data.provider_id, data.format, data.style,
                 data.extras, data.video_understanding, data.video_interval, data.grid_size,
-                data.sampling_mode, data.max_frames,
+                data.sampling_mode, data.max_frames, data.frames_per_second,
+                data.frame_limit_mode,
             )
             results.append({"video_id": video_id, "task_id": task_id, "status": "queued"})
 

@@ -80,6 +80,40 @@ class UniversalGPT(GPT):
 
         return messages
 
+    # ---------------- 视频理解：按字幕挑截图时间点（spec 002 综合采样） ----------------
+
+    def plan_frame_timestamps(self, segments: List[TranscriptSegment], duration: float = 0.0,
+                              max_items: int = 24) -> List[float]:
+        """让 LLM 读字幕，挑出「值得截图给多模态模型看」的时间点（秒）。失败返回 []。"""
+        segments = self.ensure_segments_type(segments or [])
+        if not segments:
+            return []
+        lines = self._build_plan_lines(segments)
+        # 注意：模板里有 JSON 示例（花括号），不能用 str.format —— 会被当成占位符
+        # 抛出 KeyError('"frames"')。这里用 replace 填充。
+        system_prompt = (
+            FRAME_PLAN_PROMPT
+            .replace("{DURATION}", str(round(float(duration or 0), 1)))
+            .replace("{MAX_ITEMS}", str(max_items))
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "字幕如下：" + chr(10) + lines},
+        ]
+        response = self.client.chat.completions.create(
+            model=self.model, messages=messages, temperature=0.2
+        )
+        text = response.choices[0].message.content or ""
+        return parse_frame_plan(text, duration=duration, max_items=max_items)
+
+    def _build_plan_lines(self, segments: List[TranscriptSegment]) -> str:
+        """字幕太长时按时间均匀抽稀，控制 prompt 体积（保留整段覆盖）。"""
+        segs = list(segments)
+        if len(segs) > MAX_PLAN_SEGMENTS:
+            step = len(segs) / MAX_PLAN_SEGMENTS
+            segs = [segs[int(i * step)] for i in range(MAX_PLAN_SEGMENTS)]
+        return chr(10).join(f"[{seg.start:.1f}s] {seg.text.strip()}" for seg in segs)
+
     def list_models(self):
         return self.client.models.list()
 
@@ -337,3 +371,84 @@ class UniversalGPT(GPT):
         if checkpoint_key:
             self._clear_checkpoint(checkpoint_key)
         return merged
+
+
+# ---------------- 综合采样：LLM 选帧的提示词与解析（spec 002） ----------------
+
+MAX_PLAN_SEGMENTS = 600
+
+FRAME_PLAN_PROMPT = """你是视频课程内容分析师。下面是视频的转写字幕（方括号内是秒级时间戳）。
+请挑出「画面值得截图」的时间点，交给多模态模型看图。
+
+优先挑：
+- 出现幻灯片 / 图表 / 公式 / 代码 / 表格 / 流程图 / 软件演示 的位置；
+- 开始讲一个新知识点、话题明显切换的位置。
+
+避免：纯口语寒暄、重复啰嗦、没有画面信息的内容。
+
+只输出 JSON，不要解释、不要 markdown 代码块，格式：
+{"frames": [{"time": 123.4, "reason": "开始讲解 XX 流程图"}]}
+
+要求：
+- time 必须是数字（秒），且在 0 ~ {DURATION} 之间；
+- 最多 {MAX_ITEMS} 项，按时间升序；
+- 确实没有值得截图的地方就返回 {"frames": []}。
+"""
+
+
+def parse_frame_plan(text: str, duration: float = 0.0, max_items: int = 24) -> list:
+    """解析 LLM 返回的选帧 JSON；容错处理代码块、纯数组、字段名差异。"""
+    import json
+    import re as _re
+
+    raw = (text or "").strip()
+    raw = _re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", raw).strip()
+
+    data = None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        match = _re.search(r"\{.*\}|\[.*\]", raw, _re.S)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+            except Exception:
+                data = None
+
+    if isinstance(data, dict):
+        items = (
+            data.get("frames")
+            or data.get("timestamps")
+            or data.get("data")
+            or data.get("result")
+            or []
+        )
+    elif isinstance(data, list):
+        items = data
+    else:
+        items = []
+
+    times = []
+    for item in items:
+        if isinstance(item, dict):
+            value = item.get("time", item.get("timestamp", item.get("start")))
+        else:
+            value = item
+        try:
+            times.append(round(float(value), 3))
+        except (TypeError, ValueError):
+            continue
+
+    # 兜底：JSON 整体解析失败时，正则捞 "time": 数字
+    if not times:
+        for value in _re.findall(r'"time"\s*:\s*([0-9]+(?:\.[0-9]+)?)', raw):
+            try:
+                times.append(round(float(value), 3))
+            except ValueError:
+                continue
+
+    # 统一过滤越界（正则兜底也要过这一关）
+    times = sorted({t for t in times if t >= 0 and (duration <= 0 or t <= duration)})
+    if max_items and len(times) > max_items:
+        times = times[:max_items]
+    return times

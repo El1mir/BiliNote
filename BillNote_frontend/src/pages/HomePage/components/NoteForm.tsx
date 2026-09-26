@@ -14,8 +14,8 @@ import { z } from 'zod'
 
 import { Info, Loader2, Plus } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx'
-import { generateNote } from '@/services/note.ts'
-import type { BatchGenerateResult } from '@/services/note.ts'
+import { expandUrl, generateNote } from '@/services/note.ts'
+import type { BatchGenerateResult, ExpandResult } from '@/services/note.ts'
 import BatchImportDialog from './BatchImportDialog'
 import { uploadFile } from '@/services/upload.ts'
 import { useTaskStore } from '@/store/taskStore'
@@ -60,8 +60,11 @@ const formSchema = z
     extras: z.string().optional(),
     video_understanding: z.boolean().optional(),
     video_interval: z.coerce.number().min(1).max(30).default(6).optional(),
-    sampling_mode: z.enum(['interval', 'smart']).default('interval').optional(),
-    max_frames: z.coerce.number().min(5).max(300).default(60).optional(),
+    sampling_mode: z.enum(['interval', 'smart', 'hybrid']).default('interval').optional(),
+    // 不设上限：几个小时的课程需要更大的抽帧预算
+    max_frames: z.coerce.number().min(5).default(60).optional(),
+    frames_per_second: z.coerce.number().min(1).max(10).default(2).optional(),
+    frame_limit_mode: z.enum(['total', 'per_second']).default('total').optional(),
     batch_mode: z.boolean().optional(),
     grid_size: z
       .tuple([z.coerce.number().min(1).max(10), z.coerce.number().min(1).max(10)])
@@ -141,6 +144,8 @@ const NoteForm = () => {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
+  const [expanding, setExpanding] = useState(false)
+  const [expandResult, setExpandResult] = useState<ExpandResult | null>(null)
   /* ---- 全局状态 ---- */
   const { addPendingTask, currentTaskId, setCurrentTask, getCurrentTask, retryTask } =
     useTaskStore()
@@ -157,6 +162,8 @@ const NoteForm = () => {
       video_interval: 6,
       sampling_mode: 'interval',
       max_frames: 60,
+      frames_per_second: 2,
+      frame_limit_mode: 'total',
       batch_mode: false,
       grid_size: [2, 2],
       format: [],
@@ -168,6 +175,7 @@ const NoteForm = () => {
   const platform = useWatch({ control: form.control, name: 'platform' }) as string
   const videoUnderstandingEnabled = useWatch({ control: form.control, name: 'video_understanding' })
   const samplingMode = useWatch({ control: form.control, name: 'sampling_mode' })
+  const frameLimitMode = useWatch({ control: form.control, name: 'frame_limit_mode' })
   const batchMode = useWatch({ control: form.control, name: 'batch_mode' })
   const editing = currentTask && currentTask.id
 
@@ -199,6 +207,8 @@ const NoteForm = () => {
       video_interval: formData.video_interval ?? 6,
       sampling_mode: formData.sampling_mode ?? 'interval',
       max_frames: formData.max_frames ?? 60,
+      frames_per_second: formData.frames_per_second ?? 2,
+      frame_limit_mode: formData.frame_limit_mode ?? 'total',
       batch_mode: formData.batch_mode ?? false,
       grid_size: formData.grid_size ?? [2, 2],
       format: formData.format ?? [],
@@ -236,7 +246,8 @@ const NoteForm = () => {
 
   const onSubmit = async (values: NoteFormValues) => {
     if (values.batch_mode || batchMode) {
-      setBatchOpen(true)
+      // 批量模式：提交动作 = 展开预览（在主表单里请求，成功后才弹对话框）
+      await handleExpandPreview()
       return
     }
     console.log('Not even go here')
@@ -282,6 +293,25 @@ const NoteForm = () => {
     // 比如调用 resetCurrentTask() 或者 navigate 到一个新页面
     setCurrentTask(null)
   }
+  // 批量模式主按钮：先在主表单里请求 /expand，成功后才打开对话框
+  const handleExpandPreview = async () => {
+    const raw = (form.getValues().video_url || '').trim()
+    if (!raw) {
+      toast.error('请输入合集或多P视频链接')
+      return
+    }
+    setExpanding(true)
+    try {
+      const data = await expandUrl(withScheme(raw))
+      setExpandResult(data)
+      setBatchOpen(true)
+    } catch (e) {
+      console.error('展开失败', e)
+    } finally {
+      setExpanding(false)
+    }
+  }
+
   const FormButton = () => {
     const label = generating ? '正在生成…' : editing ? '重新生成' : '生成笔记'
 
@@ -290,11 +320,13 @@ const NoteForm = () => {
         <Button
           type={batchMode ? 'button' : 'submit'}
           className={(!editing ? 'flex-1' : 'w-2/3') + ' bg-primary'}
-          disabled={generating}
-          onClick={batchMode ? () => setBatchOpen(true) : undefined}
+          disabled={generating || expanding}
+          onClick={batchMode ? handleExpandPreview : undefined}
         >
-          {generating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {batchMode ? '展开预览' : label}
+          {(generating || (batchMode && expanding)) && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
+          {batchMode ? (expanding ? '展开中…' : '展开预览') : label}
         </Button>
 
         {editing && (
@@ -325,6 +357,8 @@ const NoteForm = () => {
       grid_size: values.grid_size,
       sampling_mode: values.sampling_mode,
       max_frames: values.max_frames,
+      frames_per_second: values.frames_per_second,
+      frame_limit_mode: values.frame_limit_mode,
     }
   }
 
@@ -577,21 +611,92 @@ const NoteForm = () => {
                       <SelectContent>
                         <SelectItem value="interval">间隔采样</SelectItem>
                         <SelectItem value="smart">高价值帧采样</SelectItem>
+                        <SelectItem value="hybrid">综合采样</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {/* 间隔采样：采样间隔；高价值：最大帧数 */}
+              {/* 间隔采样：采样间隔；高价值：限制方式二选一（每秒上限 / 全片上限） */}
               {samplingMode === 'smart' ? (
+                <>
+                  {/* 限制方式二选一：每秒上限 / 全片上限，只生效一个 */}
+                  <FormField
+                    control={form.control}
+                    name="frame_limit_mode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>限制方式</FormLabel>
+                        <Select
+                          disabled={!videoUnderstandingEnabled}
+                          value={field.value || 'total'}
+                          onValueChange={field.onChange}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="total">全片最大帧数</SelectItem>
+                            <SelectItem value="per_second">每秒最大帧数</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {frameLimitMode === 'per_second' ? (
+                    <FormField
+                      control={form.control}
+                      name="frames_per_second"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>每秒最多帧数</FormLabel>
+                          <Input
+                            disabled={!videoUnderstandingEnabled}
+                            type="number"
+                            min={1}
+                            max={10}
+                            {...field}
+                          />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <FormField
+                      control={form.control}
+                      name="max_frames"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>单个视频最大帧数</FormLabel>
+                          <Input
+                            disabled={!videoUnderstandingEnabled}
+                            type="number"
+                            min={5}
+                            {...field}
+                          />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </>
+              ) : samplingMode === 'hybrid' ? (
                 <FormField
                   control={form.control}
                   name="max_frames"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>最大帧数</FormLabel>
-                      <Input disabled={!videoUnderstandingEnabled} type="number" {...field} />
+                      <Input
+                        disabled={!videoUnderstandingEnabled}
+                        type="number"
+                        min={5}
+                        {...field}
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
@@ -684,7 +789,8 @@ const NoteForm = () => {
         open={batchOpen}
         onOpenChange={setBatchOpen}
         defaults={batchDefaults()}
-        initialUrl={(form.getValues().video_url as string) || ''}
+        result={expandResult}
+        sourceUrl={(form.getValues().video_url as string) || ''}
         onSubmitted={handleBatchSubmitted}
       />
     </div>
