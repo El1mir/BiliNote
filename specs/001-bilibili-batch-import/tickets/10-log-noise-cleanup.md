@@ -16,6 +16,12 @@
 2. `app/utils/video_reader.py`：删除 5 处目录调试 `print`。
 3. `app/downloaders/bilibili_downloader.py`：`print("video_url", ...)` → `logger.debug`。
 
+## 追加（2026-09-26）：去重探测日志降噪
+4. `app/db/video_task_dao.get_task_by_video()`：命中 / 未命中原来都是 `logger.info`，
+   批量展开时每个分P探测一次 → 49 个视频刷 49 行 `No task found for video_id ...`。
+   降为 `logger.debug`（去重标记功能不变）。
+
 ## 验收
 - 截图流程不再打印命令；截图仍能正常生成（实测 437KB jpg）；
-- 抽帧/下载不再有调试 print。
+- 抽帧/下载不再有调试 print；
+- 展开大合集时不再刷 `No task found for video_id ...`。

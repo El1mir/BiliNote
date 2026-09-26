@@ -31,10 +31,11 @@ def get_task_by_video(video_id: str, platform: str):
             .first()
         )
         if task:
-            logger.info(f"Task found for video_id: {video_id} and platform: {platform}")
+            # 去重探测是高频调用（批量展开时每个分P一次），命中/未命中都只在 debug 记
+            logger.debug(f"Task found for video_id: {video_id} and platform: {platform}")
             return task.task_id
         else:
-            logger.info(f"No task found for video_id: {video_id} and platform: {platform}")
+            logger.debug(f"No task found for video_id: {video_id} and platform: {platform}")
             return None
     except Exception as e:
         logger.error(f"Failed to get task by video: {e}")

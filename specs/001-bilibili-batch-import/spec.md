@@ -283,6 +283,8 @@ POST /api/generate_notes（勾选后的 [{bvid, p}] 列表）
 | 2 | ffmpeg 噪音 | `ffprobe` / 抽帧统一 `loglevel quiet`，错误靠 `check=True` 捕获；截图 ffmpeg 加 `-loglevel error`，调试 `print` 改 `logger.debug`（2026-09-26 扩展到截图/下载路径） |
 | 3 | 去重范围修正 | **进行中（PENDING/PARSING/...）也跳过**，不再允许重复提交同一视频 |
 | 4 | 下载文件隔离 | 同一视频由「进行中跳过」保证不并发；不同视频 id 不同，天然不冲突（本轮不改 5 个 downloader 的签名） |
+| 5 | 重试防并发 | 重试（带 `task_id`）也要检查该 task_id 是否在跑，避免单任务被并发跑两遍（2026-09-26 追加，ticket 11） |
+| 6 | 状态轮询误判 | 前端单次轮询失败不再判任务失败（连续 5 次才判），全局 axios 超时 10s → 30s（ticket 11） |
 
 ### 验收
 

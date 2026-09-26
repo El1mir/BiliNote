@@ -24,7 +24,9 @@ const baseURL = import.meta.env.VITE_API_BASE_URL;
 // 创建实例
  const request: AxiosInstance = axios.create({
   baseURL: baseURL || '/api',
-  timeout: 10000,
+  // 30s：抽帧/转写时后端 CPU 打满，状态轮询偶发超过 10s 会被 axios 掐断，
+  // 前端就会误判成网络错误（历史上导致任务被误标失败 + 重复提交）。
+  timeout: 30000,
 });
 
 // 响应拦截器

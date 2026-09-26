@@ -144,6 +144,24 @@ def _is_task_in_flight(video_id: str, platform: str) -> bool:
     return status in _IN_FLIGHT_STATUSES
 
 
+def _is_task_id_in_flight(task_id: str) -> bool:
+    """指定的 task_id 是否正在跑。
+
+    重试（带 task_id）以前会跳过进行中检查，导致同一个 task_id 被并发跑两遍：
+    yt-dlp 重复下载、抽帧目录互踩、状态文件 .tmp 抢锁 Permission denied。
+    """
+    if not task_id:
+        return False
+    status_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.status.json")
+    if not os.path.exists(status_path):
+        return False
+    try:
+        with open(status_path, "r", encoding="utf-8") as f:
+            return json.load(f).get("status") in _IN_FLIGHT_STATUSES
+    except Exception:
+        return False
+
+
 def _expand_video_entry(bvid: str, title: str = "", duration: int = 0, cover: str = "") -> dict:
     """把一个视频展开成 video entry（含分P、去重标记、单条错误隔离）。"""
     try:
@@ -363,6 +381,15 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
         #     )
         if data.task_id:
             # 如果传了task_id，说明是重试！
+            # 但重试也要防并发：任务还在跑的时候再点一次「重试」，
+            # 会让同一个 task_id 被跑两遍（已实测会互踩状态文件与下载目录）。
+            if _is_task_id_in_flight(data.task_id):
+                logger.warning(f"拒绝重试：任务仍在进行中 task_id={data.task_id}")
+                return R.error(
+                    msg="该任务正在生成中，请稍候",
+                    code=300103,
+                    data={"reason": "task_in_progress"},
+                )
             task_id = data.task_id
             logger.info(f"重试模式，复用已有 task_id={task_id}")
         else:
