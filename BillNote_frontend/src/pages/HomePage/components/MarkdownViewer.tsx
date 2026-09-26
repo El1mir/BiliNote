@@ -25,6 +25,7 @@ import TranscriptViewer from '@/pages/HomePage/components/transcriptViewer.tsx'
 import MarkmapEditor from '@/pages/HomePage/components/MarkmapComponent.tsx'
 import ChatPanel from '@/pages/HomePage/components/ChatPanel.tsx'
 import VideoBanner from '@/pages/HomePage/components/VideoBanner.tsx'
+import { normalizeMathDelimiters } from '@/utils/markdown'
 
 interface VersionNote {
   ver_id: string
@@ -511,7 +512,9 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
                     rehypePlugins={rehypePlugins}
                     components={markdownComponents}
                   >
-                    {selectedContent.replace(/^>\s*来源链接：[^\n]*\n*/m, '')}
+                    {normalizeMathDelimiters(
+                      selectedContent.replace(/^>\s*来源链接：[^\n]*\n*/m, ''),
+                    )}
                   </ReactMarkdown>
                 </div>
               </ScrollArea>

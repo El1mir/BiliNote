@@ -30,3 +30,5 @@ specs/
 |---|---|---|---|
 | 001 | [001-bilibili-batch-import](./001-bilibili-batch-import/spec.md) | implemented | B 站合集 / 多P 批量导入（含并发任务隔离） |
 | 002 | [002-video-understanding-sampling](./002-video-understanding-sampling/spec.md) | implemented | 视频理解采样方式 + 批量模式融入表单 |
+| 003 | [003-openai-compatible-asr](./003-openai-compatible-asr/spec.md) | implemented | OpenAI 兼容 ASR 引擎（替代本地 ASR） |
+| 004 | [004-note-math-rendering](./004-note-math-rendering/spec.md) | implemented | 笔记里的 LaTeX 公式渲染（`\(...\)` → `$...$`） |

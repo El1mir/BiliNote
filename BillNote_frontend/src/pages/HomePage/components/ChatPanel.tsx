@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Bubble, Sender } from '@ant-design/x'
 import ReactMarkdown from 'react-markdown'
+import { normalizeMathDelimiters } from '@/utils/markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -185,7 +186,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
         contentRender: (content: any) => (
           <div className="markdown-body prose prose-sm max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:my-2">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {typeof content === 'string' ? content : String(content)}
+              {normalizeMathDelimiters(typeof content === 'string' ? content : String(content))}
             </ReactMarkdown>
           </div>
         ),
