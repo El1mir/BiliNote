@@ -46,6 +46,8 @@ def test_note_generator_forwards_configured_whisper_model_size():
             {
                 "transcriber_type": "fast-whisper",
                 "model_size": "large-v3-turbo",
+                # spec 003：openai-asr 用的端点配置，非该引擎时为 None
+                "transcriber_options": None,
             }
         ]
         """

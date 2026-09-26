@@ -46,6 +46,24 @@ def update_cookie(data: CookieUpdateRequest):
 class TranscriberConfigRequest(BaseModel):
     transcriber_type: str
     whisper_model_size: Optional[str] = None
+    openai_asr_id: Optional[str] = None
+
+
+class OpenAISREndpointRequest(BaseModel):
+    name: str
+    base_url: str
+    api_key: str
+    model: str
+    timeout: Optional[int] = None
+    # 切割阈值（MB）：超过就切成多段分别转写
+    chunk_size_mb: Optional[float] = None
+    # transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio（MiMo 等）
+    # 默认 None：更新接口不传时保持原值，不会被悄悄重置
+    api_style: Optional[str] = None
+    # 静音切片参数（chat 风格用）
+    max_speech_chunks: Optional[int] = None
+    silence_noise_db: Optional[float] = None
+    min_silence_seconds: Optional[float] = None
 
 
 AVAILABLE_TRANSCRIBER_TYPES = [
@@ -53,6 +71,7 @@ AVAILABLE_TRANSCRIBER_TYPES = [
     {"value": "bcut", "label": "必剪（在线）"},
     {"value": "kuaishou", "label": "快手（在线）"},
     {"value": "groq", "label": "Groq（在线）"},
+    {"value": "openai-asr", "label": "OpenAI 兼容 ASR（在线）"},
     {"value": "mlx-whisper", "label": "MLX Whisper（仅macOS）"},
 ]
 
@@ -65,7 +84,8 @@ def get_transcriber_config():
     from app.transcriber.whisper_models import get_registry, BUILTIN_WHISPER_MODELS
 
     registry = get_registry()
-    config = transcriber_config_manager.get_config()
+    # 用打码版：openai_asr_endpoints 里的 api_key 不能明文回传
+    config = transcriber_config_manager.get_public_config()
     return R.success(data={
         **config,
         "available_types": AVAILABLE_TRANSCRIBER_TYPES,
@@ -111,11 +131,110 @@ def delete_whisper_model(name: str):
 
 @router.post("/transcriber_config")
 def update_transcriber_config(data: TranscriberConfigRequest):
-    config = transcriber_config_manager.update_config(
-        transcriber_type=data.transcriber_type,
-        whisper_model_size=data.whisper_model_size,
-    )
-    return R.success(data=config)
+    try:
+        transcriber_config_manager.update_config(
+            transcriber_type=data.transcriber_type,
+            whisper_model_size=data.whisper_model_size,
+            openai_asr_id=data.openai_asr_id,
+        )
+    except ValueError as e:
+        return R.error(msg=str(e))
+    return R.success(data=transcriber_config_manager.get_public_config())
+
+
+# ---- OpenAI 兼容 ASR 端点管理（spec 003）----
+
+@router.post("/openai_asr")
+def add_openai_asr(data: OpenAISREndpointRequest):
+    """新增一条 OpenAI 兼容 ASR 端点。"""
+    try:
+        endpoint_id = transcriber_config_manager.add_openai_asr(
+            name=data.name,
+            base_url=data.base_url,
+            api_key=data.api_key,
+            model=data.model,
+            timeout=data.timeout if data.timeout is not None else 600,
+            chunk_size_mb=data.chunk_size_mb if data.chunk_size_mb is not None else 18,
+            api_style=data.api_style or "transcriptions",
+            max_speech_chunks=data.max_speech_chunks if data.max_speech_chunks is not None else 120,
+            silence_noise_db=data.silence_noise_db if data.silence_noise_db is not None else -30.0,
+            min_silence_seconds=data.min_silence_seconds if data.min_silence_seconds is not None else 0.5,
+        )
+    except ValueError as e:
+        return R.error(msg=str(e))
+    return R.success(data={"id": endpoint_id}, msg="已添加")
+
+
+@router.post("/openai_asr/{endpoint_id}")
+def update_openai_asr(endpoint_id: str, data: OpenAISREndpointRequest):
+    """更新一条端点；api_key 传打码值（含 *）时视为未改动。"""
+    try:
+        endpoint = transcriber_config_manager.update_openai_asr(
+            endpoint_id,
+            name=data.name,
+            base_url=data.base_url,
+            api_key=data.api_key,
+            model=data.model,
+            timeout=data.timeout,
+            chunk_size_mb=data.chunk_size_mb,
+            api_style=data.api_style,
+            max_speech_chunks=data.max_speech_chunks,
+            silence_noise_db=data.silence_noise_db,
+            min_silence_seconds=data.min_silence_seconds,
+        )
+    except ValueError as e:
+        return R.error(msg=str(e))
+    return R.success(data={"id": endpoint["id"]}, msg="已保存")
+
+
+@router.delete("/openai_asr/{endpoint_id}")
+def delete_openai_asr(endpoint_id: str):
+    if not transcriber_config_manager.delete_openai_asr(endpoint_id):
+        return R.error(msg="端点不存在")
+    return R.success(msg="已删除")
+
+
+@router.post("/openai_asr/{endpoint_id}/test")
+def test_openai_asr(endpoint_id: str):
+    """用一段 1s 静音做一次真实转写，验证地址 / 鉴权 / 模型名是否可用。"""
+    import os
+
+    endpoint = transcriber_config_manager.get_openai_asr(endpoint_id)
+    if not endpoint:
+        return R.error(msg="端点不存在")
+
+    from app.transcriber.openai_asr import OpenAIASRTranscriber
+    from app.utils.audio_helper import make_silent_wav
+
+    wav_path = None
+    try:
+        wav_path = make_silent_wav(1.0)
+        transcriber = OpenAIASRTranscriber(
+            base_url=endpoint["base_url"],
+            api_key=endpoint["api_key"],
+            model=endpoint["model"],
+            # 测试不要按真实超时傻等
+            timeout=min(float(endpoint.get("timeout") or 600), 60),
+            chunk_size_mb=float(endpoint.get("chunk_size_mb") or 18),
+            name=endpoint.get("name") or "",
+            api_style=endpoint.get("api_style") or "transcriptions",
+            max_speech_chunks=endpoint.get("max_speech_chunks") or 120,
+            silence_noise_db=endpoint.get("silence_noise_db") or -30.0,
+            min_silence_seconds=endpoint.get("min_silence_seconds") or 0.5,
+        )
+        result = transcriber.transcript(file_path=wav_path)
+        preview = (result.full_text or "").strip()[:50]
+        message = "连接成功" + (f"，静音识别结果：{preview}" if preview else "")
+        return R.success(data={"ok": True, "message": message})
+    except Exception as e:  # noqa: BLE001 - 测试失败要返回可读原因，不能 500
+        logger.warning(f"OpenAI ASR 测试连接失败 (id={endpoint_id}): {e}")
+        return R.error(msg=f"连接失败：{e}", data={"ok": False})
+    finally:
+        if wav_path and os.path.exists(wav_path):
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
 
 
 # ---- 全局代理配置（作用于 LLM API + 转写 API + yt-dlp 下载）----

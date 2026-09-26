@@ -1,5 +1,40 @@
 import request from '@/utils/request'
 
+export type OpenAIASRStyle = 'transcriptions' | 'chat'
+
+export interface OpenAIASREndpoint {
+  id: string
+  name: string
+  base_url: string
+  /** GET 返回的是打码值（带 *），保存时原样回传即代表不修改 */
+  api_key: string
+  model: string
+  timeout: number
+  /** 切割阈值（MB）：音频超过该大小会切成多段分别转写 */
+  chunk_size_mb: number
+  /** transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio（MiMo 等） */
+  api_style: OpenAIASRStyle
+  /** 按说话（静音边界）切片时最多切多少段 */
+  max_speech_chunks: number
+  /** silencedetect 噪声门限 dB */
+  silence_noise_db: number
+  /** 多长的停顿算一次「说完了」（秒） */
+  min_silence_seconds: number
+}
+
+export interface OpenAIASREndpointInput {
+  name: string
+  base_url: string
+  api_key: string
+  model: string
+  timeout?: number
+  chunk_size_mb?: number
+  api_style?: OpenAIASRStyle
+  max_speech_chunks?: number
+  silence_noise_db?: number
+  min_silence_seconds?: number
+}
+
 export interface TranscriberConfig {
   transcriber_type: string
   whisper_model_size: string
@@ -10,6 +45,10 @@ export interface TranscriberConfig {
   /** 用户自定义模型映射：名称 → HF repo_id 或本地路径 */
   whisper_custom_models?: Record<string, string>
   mlx_whisper_available: boolean
+  /** OpenAI 兼容 ASR：当前使用的那条 */
+  openai_asr_id?: string | null
+  /** OpenAI 兼容 ASR：全部端点（api_key 已打码） */
+  openai_asr_endpoints?: OpenAIASREndpoint[]
 }
 
 export interface ModelStatus {
@@ -35,8 +74,34 @@ export const getTranscriberConfig = async (): Promise<TranscriberConfig> => {
 export const updateTranscriberConfig = async (data: {
   transcriber_type: string
   whisper_model_size?: string
+  openai_asr_id?: string | null
 }) => {
   return await request.post('/transcriber_config', data)
+}
+
+// ---------------- OpenAI 兼容 ASR 端点（spec 003） ----------------
+
+export const addOpenaiAsr = async (
+  data: OpenAIASREndpointInput,
+): Promise<{ id: string }> => {
+  return await request.post('/openai_asr', data)
+}
+
+export const updateOpenaiAsr = async (id: string, data: OpenAIASREndpointInput) => {
+  return await request.post(`/openai_asr/${encodeURIComponent(id)}`, data)
+}
+
+export const deleteOpenaiAsr = async (id: string) => {
+  return await request.delete(`/openai_asr/${encodeURIComponent(id)}`)
+}
+
+export const testOpenaiAsr = async (id: string) => {
+  // suppressToast：失败信息由调用方用更友好的方式展示，避免全局红 toast 重复
+  return await request.post(
+    `/openai_asr/${encodeURIComponent(id)}/test`,
+    {},
+    { suppressToast: true },
+  )
 }
 
 export const getModelsStatus = async (): Promise<ModelsStatusResponse> => {

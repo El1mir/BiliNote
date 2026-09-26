@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,8 +12,9 @@ import {
 } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AudioLines, AlertTriangle, CheckCircle2, Download, Loader2, Save, XCircle, Plus, Trash2, Boxes } from 'lucide-react'
+import { AudioLines, AlertTriangle, CheckCircle2, Download, Loader2, Save, XCircle, Plus, Trash2, Boxes, Pencil } from 'lucide-react'
 import { toast } from 'react-hot-toast'
+import { Label } from '@/components/ui/label'
 import {
   getTranscriberConfig,
   updateTranscriberConfig,
@@ -20,12 +22,62 @@ import {
   downloadModel,
   addWhisperModel,
   deleteWhisperModel,
+  addOpenaiAsr,
+  updateOpenaiAsr,
+  deleteOpenaiAsr,
+  testOpenaiAsr,
   TranscriberConfig,
   ModelStatus,
+  OpenAIASREndpoint,
 } from '@/services/transcriber'
 
 const isWhisperType = (type: string) =>
   type === 'fast-whisper' || type === 'mlx-whisper'
+
+interface AsrFormState {
+  id: string
+  name: string
+  base_url: string
+  api_key: string
+  model: string
+  timeout: string
+  chunk_size_mb: string
+  api_style: string
+  max_speech_chunks: string
+  silence_noise_db: string
+  min_silence_seconds: string
+}
+
+const emptyAsrForm: AsrFormState = {
+  id: '',
+  name: '',
+  base_url: 'https://api.openai.com/v1',
+  api_key: '',
+  model: 'whisper-1',
+  timeout: '600',
+  chunk_size_mb: '18',
+  api_style: 'transcriptions',
+  max_speech_chunks: '120',
+  silence_noise_db: '-30',
+  min_silence_seconds: '0.5',
+}
+
+/** 表单字段：上方 label + 下方输入框（+ 可选说明），避免只靠 placeholder 看不出含义。 */
+const Field = ({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: ReactNode
+}) => (
+  <div className="space-y-1.5">
+    <Label className="text-xs text-neutral-600">{label}</Label>
+    {children}
+    {hint && <p className="text-xs text-neutral-400">{hint}</p>}
+  </div>
+)
 
 export default function Transcriber() {
   const [config, setConfig] = useState<TranscriberConfig | null>(null)
@@ -36,6 +88,11 @@ export default function Transcriber() {
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>([])
   const [mlxModelStatuses, setMlxModelStatuses] = useState<ModelStatus[]>([])
   const [mlxAvailable, setMlxAvailable] = useState(false)
+  // OpenAI 兼容 ASR（spec 003）
+  const [asrActiveId, setAsrActiveId] = useState('')
+  const [asrForm, setAsrForm] = useState<AsrFormState>(emptyAsrForm)
+  const [asrSaving, setAsrSaving] = useState(false)
+  const [asrTestingId, setAsrTestingId] = useState('')
   // 自定义模型表单
   const [newModelName, setNewModelName] = useState('')
   const [newModelTarget, setNewModelTarget] = useState('')
@@ -47,7 +104,9 @@ export default function Transcriber() {
   // 重新拉取配置（不重置用户当前的选择），用于增删自定义模型后刷新下拉与列表
   const reloadConfig = useCallback(async () => {
     try {
-      setConfig(await getTranscriberConfig())
+      const data = await getTranscriberConfig()
+      setConfig(data)
+      setAsrActiveId(data.openai_asr_id || '')
     } catch {
       // 静默
     }
@@ -88,6 +147,7 @@ export default function Transcriber() {
         setConfig(data)
         setSelectedType(data.transcriber_type)
         setSelectedModelSize(data.whisper_model_size)
+        setAsrActiveId(data.openai_asr_id || '')
       } catch {
         toast.error('获取转写器配置失败')
       } finally {
@@ -131,13 +191,25 @@ export default function Transcriber() {
       }
     }
 
+    if (selectedType === 'openai-asr' && !asrActiveId) {
+      toast.error('请先添加并选择一条要使用的 OpenAI 兼容 ASR 端点')
+      return
+    }
+
     setSaving(true)
     try {
-      const payload: { transcriber_type: string; whisper_model_size?: string } = {
+      const payload: {
+        transcriber_type: string
+        whisper_model_size?: string
+        openai_asr_id?: string
+      } = {
         transcriber_type: selectedType,
       }
       if (isWhisperType(selectedType)) {
         payload.whisper_model_size = selectedModelSize
+      }
+      if (selectedType === 'openai-asr') {
+        payload.openai_asr_id = asrActiveId
       }
       await updateTranscriberConfig(payload)
       toast.success('转写器配置已保存')
@@ -194,6 +266,101 @@ export default function Transcriber() {
     }
   }
 
+  // ---------------- OpenAI 兼容 ASR 端点管理（spec 003） ----------------
+
+  const resetAsrForm = () => setAsrForm(emptyAsrForm)
+
+  const handleEditAsr = (endpoint: OpenAIASREndpoint) => {
+    setAsrForm({
+      id: endpoint.id,
+      name: endpoint.name,
+      base_url: endpoint.base_url,
+      api_key: endpoint.api_key,
+      model: endpoint.model,
+      timeout: String(endpoint.timeout ?? 600),
+      chunk_size_mb: String(endpoint.chunk_size_mb ?? 18),
+      api_style: endpoint.api_style || 'transcriptions',
+      max_speech_chunks: String(endpoint.max_speech_chunks ?? 120),
+      silence_noise_db: String(endpoint.silence_noise_db ?? -30),
+      min_silence_seconds: String(endpoint.min_silence_seconds ?? 0.5),
+    })
+  }
+
+  const handleSaveAsr = async () => {
+    const name = asrForm.name.trim()
+    const baseUrl = asrForm.base_url.trim()
+    const model = asrForm.model.trim()
+    const apiKey = asrForm.api_key.trim()
+    if (!name || !baseUrl || !model) {
+      toast.error('名称 / 服务地址 / 模型名不能为空')
+      return
+    }
+    // 新增必须填 key；编辑时回显的是打码值，带 * 后端会跳过不覆盖
+    if (!asrForm.id && !apiKey) {
+      toast.error('请填写 API Key')
+      return
+    }
+
+    setAsrSaving(true)
+    try {
+      const payload = {
+        name,
+        base_url: baseUrl,
+        api_key: apiKey,
+        model,
+        timeout: Number(asrForm.timeout) || 600,
+        chunk_size_mb: Number(asrForm.chunk_size_mb) || 18,
+        api_style: asrForm.api_style,
+        max_speech_chunks: Number(asrForm.max_speech_chunks) || 120,
+        silence_noise_db: Number(asrForm.silence_noise_db) || -30,
+        min_silence_seconds: Number(asrForm.min_silence_seconds) || 0.5,
+      }
+      if (asrForm.id) {
+        await updateOpenaiAsr(asrForm.id, payload)
+        toast.success('已保存')
+        resetAsrForm()
+        await reloadConfig()
+      } else {
+        const { id } = await addOpenaiAsr(payload)
+        toast.success('已添加')
+        resetAsrForm()
+        await reloadConfig()
+        // 新添加的先在界面上选中，点「保存配置」后才真正生效
+        setAsrActiveId(id)
+      }
+    } catch {
+      // 具体错误已由请求拦截器 toast
+    } finally {
+      setAsrSaving(false)
+    }
+  }
+
+  const handleDeleteAsr = async (endpoint: OpenAIASREndpoint) => {
+    if (!window.confirm(`删除端点「${endpoint.name}」？`)) return
+    const wasActive = asrActiveId === endpoint.id
+    try {
+      await deleteOpenaiAsr(endpoint.id)
+      toast.success('已删除')
+      if (asrForm.id === endpoint.id) resetAsrForm()
+      await reloadConfig()
+      if (wasActive) setAsrActiveId('')
+    } catch {
+      // 拦截器已提示
+    }
+  }
+
+  const handleTestAsr = async (endpoint: OpenAIASREndpoint) => {
+    setAsrTestingId(endpoint.id)
+    try {
+      const res: any = await testOpenaiAsr(endpoint.id)
+      toast.success(res?.message || '连接成功')
+    } catch (e: any) {
+      toast.error(e?.msg || '连接失败')
+    } finally {
+      setAsrTestingId('')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -207,9 +374,12 @@ export default function Transcriber() {
   }
 
   const currentModels = selectedType === 'mlx-whisper' ? mlxModelStatuses : modelStatuses
+  const asrEndpoints = config.openai_asr_endpoints || []
 
   return (
-    <div className="space-y-6 p-6">
+    // SettingLayout 的 <main> 是 overflow-hidden，页面自己必须有滚动容器，
+    // 否则「OpenAI 兼容 ASR」端点列表一多，底部内容就够不到、也无法滚动。
+    <div className="h-full space-y-6 overflow-y-auto bg-white p-6">
       <div>
         <h2 className="text-2xl font-semibold">音频转写配置</h2>
         <p className="mt-1 text-sm text-neutral-500">
@@ -351,6 +521,255 @@ export default function Transcriber() {
                   )}
                 </div>
               ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* OpenAI 兼容 ASR 端点管理（spec 003） */}
+      {selectedType === 'openai-asr' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <AudioLines className="h-5 w-5" />
+              OpenAI 兼容 ASR
+              <span className="text-sm font-normal text-neutral-400">
+                任意实现 /v1/audio/transcriptions 的服务
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert className="text-sm">
+              <AlertDescription>
+                <div>
+                  填 <strong>Base URL</strong>（到 <code className="rounded bg-neutral-100 px-1">/v1</code>{' '}
+                  为止）+ API Key + <strong>模型名</strong>；点「测试」会真发一段静音校验，
+                  「使用」并保存后对新任务生效。
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-4">
+                  <li>
+                    <strong>audio/transcriptions（Whisper 风格）</strong>：如 OpenAI 官方{' '}
+                    <code className="rounded bg-neutral-100 px-1">https://api.openai.com/v1</code> +{' '}
+                    <code className="rounded bg-neutral-100 px-1">whisper-1</code>，硅基流动{' '}
+                    <code className="rounded bg-neutral-100 px-1">FunAudioLLM/SenseVoiceSmall</code>
+                  </li>
+                  <li>
+                    <strong>chat/completions + input_audio</strong>：如小米 MiMo，Base URL{' '}
+                    <code className="rounded bg-neutral-100 px-1">https://api.xiaomimimo.com/v1</code>{' '}
+                    + 模型 <code className="rounded bg-neutral-100 px-1">mimo-v2.5-asr</code>
+                    （音频经 base64 传入；这种接口不返回时间轴，会<b>按说话（静音边界）自动切片</b>，
+                    每片单独转写并用真实语音边界当时间轴，可用「静音切片」三项参数微调）
+                  </li>
+                </ul>
+              </AlertDescription>
+            </Alert>
+
+            {asrEndpoints.length === 0 ? (
+              <p className="text-sm text-neutral-400">还没有端点，先在下方添加一条</p>
+            ) : (
+              <div className="space-y-2">
+                {asrEndpoints.map(endpoint => {
+                  const active = asrActiveId === endpoint.id
+                  return (
+                    <div
+                      key={endpoint.id}
+                      className={`rounded-md border px-4 py-3 ${active ? 'border-primary' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 font-medium">
+                            {endpoint.name}
+                            {active && (
+                              <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+                                使用中
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="truncate text-xs text-neutral-400" title={endpoint.base_url}>
+                            {endpoint.base_url}
+                          </div>
+                          <div className="truncate text-xs text-neutral-400">
+                            模型：{endpoint.model} · 超时 {endpoint.timeout}s · 切割阈值{' '}
+                            {endpoint.chunk_size_mb}MB
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {!active && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setAsrActiveId(endpoint.id)}
+                            >
+                              使用
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={asrTestingId === endpoint.id}
+                            onClick={() => handleTestAsr(endpoint)}
+                          >
+                            {asrTestingId === endpoint.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              '测试'
+                            )}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleEditAsr(endpoint)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-600"
+                            onClick={() => handleDeleteAsr(endpoint)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="space-y-2 rounded-md border p-4">
+              <div className="text-sm font-medium">
+                {asrForm.id ? '编辑端点' : '添加端点'}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="接口类型">
+                  <Select
+                    value={asrForm.api_style}
+                    onValueChange={v => setAsrForm({ ...asrForm, api_style: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="transcriptions">
+                        audio/transcriptions（Whisper 风格）
+                      </SelectItem>
+                      <SelectItem value="chat">
+                        chat/completions + input_audio（MiMo 等）
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field label="名称">
+                  <Input
+                    placeholder="如 硅基流动"
+                    value={asrForm.name}
+                    onChange={e => setAsrForm({ ...asrForm, name: e.target.value })}
+                  />
+                </Field>
+
+                <Field label="服务地址（Base URL）" hint="填到 /v1 为止">
+                  <Input
+                    placeholder="https://api.openai.com/v1"
+                    value={asrForm.base_url}
+                    onChange={e => setAsrForm({ ...asrForm, base_url: e.target.value })}
+                  />
+                </Field>
+
+                <Field label="API Key" hint="编辑时留空或保持打码值即不修改">
+                  <Input
+                    placeholder="sk-..."
+                    value={asrForm.api_key}
+                    onChange={e => setAsrForm({ ...asrForm, api_key: e.target.value })}
+                  />
+                </Field>
+
+                <Field label="模型名">
+                  <Input
+                    placeholder="whisper-1 / mimo-v2.5-asr"
+                    value={asrForm.model}
+                    onChange={e => setAsrForm({ ...asrForm, model: e.target.value })}
+                  />
+                </Field>
+
+                <Field label="超时（秒）" hint="默认 600">
+                  <Input
+                    type="number"
+                    placeholder="600"
+                    value={asrForm.timeout}
+                    onChange={e => setAsrForm({ ...asrForm, timeout: e.target.value })}
+                  />
+                </Field>
+
+                <Field label="切割阈值（MB）" hint="超过就切成多段分别转写，默认 18">
+                  <Input
+                    type="number"
+                    placeholder="18"
+                    value={asrForm.chunk_size_mb}
+                    onChange={e => setAsrForm({ ...asrForm, chunk_size_mb: e.target.value })}
+                  />
+                </Field>
+
+                {asrForm.api_style === 'chat' && (
+                  <>
+                    <Field
+                      label="最多切片数"
+                      hint="按说话切片时最多切多少段，默认 120"
+                    >
+                      <Input
+                        type="number"
+                        placeholder="120"
+                        value={asrForm.max_speech_chunks}
+                        onChange={e =>
+                          setAsrForm({ ...asrForm, max_speech_chunks: e.target.value })
+                        }
+                      />
+                    </Field>
+
+                    <Field
+                      label="静音门限（dB）"
+                      hint="越低越不敏感；环境吵可调到 -25"
+                    >
+                      <Input
+                        type="number"
+                        placeholder="-30"
+                        value={asrForm.silence_noise_db}
+                        onChange={e =>
+                          setAsrForm({ ...asrForm, silence_noise_db: e.target.value })
+                        }
+                      />
+                    </Field>
+
+                    <Field
+                      label="最短静音（秒）"
+                      hint="多长的停顿算「说完了」，默认 0.5"
+                    >
+                      <Input
+                        type="number"
+                        step="0.1"
+                        placeholder="0.5"
+                        value={asrForm.min_silence_seconds}
+                        onChange={e =>
+                          setAsrForm({ ...asrForm, min_silence_seconds: e.target.value })
+                        }
+                      />
+                    </Field>
+                  </>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleSaveAsr} disabled={asrSaving}>
+                  {asrSaving ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="mr-1 h-4 w-4" />
+                  )}
+                  {asrForm.id ? '保存' : '添加'}
+                </Button>
+                {asrForm.id && (
+                  <Button variant="outline" onClick={resetAsrForm}>
+                    取消编辑
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
