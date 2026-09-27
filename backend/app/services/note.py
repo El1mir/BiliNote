@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -275,6 +276,7 @@ class NoteGenerator:
                         subtitle_starts=subtitle_starts,
                         llm_timestamps=llm_timestamps,
                         progress_callback=self._video_progress_callback(task_id),
+                        task_id=task_id,
                     ).run()
                 except Exception as exc:
                     logger.error(f"视频理解抽帧失败：{exc}")
@@ -654,6 +656,7 @@ class NoteGenerator:
                         unit_height=540,
                         save_quality=80,
                         progress_callback=self._video_progress_callback(task_id),
+                        task_id=task_id,
                     ).run()
                 elif grid_size:
                     logger.info("smart 采样需要字幕，抽帧将在转写完成后进行")
@@ -680,6 +683,16 @@ class NoteGenerator:
                 need_video=need_video,
             )
             audio_cache_file.write_text(json.dumps(asdict(audio), ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                from app.services.media_resource_service import register_resource
+                if Path(audio.file_path).is_file():
+                    register_resource("audio", audio.file_path, task_id=task_id, video_id=audio.video_id)
+                if audio.video_path and Path(audio.video_path).is_file():
+                    register_resource("video", audio.video_path, task_id=task_id, video_id=audio.video_id)
+                if self.video_path and self.video_path.is_file():
+                    register_resource("video", self.video_path, task_id=task_id, video_id=audio.video_id)
+            except Exception:
+                logger.exception("无法登记任务媒体资源 task_id=%s", task_id)
             logger.info(f"音频下载并缓存成功 ({audio_cache_file})")
             return audio
         except Exception as exc:
@@ -871,8 +884,17 @@ class NoteGenerator:
         )
 
         try:
+            summarize_started = time.perf_counter()
             markdown = gpt.summarize(source)
+            logger.info(
+                "Visual pipeline phase=visual_model_requests seconds=%.3f image_count=%s configured_frames=%s",
+                time.perf_counter() - summarize_started,
+                len(video_img_urls or []),
+                getattr(source, "extras", {}).get("max_frames") if isinstance(getattr(source, "extras", None), dict) else None,
+            )
+            write_started = time.perf_counter()
             markdown_cache_file.write_text(markdown, encoding="utf-8")
+            logger.info("Visual pipeline phase=note_write seconds=%.3f", time.perf_counter() - write_started)
             logger.info(f"GPT 总结并缓存成功 ({markdown_cache_file})")
             return markdown
         except Exception as exc:
@@ -959,6 +981,11 @@ class NoteGenerator:
             nonlocal completed
             idx, (marker, ts) = item
             img_path = generate_screenshot(str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx)
+            try:
+                from app.services.media_resource_service import register_resource
+                register_resource("screenshot", img_path, task_id=task_id, source="generated")
+            except Exception:
+                logger.exception("无法登记生成的截图 task_id=%s", task_id)
             filename = Path(img_path).name
             # 构建前端可访问的 URL，例如 /static/screenshots/{filename}
             img_url = f"{IMAGE_BASE_URL.rstrip('/')}/{filename}"

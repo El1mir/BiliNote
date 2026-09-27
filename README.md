@@ -3,8 +3,9 @@
     <p align="center">
   <img src="./doc/icon.svg" alt="BiliNote Banner" width="50" height="50"  />
 </p>
-<h1 align="center" > BiliNote v2.4.4</h1>
+<h1 align="center" > BiliNote Unoffical</h1>
 </div>
+
 
 <p align="center"><i>AI 视频笔记生成工具 让 AI 为你的视频做笔记</i></p>
 
@@ -17,10 +18,10 @@
   <img src="https://img.shields.io/badge/status-active-success" />
   <img src="https://img.shields.io/github/stars/jefferyhcool/BiliNote?style=social" />
 </p>
-
 <p align="center">
-  <a href="https://www.bilinote.app/"><b>🚀 BiliNote Pro · 在线版</b></a>
+  <a href="https://www.bilinote.app/"><b>🚀 官方BiliNote Pro · 在线版</b></a>
 </p>
+
 
 <p align="center">
   <b>不想折腾部署？</b>访问 <a href="https://www.bilinote.app/"><b>www.bilinote.app</b></a> 即开即用 —— 免安装、免配置环境、免下模型，注册即可把视频转成笔记。
@@ -38,11 +39,13 @@
 
 ## ✨ 项目简介
 
-BiliNote 是一个开源的 AI 视频笔记助手，支持通过哔哩哔哩、YouTube、抖音等视频链接，自动提取内容并生成结构清晰、重点明确的 Markdown 格式笔记。支持插入截图、原片跳转、AI 问答等功能。
+这是一个非官方维护的修改版分支，添加了批量任务等新功能，加入了速度优化和资源缓存等优化，并优化了前端界面设计。
+
+原项目地址：[BiliNote]([JefferyHcool/BiliNote: AI 视频笔记生成工具 让 AI 为你的视频做笔记](https://github.com/JefferyHcool/BiliNote))
 
 > 💡 **想直接用、不想本地部署？** —— [BiliNote Pro 在线版 www.bilinote.app](https://www.bilinote.app/) 已上线，云端托管、开箱即用，省去依赖安装 / 代理配置 / 模型下载的全部麻烦。
 
-## 🌐 在线使用（推荐）
+## 🌐 官方版在线使用（推荐）
 
 直接访问 **[www.bilinote.app](https://www.bilinote.app/)** 即可使用 BiliNote Pro 在线版，无需本地部署。
 
@@ -51,8 +54,11 @@ BiliNote 是一个开源的 AI 视频笔记助手，支持通过哔哩哔哩、Y
 帮助团队将开源能力转化为商业价值。免费15分钟诊断 → 加微信 JefferyHJW
 
 ## 📝 使用文档
-详细文档可以查看[这里](https://docs.bilinote.app/)
+
+本版本还没有提供release，只能通过拉取源码启动，并更换了包管理系统到uv
+
 ## 📦 桌面版下载
+
 本项目提供了 Windows 和 macOS 桌面客户端，可在 [Releases](https://github.com/JefferyHcool/BiliNote/releases) 页面下载最新版本。
 
 > Windows 用户请注意：一定要在没有中文路径的环境下运行。

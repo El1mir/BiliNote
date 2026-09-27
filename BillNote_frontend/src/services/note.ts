@@ -1,6 +1,43 @@
 import request from '@/utils/request'
 import toast from 'react-hot-toast'
 
+const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+
+export const downloadNoteArchive = async (taskId: string): Promise<Blob> => {
+  const base = API_BASE.endsWith('/api') ? API_BASE : `${API_BASE}/api`
+  const response = await fetch(`${base}/task_archive/${encodeURIComponent(taskId)}`)
+  if (!response.ok) {
+    let message = '笔记归档下载失败'
+    try {
+      const payload = await response.json()
+      message = payload?.msg || message
+    } catch {
+      // Keep a readable fallback for non-JSON proxy errors.
+    }
+    throw new Error(message)
+  }
+  return response.blob()
+}
+
+export const downloadNoteArchives = async (taskIds: string[]): Promise<Blob> => {
+  const base = API_BASE.endsWith('/api') ? API_BASE : `${API_BASE}/api`
+  const response = await fetch(`${base}/task_archives`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_ids: taskIds }),
+  })
+  if (!response.ok) {
+    let message = '批量归档下载失败'
+    try {
+      const payload = await response.json()
+      message = payload?.msg || message
+    } catch {
+      // Keep a readable fallback for non-JSON proxy errors.
+    }
+    throw new Error(message)
+  }
+  return response.blob()
+}
 export const generateNote = async (data: {
   video_url: string
   platform: string

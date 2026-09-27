@@ -74,7 +74,15 @@ async def lifespan(app: FastAPI):
         logger.exception("[startup FAILED] 后端启动期异常，详见堆栈；容器会退出并由 restart 策略决定是否重试")
         raise
 
-    yield
+    import asyncio
+    from app.services.media_resource_service import media_cleanup_loop
+    media_stop = asyncio.Event()
+    media_task = asyncio.create_task(media_cleanup_loop(media_stop))
+    try:
+        yield
+    finally:
+        media_stop.set()
+        await media_task
 
 app = create_app(lifespan=lifespan)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo, FC } from 'react'
+import { useState, useEffect, useRef, useMemo, memo, FC, Children, isValidElement } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Button } from '@/components/ui/button.tsx'
 import { Copy, Download, ArrowRight, Play, ExternalLink } from 'lucide-react'
@@ -28,6 +28,7 @@ import ChatPanel from '@/pages/HomePage/components/ChatPanel.tsx'
 import VideoBanner from '@/pages/HomePage/components/VideoBanner.tsx'
 import { normalizeMathDelimiters } from '@/utils/markdown'
 import { asText } from '@/utils/text'
+import { downloadNoteArchive } from '@/services/note'
 
 interface VersionNote {
   ver_id: string
@@ -82,11 +83,15 @@ function createMarkdownComponents(baseURL: string) {
         {children}
       </h4>
     ),
-    p: ({ children, ...props }: any) => (
-      <p className="leading-7 [&:not(:first-child)]:mt-6" {...props}>
-        {children}
-      </p>
-    ),
+    p: ({ children, ...props }: any) => {
+      const containsImage = Children.toArray(children).some(child => {
+        if (!isValidElement(child)) return false
+        const childProps = child.props as { src?: unknown; children?: unknown }
+        return typeof childProps.src === 'string' || Children.toArray(childProps.children).some(n => isValidElement(n) && typeof (n.props as { src?: unknown }).src === 'string')
+      })
+      const className = "leading-7 [&:not(:first-child)]:mt-6"
+      return containsImage ? <div className={className}>{children}</div> : <p className={className} {...props}>{children}</p>
+    },
     a: ({ href, children, ...props }: any) => {
       const isOriginLink =
         typeof children[0] === 'string' &&
@@ -196,33 +201,17 @@ function createMarkdownComponents(baseURL: string) {
         {children}
       </strong>
     ),
-    li: ({ children, ...props }: any) => {
+    li: ({ children, ordered: _ordered, index: _index, checked: _checked, ...props }: any) => {
       const rawText = String(children)
-      const isFakeHeading = /^(\*\*.+\*\*)$/.test(rawText.trim())
-
-      if (isFakeHeading) {
-        return (
-          <div className="text-primary my-4 text-lg font-bold">{children}</div>
-        )
-      }
-
-      return (
-        <li className="my-1" {...props}>
-          {children}
-        </li>
-      )
+      const isFakeHeading = /^\*\*.+\*\*$/.test(rawText.trim())
+      if (isFakeHeading) return <div className="text-primary my-4 text-lg font-bold">{children}</div>
+      return <li className="my-1" {...props}>{children}</li>
     },
-    ul: ({ children, ...props }: any) => (
+    ul: ({ children, ordered: _ordered, depth: _depth, ...props }: any) => (
       <ul className="my-6 ml-6 list-disc [&>li]:mt-2" {...props}>
         {children}
       </ul>
-    ),
-    ol: ({ children, ...props }: any) => (
-      <ol className="my-6 ml-6 list-decimal [&>li]:mt-2" {...props}>
-        {children}
-      </ol>
-    ),
-    blockquote: ({ children, ...props }: any) => (
+    ),    blockquote: ({ children, ...props }: any) => (
       <blockquote
         className="border-primary/20 text-muted-foreground mt-6 border-l-4 pl-4 italic"
         {...props}
@@ -285,21 +274,11 @@ function createMarkdownComponents(baseURL: string) {
         </table>
       </div>
     ),
-    th: ({ children, ...props }: any) => (
-      <th
-        className="border-muted-foreground/20 border px-4 py-2 text-left font-medium [&[align=center]]:text-center [&[align=right]]:text-right"
-        {...props}
-      >
-        {children}
-      </th>
+    th: ({ children, isHeader: _isHeader, ...props }: any) => (
+      <th className="border-muted-foreground/20 border px-4 py-2 text-left font-medium [&[align=center]]:text-center [&[align=right]]:text-right" {...props}>{children}</th>
     ),
-    td: ({ children, ...props }: any) => (
-      <td
-        className="border-muted-foreground/20 border px-4 py-2 text-left [&[align=center]]:text-center [&[align=right]]:text-right"
-        {...props}
-      >
-        {children}
-      </td>
+    td: ({ children, isHeader: _isHeader, ...props }: any) => (
+      <td className="border-muted-foreground/20 border px-4 py-2 text-left [&[align=center]]:text-center [&[align=right]]:text-right" {...props}>{children}</td>
     ),
     hr: ({ ...props }: any) => (
       <hr className="border-muted-foreground/20 my-8" {...props} />
@@ -397,16 +376,25 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
       URL.revokeObjectURL(url)
     },
   }
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const task = getCurrentTask()
-    const name = task?.audioMeta.title || 'note'
-    const blob = new Blob([selectedContent], { type: 'text/markdown;charset=utf-8' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `${name}.md`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    if (!task?.id) {
+      toast.error('找不到笔记任务，无法导出')
+      return
+    }
+    try {
+      const blob = await downloadNoteArchive(task.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${asText(task.audioMeta.title, 'note').replace(/[\\/:*?"<>|]/g, '_')}.zip`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '笔记归档下载失败')
+    }
   }
 
   if (status === 'loading') {

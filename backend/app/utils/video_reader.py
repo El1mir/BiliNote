@@ -4,8 +4,10 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 import ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
@@ -31,7 +33,8 @@ class VideoReader:
                  frame_limit_mode="total",
                  subtitle_starts=None,
                  llm_timestamps=None,
-                 progress_callback=None):
+                 progress_callback=None,
+                 task_id=None):
         self.video_path = video_path
         self.grid_size = grid_size
         self.frame_interval = frame_interval
@@ -47,6 +50,8 @@ class VideoReader:
         self.frame_dir = frame_dir or get_app_dir(os.path.join("output_frames", _token))
         self.grid_dir = grid_dir or get_app_dir(os.path.join("grid_output", _token))
         self.progress_callback = progress_callback
+        self.task_id = task_id
+        self._cache_hit = False
         # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
         self.sampling_mode = sampling_mode
         self.max_frames = int(max_frames or 60)
@@ -62,6 +67,42 @@ class VideoReader:
         if self.progress_callback:
             self.progress_callback(stage, current=current, total=total, message=message)
 
+    def _log_timing(self, phase: str, started: float, **fields) -> None:
+        elapsed = time.perf_counter() - started
+        logger.info("Visual pipeline phase=%s seconds=%.3f cache_hit=%s fields=%s", phase, elapsed, self._cache_hit, fields)
+
+
+
+    def _grid_cache_dir(self) -> str | None:
+        if not self.task_id:
+            return None
+        return get_app_dir(os.path.join("visual_cache", "v1"))
+
+    def _video_fingerprint(self) -> str:
+        """Return a content fingerprint while keeping mocked pipeline tests cache-safe."""
+        digest = hashlib.sha256()
+        try:
+            stat = os.stat(self.video_path)
+            with open(self.video_path, "rb") as source:
+                digest.update(source.read(1024 * 1024))
+                if stat.st_size > 1024 * 1024:
+                    source.seek(max(0, stat.st_size - 1024 * 1024))
+                    digest.update(source.read(1024 * 1024))
+            digest.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
+        except OSError:
+            digest.update(str(self.video_path).encode("utf-8"))
+        return digest.hexdigest()
+    def _grid_cache_key(self, groups: list[list[str]]) -> str:
+        payload = {
+            "schema": 1,
+            "task_scope": self.task_id,
+            "video": self._video_fingerprint(),
+            "sampling": [self.sampling_mode, self.max_frames, self.frames_per_second, self.frame_limit_mode, self.frame_interval],
+            "timestamps": [Path(path).name for group in groups for path in group],
+            "grid": [self.grid_size, self.unit_width, self.unit_height, self.save_quality, self.dedupe_enabled],
+            "hybrid_inputs": [self.subtitle_starts, self.llm_timestamps] if self.sampling_mode == "hybrid" else None,
+        }
+        return hashlib.sha256(repr(payload).encode("utf-8")).hexdigest()
 
     @staticmethod
     def _calculate_file_md5(file_path: str) -> str:
@@ -257,6 +298,7 @@ class VideoReader:
 
     def run(self)->list[str]:
         logger.info("开始提取视频帧...")
+        phase_started = time.perf_counter()
         try:
             # 确保目录存在
             os.makedirs(self.frame_dir, exist_ok=True)
@@ -265,7 +307,7 @@ class VideoReader:
             for file in os.listdir(self.frame_dir):
                 if file.startswith("frame_"):
                     os.remove(os.path.join(self.frame_dir, file))
-            #清空网格文件夹
+            # 每轮都重建本地网格图；缓存副本单独保存在 visual_cache 中，不受临时目录清理影响。
             for file in os.listdir(self.grid_dir):
                 if file.startswith("grid_"):
                     os.remove(os.path.join(self.grid_dir, file))
@@ -302,16 +344,41 @@ class VideoReader:
                 self.extract_frames()
             logger.info("开始拼接网格图...")
             groups = self.group_images()
+            cache_root = self._grid_cache_dir()
+            cache_key = self._grid_cache_key(groups)
+            cache_dir = os.path.join(cache_root, str(self.task_id), cache_key) if cache_root and self.task_id else None
+            cache_meta = os.path.join(cache_dir, "metadata.txt") if cache_dir else None
+            cached_paths = []
+            if cache_dir and cache_meta and os.path.isfile(cache_meta):
+                try:
+                    cache_stat = os.stat(cache_dir)
+                    cache_valid = time.time() - cache_stat.st_mtime <= 7 * 24 * 3600
+                    cached_count = int(Path(cache_meta).read_text(encoding="utf-8"))
+                    cached_paths = [os.path.join(cache_dir, f"grid_{idx}.jpg") for idx in range(1, cached_count + 1)]
+                    cache_valid = cache_valid and cached_count > 0 and all(os.path.isfile(path) and os.path.getsize(path) > 0 for path in cached_paths)
+                    if cache_valid:
+                        os.utime(cache_dir, None)
+                        self._cache_hit = True
+                        logger.info("Visual grid cache hit: grids=%s", cached_count)
+                    else:
+                        # Leave a concurrent writer's immutable cache entry untouched.
+                        cached_paths = []
+                except Exception:
+                    cached_paths = []
+            logger.info("Visual grid cache %s", "hit" if self._cache_hit else "miss")
+            self._log_timing("frame_extraction", phase_started, frames=frame_total if 'frame_total' in locals() else sum(map(len, groups)), grids=len(groups))
+            phase_started = time.perf_counter()
             # 进度分母 = 网格组数 + 待编码图像数（两者都在开始时已知，避免虚假/回退进度）
             frame_total = sum(len(group) for group in groups)
             total_units = len(groups) + frame_total
-            grid_paths: list[str | None] = []
+            grid_paths: list[str | None] = list(cached_paths) if self._cache_hit else []
 
             def _concat_item(item: tuple[int, list[str]]) -> str | None:
                 idx, group = item
                 return self.concat_images(group, f"grid_{idx}")
 
-            if groups:
+            phase_started = time.perf_counter()
+            if groups and not self._cache_hit:
                 workers = max(1, min(os.cpu_count() or 4, 8, len(groups)))
                 items = list(enumerate(groups, start=1))
                 if workers == 1:
@@ -335,6 +402,52 @@ class VideoReader:
                             )
 
             image_paths = [path for path in grid_paths if path]
+            self._log_timing("grid_assembly", phase_started, grids=len(image_paths), cache_entry_hit=self._cache_hit)
+            phase_started = time.perf_counter()
+            if cache_dir and not self._cache_hit:
+                os.makedirs(cache_root, exist_ok=True)
+                temporary_dir = f"{cache_dir}.tmp-{uuid.uuid4().hex}"
+                os.makedirs(temporary_dir, exist_ok=False)
+                try:
+                    for idx, image_path in enumerate(image_paths, start=1):
+                        shutil.copy2(image_path, os.path.join(temporary_dir, f"grid_{idx}.jpg"))
+                    Path(os.path.join(temporary_dir, "metadata.txt")).write_text(str(len(image_paths)), encoding="utf-8")
+                    os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+                    try:
+                        os.rename(temporary_dir, cache_dir)
+                    except OSError:
+                        # Keep a concurrent writer's immutable entry; remove only our temp.
+                        if os.path.isdir(cache_dir):
+                            shutil.rmtree(temporary_dir, ignore_errors=True)
+                        else:
+                            raise
+                    cache_entries = []
+                    for candidate in Path(cache_root).rglob("*"):
+                        if candidate.is_dir() and (candidate / "metadata.txt").is_file():
+                            try:
+                                size = sum(item.stat().st_size for item in candidate.rglob("*") if item.is_file())
+                                cache_entries.append((candidate.stat().st_mtime, candidate, size))
+                            except OSError:
+                                continue
+                    cache_entries = [entry for entry in cache_entries if (entry[1] / "metadata.txt").is_file()]
+                    total_cache_bytes = sum(entry[2] for entry in cache_entries)
+                    # TTL applies even when the cache remains under the LRU size/count caps.
+                    for _, candidate, size in list(cache_entries):
+                        if time.time() - candidate.stat().st_mtime > 7 * 24 * 3600:
+                            shutil.rmtree(candidate, ignore_errors=True)
+                            total_cache_bytes -= size
+                            cache_entries = [entry for entry in cache_entries if entry[1] != candidate]
+                    for _, candidate, size in sorted(cache_entries):
+                        if total_cache_bytes <= 2 * 1024 * 1024 * 1024 and len(cache_entries) <= 100:
+                            break
+                        if candidate == Path(cache_dir):
+                            continue
+                        shutil.rmtree(candidate, ignore_errors=True)
+                        total_cache_bytes -= size
+                        cache_entries = [entry for entry in cache_entries if entry[1] != candidate]
+                except Exception:
+                    shutil.rmtree(temporary_dir, ignore_errors=True)
+                    logger.warning("Visual grid cache write failed; continuing without cache", exc_info=True)
             logger.info("📤 开始编码图像...")
             urls = self.encode_images_to_base64(
                 image_paths,
@@ -344,6 +457,13 @@ class VideoReader:
                     total=total_units,
                     message=f"正在编码第 {done} / {total} 张图像",
                 ),
+            )
+            self._log_timing(
+                "image_base64",
+                phase_started,
+                image_count=len(image_paths),
+                input_bytes=sum(os.path.getsize(path) for path in image_paths if os.path.isfile(path)),
+                data_url_bytes=sum(len(url.encode("utf-8")) for url in urls),
             )
             self._report_progress(
                 "building_grids",
@@ -366,5 +486,3 @@ class VideoReader:
         ):
             if owns and os.path.isdir(path):
                 shutil.rmtree(path, ignore_errors=True)
-
-

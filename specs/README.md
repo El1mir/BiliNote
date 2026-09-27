@@ -34,3 +34,4 @@ specs/
 | 004 | [004-note-math-rendering](./004-note-math-rendering/spec.md) | implemented | 笔记里的 LaTeX 公式渲染（`\(...\)` → `$...$`） |
 | 005 | [005-modern-dark-ui-and-task-progress](./005-modern-dark-ui-and-task-progress/spec.md) | approved | 现代暗色核心界面与任务阶段进度 |
 | 006 | [006-note-pipeline-performance](./006-note-pipeline-performance/spec.md) | implemented | 笔记生成流水线耗时优化（ASR/拼图/截图并发、下载冗余消除、索引移出关键路径） |
+| 007 | [007-note-archive-and-media-cache](./007-note-archive-and-media-cache/spec.md) | in progress | 笔记 ZIP 归档、媒体资源过期清理与视觉图像缓存优化 |

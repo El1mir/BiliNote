@@ -2,7 +2,7 @@ import { useTaskStore } from '@/store/taskStore'
 import { ScrollArea } from '@/components/ui/scroll-area.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { cn } from '@/lib/utils.ts'
-import { Trash } from 'lucide-react'
+import { Trash, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button.tsx'
 import PinyinMatch from 'pinyin-match'
 import Fuse from 'fuse.js'
@@ -20,9 +20,11 @@ import {FC, useState, useEffect, useMemo} from 'react'
 interface NoteHistoryProps {
   onSelect: (taskId: string) => void
   selectedId: string | null
+  selectedIds?: string[]
+  onSelectionChange?: (ids: string[]) => void
 }
 
-const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId }) => {
+const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId, selectedIds = [], onSelectionChange }) => {
   const tasks = useTaskStore(state => state.tasks)
   const removeTask = useTaskStore(state => state.removeTask)
   // 确保baseURL没有尾部斜杠
@@ -86,6 +88,12 @@ const NoteHistory: FC<NoteHistoryProps> = ({ onSelect, selectedId }) => {
               selectedId === task.id && 'border-primary bg-primary-light'
             )}
           >
+              {task.status === 'SUCCESS' && onSelectionChange && (
+                <label className="mb-2 flex items-center gap-2 text-xs text-neutral-500" onClick={event => event.stopPropagation()}>
+                  <input type="checkbox" checked={selectedIds.includes(task.id)} onChange={event => onSelectionChange(event.target.checked ? [...selectedIds, task.id] : selectedIds.filter(id => id !== task.id))} />
+                  加入批量下载
+                </label>
+              )}
             <div
               className={cn('flex items-center gap-4')}
             >

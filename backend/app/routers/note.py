@@ -1,7 +1,11 @@
 # app/routers/note.py
 import json
 import os
+import re
+import shutil
+import tempfile
 import time
+import zipfile
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -16,6 +20,8 @@ from app.enmus.exception import NoteErrorEnum
 from app.enmus.note_enums import DownloadQuality
 from app.exceptions.note import NoteError
 from app.services.note import NoteGenerator
+from zipfile import ZipFile
+
 from app.utils.logger import get_logger
 from app.services.task_serial_executor import task_serial_executor
 from app.utils.response import ResponseWrapper as R
@@ -32,7 +38,8 @@ from app.utils.url_parser import (
 )
 from app.validators.video_url_validator import is_supported_video_url
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 import httpx
 from app.enmus.task_status_enums import TaskStatus
 
@@ -99,6 +106,11 @@ class VideoRequest(BaseModel):
 
 
 NOTE_OUTPUT_DIR = os.getenv("NOTE_OUTPUT_DIR", "note_results")
+IMAGE_OUTPUT_DIR = Path(os.getenv("OUT_DIR", "./static/screenshots")).resolve()
+IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "/static/screenshots")
+MAX_NOTE_ARCHIVE_FILES = 500
+MAX_NOTE_ARCHIVE_BYTES = 512 * 1024 * 1024
+
 UPLOAD_DIR = "uploads"
 
 # 任务级自动重试：首次 + NOTE_MAX_RETRIES 次重试（spec §7）
@@ -569,6 +581,113 @@ def generate_notes(data: BatchGenerateRequest, background_tasks: BackgroundTasks
     except Exception as e:
         logger.error(f"批量生成失败: {e}", exc_info=True)
         return R.error(msg=f"批量生成失败: {e}")
+
+class BatchArchiveRequest(BaseModel):
+    task_ids: list[str]
+
+
+@router.post("/task_archives")
+def download_task_archives(data: BatchArchiveRequest):
+    """Download several completed notes as one ZIP without changing source files."""
+    task_ids = list(dict.fromkeys(str(item).strip() for item in data.task_ids if str(item).strip()))
+    if not task_ids:
+        return R.error("请选择至少一篇已完成笔记", code=400)
+    if len(task_ids) > 100:
+        return R.error("一次最多归档 100 篇笔记", code=400)
+
+    from app.utils.note_archive import NoteArchiveError, write_note_archive
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="note-archives-"))
+    try:
+        archive_path = temp_dir / "notes.zip"
+        included = []
+        with ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for task_id in task_ids:
+                if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
+                    continue
+                result_path = Path(NOTE_OUTPUT_DIR) / f"{task_id}.json"
+                if not result_path.is_file():
+                    continue
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                markdown = result.get("markdown")
+                if not isinstance(markdown, str) or not markdown.strip():
+                    continue
+                note_dir = temp_dir / task_id
+                note_dir.mkdir()
+                note_zip = note_dir / "note.zip"
+                assets, total_bytes = write_note_archive(
+                    markdown, IMAGE_OUTPUT_DIR, note_zip,
+                    image_base_url=IMAGE_BASE_URL,
+                    max_files=MAX_NOTE_ARCHIVE_FILES,
+                    max_bytes=MAX_NOTE_ARCHIVE_BYTES,
+                )
+                with ZipFile(note_zip) as single:
+                    for item in single.infolist():
+                        bundle.writestr(f"{task_id}/{item.filename}", single.read(item))
+                included.append({"task_id": task_id, "assets": assets, "bytes": total_bytes})
+        if not included:
+            raise NoteArchiveError("没有找到可下载的已完成笔记")
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename="notes.zip",
+            headers={"X-Archive-Notes": str(len(included))},
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+        )
+    except NoteArchiveError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return R.error(str(exc), code=400)
+    except Exception as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.exception("批量笔记归档导出失败")
+        return R.error(f"批量笔记归档导出失败：{exc}", code=500)
+
+
+
+
+@router.get("/task_archive/{task_id}")
+def download_task_archive(task_id: str):
+    """Download a generated note and its locally referenced screenshots as ZIP."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
+        return R.error("任务标识无效", code=400)
+    result_path = Path(NOTE_OUTPUT_DIR) / f"{task_id}.json"
+    if not result_path.is_file():
+        return R.error("笔记不存在或尚未生成", code=404)
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        markdown = result.get("markdown")
+        if not isinstance(markdown, str) or not markdown.strip():
+            return R.error("笔记内容为空，无法导出", code=404)
+        from app.utils.note_archive import NoteArchiveError, write_note_archive
+        temp_dir = Path(tempfile.mkdtemp(prefix="note-archive-"))
+        try:
+            archive_path = temp_dir / f"{task_id}.zip"
+            assets, total_bytes = write_note_archive(
+                markdown,
+                IMAGE_OUTPUT_DIR,
+                archive_path,
+                image_base_url=IMAGE_BASE_URL,
+                max_files=MAX_NOTE_ARCHIVE_FILES,
+                max_bytes=MAX_NOTE_ARCHIVE_BYTES,
+            )
+            title = re.sub(r"[^A-Za-z0-9._-]+", "_", str(result.get("title") or "note")).strip("._") or "note"
+            return FileResponse(
+                archive_path,
+                media_type="application/zip",
+                filename=f"{title}.zip",
+                headers={"X-Archive-Assets": str(assets), "X-Archive-Asset-Bytes": str(total_bytes)},
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+            )
+        except Exception:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+    except NoteArchiveError as exc:
+        return R.error(str(exc), code=400)
+    except Exception as exc:
+        logger.exception("笔记归档导出失败 task_id=%s", task_id)
+        return R.error(f"笔记归档导出失败：{exc}", code=500)
+
+
 
 @router.get("/task_status/{task_id}")
 def get_task_status(task_id: str):
