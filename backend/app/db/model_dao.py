@@ -3,10 +3,10 @@ from app.db.models.models import Model
 from app.db.models.providers import Provider
 
 
-def get_model_by_provider_and_name(provider_id: int, model_name: str):
+def get_model_by_provider_and_name(provider_id: int | str, model_name: str):
     db = next(get_db())
     try:
-        model = db.query(Model).filter_by(provider_id=provider_id, model_name=model_name).first()
+        model = db.query(Model).filter_by(provider_id=str(provider_id), model_name=model_name).first()
         if model:
             return {
                 "id": model.id,
@@ -19,10 +19,10 @@ def get_model_by_provider_and_name(provider_id: int, model_name: str):
         db.close()
 
 
-def insert_model(provider_id: int, model_name: str):
+def insert_model(provider_id: int | str, model_name: str):
     db = next(get_db())
     try:
-        model = Model(provider_id=provider_id, model_name=model_name)
+        model = Model(provider_id=str(provider_id), model_name=model_name)
         db.add(model)
         db.commit()
         db.refresh(model)
@@ -36,10 +36,10 @@ def insert_model(provider_id: int, model_name: str):
         db.close()
 
 
-def get_models_by_provider(provider_id: int):
+def get_models_by_provider(provider_id: int | str):
     db = next(get_db())
     try:
-        models = db.query(Model).filter_by(provider_id=provider_id).all()
+        models = db.query(Model).filter_by(provider_id=str(provider_id)).all()
         return [{"id": m.id, "model_name": m.model_name} for m in models]
     finally:
         db.close()

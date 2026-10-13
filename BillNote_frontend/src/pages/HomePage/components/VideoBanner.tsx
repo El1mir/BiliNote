@@ -21,9 +21,7 @@ export default function VideoBanner({ audioMeta, videoUrl }: VideoBannerProps) {
   const rawCover = audioMeta.cover_url
   // 通过后端代理加载封面，避免跨域/Referrer 限制
   const apiBase = String(import.meta.env.VITE_API_BASE_URL || 'api').replace(/\/$/, '')
-  const coverUrl = rawCover
-    ? `${apiBase}/image_proxy?url=${encodeURIComponent(rawCover)}`
-    : ''
+  const coverUrl = rawCover ? `${apiBase}/image_proxy?url=${encodeURIComponent(rawCover)}` : ''
   const title = asText(audioMeta.title, '未命名视频')
   const uploader = asText(audioMeta.raw_info?.uploader)
   const platform = platformLabel[asText(audioMeta.platform)] || asText(audioMeta.platform)
@@ -38,7 +36,7 @@ export default function VideoBanner({ audioMeta, videoUrl }: VideoBannerProps) {
             src={coverUrl}
             alt=""
             referrerPolicy="no-referrer"
-            className="h-full w-full object-cover blur-md brightness-[0.4] scale-110"
+            className="h-full w-full scale-110 object-cover blur-md brightness-[0.4]"
           />
         ) : (
           <div className="h-full w-full bg-gradient-to-r from-blue-600 to-indigo-700" />

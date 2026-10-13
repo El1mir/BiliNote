@@ -36,6 +36,9 @@ const ProviderSchema = z.object({
   apiKey: z.string().optional(),
   baseUrl: z.string().url('必须是合法 URL'),
   type: z.string(),
+  // 限流配置留空即用后端默认值（并发 4 / 每分钟 600）
+  maxConcurrency: z.number().int().min(1).max(64).optional(),
+  maxRpm: z.number().int().min(1).optional(),
 })
 
 type ProviderFormValues = z.infer<typeof ProviderSchema>
@@ -66,11 +69,11 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
   const [loading, setLoading] = useState(true)
   const [testing, setTesting] = useState(false)
   const [isBuiltIn, setIsBuiltIn] = useState(false)
-  const loadModelsById= useModelStore(state => state.loadModelsById)
+  const loadModelsById = useModelStore(state => state.loadModelsById)
   const [modelOptions, setModelOptions] = useState<IModel[]>([]) // ⚡新增，保存模型列表
-  const [models, setModels]= useState([])
+  const [models, setModels] = useState([])
   const [modelLoading, setModelLoading] = useState(false)
-  const randomColor = ()=>{
+  const randomColor = () => {
     return '#' + Math.floor(Math.random() * 16777215).toString(16)
   }
 
@@ -98,10 +101,8 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
   })
 
   useEffect(() => {
-
     const load = async () => {
       if (isEditMode) {
-
         const data = await loadProviderById(id!)
         providerForm.reset(data)
         setIsBuiltIn(data.type === 'built-in')
@@ -111,20 +112,21 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
           apiKey: '',
           baseUrl: '',
           type: 'custom',
+          maxConcurrency: undefined,
+          maxRpm: undefined,
         })
         setIsBuiltIn(false)
       }
       const models = await loadModelsById(id!)
-      if(models){
+      if (models) {
         console.log('🔧 模型列表:', models)
         setModels(models)
-
       }
       setLoading(false)
     }
     load()
   }, [id])
-  const handelDelete=async (modelId)=>{
+  const handelDelete = async modelId => {
     if (!window.confirm('确定要删除这个模型吗？')) return
 
     try {
@@ -132,7 +134,6 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
       console.log('🔧 删除结果:', res)
 
       toast.success('删除成功')
-
     } catch (e) {
       toast.error('删除异常')
     }
@@ -145,19 +146,17 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
       return
     }
     try {
-      if (!id){
+      if (!id) {
         toast.error('请先保存供应商信息')
         return
       }
       setTesting(true)
-     await testConnection({
-             id
-          })
+      await testConnection({
+        id,
+      })
 
-        toast.success('测试连通性成功 🎉')
-
+      toast.success('测试连通性成功 🎉')
     } catch (error) {
-
       toast.error(`连接失败: ${data.data.msg || '未知错误'}`)
       // toast.error('测试连通性异常')
     } finally {
@@ -195,12 +194,11 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
       await updateProvider({ ...values, id: id! })
       toast.success('更新供应商成功')
     } else {
-       id = await addNewProvider({ ...values })
+      id = await addNewProvider({ ...values })
 
       toast.success('新增供应商成功')
     }
     // 刷新页面
-
   }
 
   // 保存Model信息
@@ -282,6 +280,69 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
               </FormItem>
             )}
           />
+          <FormField
+            control={providerForm.control}
+            name="maxConcurrency"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-center gap-4">
+                  <FormLabel className="w-24 text-right">并发量</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={64}
+                      placeholder="4"
+                      className="flex-1"
+                      name={field.name}
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      value={field.value ?? ''}
+                      onChange={e => {
+                        const raw = e.target.value
+                        field.onChange(raw === '' ? undefined : Number(raw))
+                      }}
+                    />
+                  </FormControl>
+                </div>
+                <FormDescription className="pl-28 text-xs text-neutral-400">
+                  同一时刻最多同时在途的请求数，默认 4；留空即用默认值，范围 1-64
+                </FormDescription>
+                <FormMessage className="pl-28" />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={providerForm.control}
+            name="maxRpm"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-center gap-4">
+                  <FormLabel className="w-24 text-right">每分钟最大请求</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="600"
+                      className="flex-1"
+                      name={field.name}
+                      ref={field.ref}
+                      onBlur={field.onBlur}
+                      value={field.value ?? ''}
+                      onChange={e => {
+                        const raw = e.target.value
+                        field.onChange(raw === '' ? undefined : Number(raw))
+                      }}
+                    />
+                  </FormControl>
+                </div>
+                <FormDescription className="pl-28 text-xs text-neutral-400">
+                  这家供应商每分钟最多接受多少次请求，默认 600；留空即用默认值
+                </FormDescription>
+                <FormMessage className="pl-28" />
+              </FormItem>
+            )}
+          />
           <div className="pt-2">
             <Button type="submit" disabled={!providerForm.formState.isDirty}>
               {isEditMode ? '保存修改' : '保存创建'}
@@ -308,21 +369,25 @@ const ProviderForm = ({ isCreate = false }: { isCreate?: boolean }) => {
         </div>
         <div className="flex flex-col gap-2">
           <span className="font-bold">已启用模型</span>
-          <div className={'flex flex-wrap gap-2 rounded  p-2.5'}>
-            {
-              models && models.map(model => {
+          <div className={'flex flex-wrap gap-2 rounded p-2.5'}>
+            {models &&
+              models.map(model => {
                 return (
-                  <span key={model.id} className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-sm text-blue-700">
+                  <span
+                    key={model.id}
+                    className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-2 py-0.5 text-sm text-blue-700"
+                  >
                     {model.model_name}
-                    <button type="button" onClick={() => handelDelete(model.id)} className="hover:text-blue-900">
+                    <button
+                      type="button"
+                      onClick={() => handelDelete(model.id)}
+                      className="hover:text-blue-900"
+                    >
                       <X className="h-3 w-3" />
                     </button>
                   </span>
-
                 )
-              })
-            }
-
+              })}
           </div>
           {/*<ModelSelector providerId={id!} />*/}
 

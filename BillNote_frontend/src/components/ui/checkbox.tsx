@@ -1,26 +1,31 @@
 import * as React from 'react'
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox'
 import { CheckIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-function Checkbox({ className, checked, onChange, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
-  const [isChecked, setIsChecked] = useState(checked || false);
-  
+function Checkbox({
+  className,
+  checked,
+  onChange,
+  ...props
+}: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
+  const [isChecked, setIsChecked] = useState(checked || false)
+
   useEffect(() => {
     if (checked !== undefined) {
-      setIsChecked(checked);
+      setIsChecked(checked)
     }
-  }, [checked]);
+  }, [checked])
 
   const handleCheckChange = (newChecked: boolean) => {
-    setIsChecked(newChecked);
+    setIsChecked(newChecked)
     if (onChange) {
-      onChange({} as React.FormEvent<HTMLButtonElement>);
+      onChange({} as React.FormEvent<HTMLButtonElement>)
     }
-  };
-  
+  }
+
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"

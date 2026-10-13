@@ -27,6 +27,19 @@ def test_note_generator_forwards_configured_whisper_model_size():
     _run_isolated(
         """
         from app.services import note as note_service
+        from app.services import transcriber_config_manager as tcm
+
+        class StubCM:
+            def get_whisper_device(self):
+                return "auto"
+            def get_whisper_compute_type(self):
+                return "auto"
+            def get_whisper_cpu_threads(self):
+                return 6
+            def get_whisper_num_workers(self):
+                return 2
+
+        tcm.TranscriberConfigManager = StubCM
 
         calls = []
 
@@ -48,6 +61,10 @@ def test_note_generator_forwards_configured_whisper_model_size():
                 "model_size": "large-v3-turbo",
                 # spec 003：openai-asr 用的端点配置，非该引擎时为 None
                 "transcriber_options": None,
+                "device": "auto",
+                "compute_type": "auto",
+                "cpu_threads": 6,
+                "num_workers": 2,
             }
         ]
         """
@@ -60,7 +77,7 @@ def test_whisper_cache_is_rebuilt_when_model_size_changes():
         from app.transcriber import transcriber_provider as provider
 
         class FakeWhisperTranscriber:
-            def __init__(self, model_size, device):
+            def __init__(self, model_size, device, **kwargs):
                 self.model_size = model_size
                 self.device = device
 
@@ -92,7 +109,7 @@ def test_explicit_model_size_wins_over_environment_default():
         from app.transcriber import transcriber_provider as provider
 
         class FakeWhisperTranscriber:
-            def __init__(self, model_size, device):
+            def __init__(self, model_size, device, **kwargs):
                 self.model_size = model_size
                 self.device = device
 

@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 
 from app.gpt.gpt_factory import GPTFactory
 from app.models.model_config import ModelConfig
@@ -70,8 +69,6 @@ def chat(
     task_id: str,
     question: str,
     history: list[dict],
-    provider_id: str,
-    model_name: str,
 ) -> dict:
     """
     RAG + Tool Calling 问答。
@@ -96,7 +93,12 @@ def chat(
 
     messages.append({"role": "user", "content": question})
 
-    # 3. 获取 LLM client
+    # 3. 每次请求解析当前全局模型，历史任务的旧 provider_id 不参与聊天。
+    from app.services.active_model import resolve_active_model
+
+    active_model = resolve_active_model()
+    provider_id = active_model["provider_id"]
+    model_name = active_model["model_name"]
     provider = ProviderService.get_provider_by_id(provider_id)
     if not provider:
         raise ValueError(f"未找到模型供应商: {provider_id}")

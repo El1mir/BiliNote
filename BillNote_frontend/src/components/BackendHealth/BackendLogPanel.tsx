@@ -11,22 +11,33 @@ interface Props {
   onClose: () => void
 }
 
-const BackendLogPanel = ({ status, exitCode, logs, health, onRestart, onCopyLogs, onClose }: Props) => {
+const BackendLogPanel = ({
+  status,
+  exitCode,
+  logs,
+  health,
+  onRestart,
+  onCopyLogs,
+  onClose,
+}: Props) => {
   const [restarting, setRestarting] = useState(false)
   const [copied, setCopied] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 新日志进来自动滚到底
   useEffect(() => {
-    if (scrollRef.current)
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [logs])
 
   async function handleRestart() {
     setRestarting(true)
-    try { await onRestart() }
-    catch { /* errors already in log via useBackendEvents */ }
-    finally { setRestarting(false) }
+    try {
+      await onRestart()
+    } catch {
+      /* errors already in log via useBackendEvents */
+    } finally {
+      setRestarting(false)
+    }
   }
 
   async function handleCopy() {
@@ -40,7 +51,7 @@ const BackendLogPanel = ({ status, exitCode, logs, health, onRestart, onCopyLogs
       {/* 半透明遮罩 */}
       <div className="fixed inset-0 z-[9998] bg-black/20" onClick={onClose} />
 
-      <aside className="fixed right-0 bottom-0 top-0 z-[9999] flex w-[480px] max-w-[90vw] flex-col border-l bg-white shadow-2xl">
+      <aside className="fixed top-0 right-0 bottom-0 z-[9999] flex w-[480px] max-w-[90vw] flex-col border-l bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b px-4 py-3">
           <div>
             <h2 className="text-base font-semibold">后端运行状态</h2>
@@ -54,7 +65,9 @@ const BackendLogPanel = ({ status, exitCode, logs, health, onRestart, onCopyLogs
                     : '运行正常'}
             </div>
           </div>
-          <button className="rounded p-1 text-gray-500 hover:bg-gray-100" onClick={onClose}>✕</button>
+          <button className="rounded p-1 text-gray-500 hover:bg-gray-100" onClick={onClose}>
+            ✕
+          </button>
         </header>
 
         <div className="flex items-center gap-2 border-b px-4 py-2">
@@ -71,9 +84,7 @@ const BackendLogPanel = ({ status, exitCode, logs, health, onRestart, onCopyLogs
           >
             {copied ? '已复制 ✓' : '复制日志'}
           </button>
-          <span className="ml-auto text-xs text-gray-400">
-            最近 {logs.length} 行
-          </span>
+          <span className="ml-auto text-xs text-gray-400">最近 {logs.length} 行</span>
         </div>
 
         <div
@@ -86,7 +97,7 @@ const BackendLogPanel = ({ status, exitCode, logs, health, onRestart, onCopyLogs
             logs.map((l, i) => (
               <div
                 key={`${l.ts}-${i}`}
-                className={`whitespace-pre-wrap break-all leading-snug ${l.level === 'error' ? 'text-red-300' : 'text-gray-100'}`}
+                className={`leading-snug break-all whitespace-pre-wrap ${l.level === 'error' ? 'text-red-300' : 'text-gray-100'}`}
               >
                 <span className="mr-2 text-gray-500">
                   {new Date(l.ts).toISOString().slice(11, 19)}

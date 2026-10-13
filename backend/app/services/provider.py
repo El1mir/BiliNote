@@ -29,6 +29,8 @@ class ProviderService:
             "enabled": row.get("enabled"),
             "base_url": row.get("base_url"),
             "api_key": row.get("api_key"),
+            "max_concurrency": row.get("max_concurrency"),
+            "max_rpm": row.get("max_rpm"),
             "created_at": jsonable_encoder(row.get("created_at")),
             # "name": row[1],
             # "logo": row[2],
@@ -52,6 +54,8 @@ class ProviderService:
             "enabled": row.get("enabled"),
             "base_url": row.get("base_url"),
             "api_key":  ProviderService.mask_key(row.get("api_key")),
+            "max_concurrency": row.get("max_concurrency"),
+            "max_rpm": row.get("max_rpm"),
             "created_at": jsonable_encoder(row.get("created_at")),
 
             # "id": row[0],
@@ -69,7 +73,8 @@ class ProviderService:
             return '*' * len(key)
         return key[:4] + '*' * (len(key) - 8) + key[-4:]
     @staticmethod
-    def add_provider( name: str, api_key: str, base_url: str, logo: str, type_: str, enabled: int = 1):
+    def add_provider( name: str, api_key: str, base_url: str, logo: str, type_: str, enabled: int = 1,
+                      max_concurrency: int | None = None, max_rpm: int | None = None):
         try:
             # 内置供应商（type='built-in'）只能由 seed 流程写入；API 创建一律落到 'custom'，
             # 否则历史上出现过批量伪内置脏数据
@@ -80,7 +85,16 @@ class ProviderService:
                 raise ValueError(f'供应商名称已存在: {name}')
             id = uuid().lower()
             logo = 'custom'
-            return insert_provider(id, name, api_key, base_url, logo, type_, enabled)
+            created = insert_provider(id, name, api_key, base_url, logo, type_, enabled)
+            # 限流额度是后加的列，老调用点不传就保持数据库默认值（4 / 600）。
+            limits = {}
+            if max_concurrency is not None:
+                limits['max_concurrency'] = max_concurrency
+            if max_rpm is not None:
+                limits['max_rpm'] = max_rpm
+            if limits:
+                update_provider(id, **limits)
+            return created
         except Exception as  e:
             print('创建模式失败',e)
             raise
@@ -94,6 +108,8 @@ class ProviderService:
             "api_key": p.api_key,
             "base_url": p.base_url,
             "enabled": p.enabled,
+            "max_concurrency": p.max_concurrency,
+            "max_rpm": p.max_rpm,
             "created_at": p.created_at,
         }
     @staticmethod

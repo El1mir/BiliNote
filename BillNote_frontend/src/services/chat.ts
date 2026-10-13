@@ -33,8 +33,6 @@ export const askQuestion = async (data: {
   task_id: string
   question: string
   history: ChatMessage[]
-  provider_id: string
-  model_name: string
 }): Promise<AskResponse> => {
   return await request.post('/chat/ask', data, { timeout: 60000 })
 }

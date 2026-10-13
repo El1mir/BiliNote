@@ -1,4 +1,4 @@
 // iconMap.ts
 import * as Icons from '@lobehub/icons'
 
-export const IconMap = Icons;
+export const IconMap = Icons

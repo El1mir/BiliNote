@@ -4,8 +4,8 @@ import { normalizeMathDelimiters } from '@/utils/markdown'
 
 describe('normalizeMathDelimiters', () => {
   it('把行内 \\(...\\) 转成 $...$', () => {
-    expect(normalizeMathDelimiters('求导：\\( f\'(x) = \\frac{1 - \\ln x}{x^2} \\)。')).toBe(
-      "求导：$f'(x) = \\frac{1 - \\ln x}{x^2}$。",
+    expect(normalizeMathDelimiters("求导：\\( f'(x) = \\frac{1 - \\ln x}{x^2} \\)。")).toBe(
+      "求导：$f'(x) = \\frac{1 - \\ln x}{x^2}$。"
     )
   })
 

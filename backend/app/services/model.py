@@ -186,10 +186,10 @@ class ModelService:
             print(f"[{model_id}] <UNK>: {e}")
             return False
     @staticmethod
-    def add_new_model(provider_id: int, model_name: str) -> bool:
+    def add_new_model(provider_id: str, model_name: str) -> bool:
         try:
             # 先查供应商是否存在
-            provider = ProviderService.get_provider_by_id(provider_id)
+            provider = ProviderService.get_provider_by_id(str(provider_id))
             if not provider:
                 print(f"供应商ID {provider_id} 不存在，无法添加模型")
                 return False

@@ -75,7 +75,8 @@ def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
                                api_style: str = "transcriptions",
                                max_speech_chunks: int = 120, silence_noise_db: float = -30.0,
                                min_silence_seconds: float = 0.5, max_rpm: float = 30,
-                               chunk_concurrency: int | None = None):
+                               chunk_concurrency: int | None = None,
+                               silence_split: bool | None = None):
     """OpenAI 兼容 ASR。所有参数都是标量，保证 _init_transcriber 的配置缓存能正确失效。
 
     api_style: transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
@@ -95,10 +96,20 @@ def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
         min_silence_seconds=min_silence_seconds,
         max_rpm=max_rpm,
         **({"chunk_concurrency": chunk_concurrency} if chunk_concurrency is not None else {}),
+        **({"silence_split": silence_split} if silence_split is not None else {}),
     )
 
-def get_whisper_transcriber(model_size="base", device="cuda"):
-    return _init_transcriber(TranscriberType.FAST_WHISPER, WhisperTranscriber, model_size=model_size, device=device)
+def get_whisper_transcriber(model_size="base", device="auto", compute_type=None,
+                            cpu_threads=0, num_workers=1):
+    return _init_transcriber(
+        TranscriberType.FAST_WHISPER,
+        WhisperTranscriber,
+        model_size=model_size,
+        device=device,
+        compute_type=compute_type,
+        cpu_threads=cpu_threads,
+        num_workers=num_workers,
+    )
 
 def get_bcut_transcriber():
     return _init_transcriber(TranscriberType.BCUT, BcutTranscriber)
@@ -113,16 +124,20 @@ def get_mlx_whisper_transcriber(model_size="base"):
     return _init_transcriber(TranscriberType.MLX_WHISPER, MLXWhisperTranscriber, model_size=model_size)
 
 # 通用入口
-def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="cuda",
-                    transcriber_options=None):
+def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="auto",
+                    transcriber_options=None, compute_type=None, cpu_threads=0,
+                    num_workers=1):
     """
     获取指定类型的转录器实例
 
     参数:
         transcriber_type: 支持 "fast-whisper", "mlx-whisper", "bcut", "kuaishou", "groq", "openai-asr"
         model_size: 模型大小，适用于 whisper 类；未提供时才读取环境变量默认值
-        device: 设备类型（如 cuda / cpu），仅 whisper 使用
+        device: 设备类型（auto / cpu / cuda），仅 whisper 使用
         transcriber_options: openai-asr 的端点配置 dict（base_url/api_key/model/timeout/chunk_size_mb/name/api_style）
+        compute_type: 计算类型（auto/float16/int8/...），仅 fast-whisper
+        cpu_threads: CPU 推理线程数（0=自动），仅 fast-whisper
+        num_workers: faster-whisper 推理 worker 数，仅 fast-whisper
 
     返回:
         对应类型的转录器实例
@@ -140,7 +155,10 @@ def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="cu
     whisper_model_size = model_size or os.environ.get("WHISPER_MODEL_SIZE", "base")
 
     if transcriber_enum == TranscriberType.FAST_WHISPER:
-        return get_whisper_transcriber(whisper_model_size, device=device)
+        return get_whisper_transcriber(whisper_model_size, device=device,
+                                       compute_type=compute_type,
+                                       cpu_threads=cpu_threads,
+                                       num_workers=num_workers)
 
     elif transcriber_enum == TranscriberType.MLX_WHISPER:
         if not MLX_WHISPER_AVAILABLE:
@@ -174,6 +192,7 @@ def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="cu
             min_silence_seconds=options.get("min_silence_seconds", 0.5),
             max_rpm=options.get("max_rpm", 30),
             chunk_concurrency=options.get("chunk_concurrency"),
+            silence_split=options.get("silence_split"),
         )
 
     # fallback

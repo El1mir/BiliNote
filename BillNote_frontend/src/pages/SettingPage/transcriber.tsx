@@ -12,7 +12,20 @@ import {
 } from '@/components/ui/select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AudioLines, AlertTriangle, CheckCircle2, Download, Loader2, Save, XCircle, Plus, Trash2, Boxes, Pencil } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import {
+  AudioLines,
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Loader2,
+  Save,
+  XCircle,
+  Plus,
+  Trash2,
+  Boxes,
+  Pencil,
+} from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { Label } from '@/components/ui/label'
 import {
@@ -32,8 +45,7 @@ import {
   OpenAIASRStyle,
 } from '@/services/transcriber'
 
-const isWhisperType = (type: string) =>
-  type === 'fast-whisper' || type === 'mlx-whisper'
+const isWhisperType = (type: string) => type === 'fast-whisper' || type === 'mlx-whisper'
 
 interface AsrFormState {
   id: string
@@ -49,6 +61,7 @@ interface AsrFormState {
   min_silence_seconds: string
   max_rpm: string
   chunk_concurrency: string
+  silence_split: boolean
 }
 
 const emptyAsrForm: AsrFormState = {
@@ -65,6 +78,7 @@ const emptyAsrForm: AsrFormState = {
   min_silence_seconds: '0.5',
   max_rpm: '30',
   chunk_concurrency: '4',
+  silence_split: true,
 }
 
 /** 表单字段：上方 label + 下方输入框（+ 可选说明），避免只靠 placeholder 看不出含义。 */
@@ -90,6 +104,11 @@ export default function Transcriber() {
   const [saving, setSaving] = useState(false)
   const [selectedType, setSelectedType] = useState('')
   const [selectedModelSize, setSelectedModelSize] = useState('')
+  // 本地 fast-whisper 推理性能设置（device/compute_type/cpu_threads/num_workers）
+  const [whisperDevice, setWhisperDevice] = useState('auto')
+  const [whisperComputeType, setWhisperComputeType] = useState('auto')
+  const [whisperCpuThreads, setWhisperCpuThreads] = useState('0')
+  const [whisperNumWorkers, setWhisperNumWorkers] = useState('1')
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>([])
   const [mlxModelStatuses, setMlxModelStatuses] = useState<ModelStatus[]>([])
   const [mlxAvailable, setMlxAvailable] = useState(false)
@@ -153,6 +172,10 @@ export default function Transcriber() {
         setSelectedType(data.transcriber_type)
         setSelectedModelSize(data.whisper_model_size)
         setAsrActiveId(data.openai_asr_id || '')
+        setWhisperDevice(data.whisper_device || 'auto')
+        setWhisperComputeType(data.whisper_compute_type || 'auto')
+        setWhisperCpuThreads(String(data.whisper_cpu_threads ?? 0))
+        setWhisperNumWorkers(String(data.whisper_num_workers ?? 1))
       } catch {
         toast.error('获取转写器配置失败')
       } finally {
@@ -180,17 +203,17 @@ export default function Transcriber() {
       const target = pool.find(m => m.model_size === selectedModelSize)
       if (target && !target.downloaded && !target.downloading) {
         const sizeHint: Record<string, string> = {
-          'tiny': '~75MB',
-          'base': '~150MB',
-          'small': '~500MB',
-          'medium': '~1.5GB',
+          tiny: '~75MB',
+          base: '~150MB',
+          small: '~500MB',
+          medium: '~1.5GB',
           'large-v3': '~3GB',
           'large-v3-turbo': '~1.6GB',
         }
         const ok = window.confirm(
           `选择 ${selectedType} / ${selectedModelSize} 后，首次转写时会下载该模型（${sizeHint[selectedModelSize] || '体积未知'}）。\n` +
-          `网络较差时容易中断；推荐改用 Groq / 必剪 / 快手 等在线引擎。\n\n` +
-          '继续保存吗？',
+            `网络较差时容易中断；推荐改用 Groq / 必剪 / 快手 等在线引擎。\n\n` +
+            '继续保存吗？'
         )
         if (!ok) return
       }
@@ -207,11 +230,22 @@ export default function Transcriber() {
         transcriber_type: string
         whisper_model_size?: string
         openai_asr_id?: string
+        whisper_device?: string
+        whisper_compute_type?: string
+        whisper_cpu_threads?: number
+        whisper_num_workers?: number
       } = {
         transcriber_type: selectedType,
       }
       if (isWhisperType(selectedType)) {
         payload.whisper_model_size = selectedModelSize
+      }
+      if (selectedType === 'fast-whisper') {
+        // 仅本地 faster-whisper 有性能配置；mlx 忽略
+        payload.whisper_device = whisperDevice
+        payload.whisper_compute_type = whisperComputeType
+        payload.whisper_cpu_threads = Number(whisperCpuThreads) || 0
+        payload.whisper_num_workers = Number(whisperNumWorkers) || 1
       }
       if (selectedType === 'openai-asr') {
         payload.openai_asr_id = asrActiveId
@@ -290,6 +324,7 @@ export default function Transcriber() {
       min_silence_seconds: String(endpoint.min_silence_seconds ?? 0.5),
       max_rpm: String(endpoint.max_rpm ?? 30),
       chunk_concurrency: String(endpoint.chunk_concurrency ?? 4),
+      silence_split: endpoint.silence_split ?? true,
     })
   }
 
@@ -323,6 +358,7 @@ export default function Transcriber() {
         min_silence_seconds: Number(asrForm.min_silence_seconds) || 0.5,
         max_rpm: Number(asrForm.max_rpm) || 30,
         chunk_concurrency: Number(asrForm.chunk_concurrency) || 4,
+        silence_split: asrForm.silence_split,
       }
       if (asrForm.id) {
         await updateOpenaiAsr(asrForm.id, payload)
@@ -444,10 +480,78 @@ export default function Transcriber() {
                   })}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-neutral-400">
-                模型越大精度越高，但速度更慢、占用更多显存
-              </p>
+              <p className="text-xs text-neutral-400">模型越大精度越高，但速度更慢、占用更多显存</p>
             </div>
+          )}
+
+          {selectedType === 'fast-whisper' && (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">推理设备</label>
+                <Select value={whisperDevice} onValueChange={setWhisperDevice}>
+                  <SelectTrigger className="w-full max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">自动（有 GPU 用 GPU，否则 CPU）</SelectItem>
+                    <SelectItem value="cuda">GPU（CUDA）</SelectItem>
+                    <SelectItem value="cpu">CPU</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-neutral-400">
+                  {config.local_hardware?.cuda_available
+                    ? config.local_hardware.cuda_dll_ready
+                      ? '已检测到可用 GPU' +
+                        (config.local_hardware.gpu_name
+                          ? `：${config.local_hardware.gpu_name}`
+                          : '')
+                      : '已检测到 GPU 但算子库（cuDNN）未就位，GPU 推理可能失败，建议改用 CPU'
+                    : '本机未检测到可用 GPU，将使用 CPU'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">计算精度</label>
+                <Select value={whisperComputeType} onValueChange={setWhisperComputeType}>
+                  <SelectTrigger className="w-full max-w-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">自动（GPU→float16，CPU→int8）</SelectItem>
+                    <SelectItem value="float16">float16（GPU，速度快）</SelectItem>
+                    <SelectItem value="int8">int8（CPU，速度快）</SelectItem>
+                    <SelectItem value="int8_float16">int8_float16（CPU 主 / GPU 辅）</SelectItem>
+                    <SelectItem value="float32">float32（最准，最慢）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">CPU 线程数</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={whisperCpuThreads}
+                    onChange={e => setWhisperCpuThreads(e.target.value)}
+                  />
+                  <p className="text-xs text-neutral-400">
+                    0 = 自动（本机 {config.local_hardware?.cpu_cores ?? '?'} 核 / 2），只影响 CPU
+                    模式
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">推理并行数</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={whisperNumWorkers}
+                    onChange={e => setWhisperNumWorkers(e.target.value)}
+                  />
+                  <p className="text-xs text-neutral-400">多任务并发转写时有用，建议 1-4</p>
+                </div>
+              </div>
+            </>
           )}
 
           {selectedType === 'mlx-whisper' && !config.mlx_whisper_available && (
@@ -461,7 +565,11 @@ export default function Transcriber() {
             </Alert>
           )}
 
-          <Button onClick={handleSave} disabled={saving || (selectedType === 'mlx-whisper' && !config.mlx_whisper_available)} className="mt-2">
+          <Button
+            onClick={handleSave}
+            disabled={saving || (selectedType === 'mlx-whisper' && !config.mlx_whisper_available)}
+            className="mt-2"
+          >
             {saving ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -487,10 +595,7 @@ export default function Transcriber() {
           <CardContent>
             <div className="space-y-3">
               {currentModels.map(model => (
-                <div
-                  key={model.model_size}
-                  className="rounded-md border px-4 py-3"
-                >
+                <div key={model.model_size} className="rounded-md border px-4 py-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="font-medium">{model.model_size}</span>
@@ -504,7 +609,11 @@ export default function Transcriber() {
                           下载中
                         </Badge>
                       ) : model.failed ? (
-                        <Badge variant="destructive" className="flex items-center gap-1" title={model.error}>
+                        <Badge
+                          variant="destructive"
+                          className="flex items-center gap-1"
+                          title={model.error}
+                        >
                           <XCircle className="h-3 w-3" />
                           下载失败
                         </Badge>
@@ -524,7 +633,7 @@ export default function Transcriber() {
                     )}
                   </div>
                   {model.failed && model.error && (
-                    <p className="mt-2 break-all text-xs text-red-500" title={model.error}>
+                    <p className="mt-2 text-xs break-all text-red-500" title={model.error}>
                       {model.error}
                     </p>
                   )}
@@ -551,8 +660,9 @@ export default function Transcriber() {
             <Alert className="text-sm">
               <AlertDescription>
                 <div>
-                  填 <strong>Base URL</strong>（到 <code className="rounded bg-neutral-100 px-1">/v1</code>{' '}
-                  为止）+ API Key + <strong>模型名</strong>；点「测试」会真发一段静音校验，
+                  填 <strong>Base URL</strong>（到{' '}
+                  <code className="rounded bg-neutral-100 px-1">/v1</code> 为止）+ API Key +{' '}
+                  <strong>模型名</strong>；点「测试」会真发一段静音校验，
                   「使用」并保存后对新任务生效。
                 </div>
                 <ul className="mt-2 list-disc space-y-1 pl-4">
@@ -564,10 +674,12 @@ export default function Transcriber() {
                   </li>
                   <li>
                     <strong>chat/completions + input_audio</strong>：如小米 MiMo，Base URL{' '}
-                    <code className="rounded bg-neutral-100 px-1">https://api.xiaomimimo.com/v1</code>{' '}
+                    <code className="rounded bg-neutral-100 px-1">
+                      https://api.xiaomimimo.com/v1
+                    </code>{' '}
                     + 模型 <code className="rounded bg-neutral-100 px-1">mimo-v2.5-asr</code>
-                    （音频经 base64 传入；这种接口不返回时间轴，会<b>按说话（静音边界）自动切片</b>，
-                    每片单独转写并用真实语音边界当时间轴，可用「静音切片」三项参数微调）
+                    （音频经 base64 传入；这种接口不返回时间轴，会<b>按说话（静音边界）自动切片</b>
+                    ， 每片单独转写并用真实语音边界当时间轴，可用「静音切片」三项参数微调）
                   </li>
                 </ul>
               </AlertDescription>
@@ -594,7 +706,10 @@ export default function Transcriber() {
                               </Badge>
                             )}
                           </div>
-                          <div className="truncate text-xs text-neutral-400" title={endpoint.base_url}>
+                          <div
+                            className="truncate text-xs text-neutral-400"
+                            title={endpoint.base_url}
+                          >
                             {endpoint.base_url}
                           </div>
                           <div className="truncate text-xs text-neutral-400">
@@ -644,9 +759,7 @@ export default function Transcriber() {
             )}
 
             <div className="space-y-2 rounded-md border p-4">
-              <div className="text-sm font-medium">
-                {asrForm.id ? '编辑端点' : '添加端点'}
-              </div>
+              <div className="text-sm font-medium">{asrForm.id ? '编辑端点' : '添加端点'}</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="接口类型">
                   <Select
@@ -717,10 +830,7 @@ export default function Transcriber() {
                   />
                 </Field>
 
-                <Field
-                  label="每分钟请求上限"
-                  hint="防止服务端 429，默认 30 次/分钟"
-                >
+                <Field label="每分钟请求上限" hint="防止服务端 429，默认 30 次/分钟">
                   <Input
                     type="number"
                     placeholder="30"
@@ -739,21 +849,37 @@ export default function Transcriber() {
                     max={32}
                     placeholder="4"
                     value={asrForm.chunk_concurrency}
-                    onChange={e =>
-                      setAsrForm({ ...asrForm, chunk_concurrency: e.target.value })
-                    }
+                    onChange={e => setAsrForm({ ...asrForm, chunk_concurrency: e.target.value })}
                   />
                 </Field>
 
                 {asrForm.api_style === 'chat' && (
                   <>
                     <Field
+                      label="静音分割"
+                      hint="默认开启：按静音边界切片，每片的时间轴就是真实说话边界。关掉则直接按大小等长切片，省去完整解码音频做静音检测的耗时（长音频上这段耗时与时长成正比），代价是时间轴退化为等分切片的偏移。"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={asrForm.silence_split}
+                          onCheckedChange={checked =>
+                            setAsrForm({ ...asrForm, silence_split: checked })
+                          }
+                        />
+                        <span className="text-muted-foreground text-sm">
+                          {asrForm.silence_split ? '开启（按说话切片）' : '关闭（按大小等长切片）'}
+                        </span>
+                      </div>
+                    </Field>
+
+                    <Field
                       label="最多切片数"
-                      hint="按说话切片时最多切多少段，默认 120"
+                      hint="按说话切片时最多切多少段，默认 120（关闭静音分割时无效）"
                     >
                       <Input
                         type="number"
                         placeholder="120"
+                        disabled={!asrForm.silence_split}
                         value={asrForm.max_speech_chunks}
                         onChange={e =>
                           setAsrForm({ ...asrForm, max_speech_chunks: e.target.value })
@@ -763,26 +889,26 @@ export default function Transcriber() {
 
                     <Field
                       label="静音门限（dB）"
-                      hint="越低越不敏感；环境吵可调到 -25"
+                      hint="越低越不敏感；环境吵可调到 -25（关闭静音分割时无效）"
                     >
                       <Input
                         type="number"
                         placeholder="-30"
+                        disabled={!asrForm.silence_split}
                         value={asrForm.silence_noise_db}
-                        onChange={e =>
-                          setAsrForm({ ...asrForm, silence_noise_db: e.target.value })
-                        }
+                        onChange={e => setAsrForm({ ...asrForm, silence_noise_db: e.target.value })}
                       />
                     </Field>
 
                     <Field
                       label="最短静音（秒）"
-                      hint="多长的停顿算「说完了」，默认 0.5"
+                      hint="多长的停顿算「说完了」，默认 0.5（关闭静音分割时无效）"
                     >
                       <Input
                         type="number"
                         step="0.1"
                         placeholder="0.5"
+                        disabled={!asrForm.silence_split}
                         value={asrForm.min_silence_seconds}
                         onChange={e =>
                           setAsrForm({ ...asrForm, min_silence_seconds: e.target.value })
@@ -831,8 +957,9 @@ export default function Transcriber() {
                 <code className="rounded bg-neutral-100 px-1">Systran/faster-whisper-large-v3</code>
                 ，会自动下载）或<strong>本地模型目录</strong>（如{' '}
                 <code className="rounded bg-neutral-100 px-1">/app/backend/models/my-whisper</code>
-                ，目录内需含 <code className="rounded bg-neutral-100 px-1">model.bin</code>，下载会跳过）。
-                添加后即可在上方「模型大小」下拉中选用。Docker 部署请把模型目录挂载进容器（见 README 的{' '}
+                ，目录内需含 <code className="rounded bg-neutral-100 px-1">model.bin</code>
+                ，下载会跳过）。 添加后即可在上方「模型大小」下拉中选用。Docker
+                部署请把模型目录挂载进容器（见 README 的{' '}
                 <code className="rounded bg-neutral-100 px-1">models</code> 卷）。
               </AlertDescription>
             </Alert>
@@ -856,9 +983,7 @@ export default function Transcriber() {
                           {status?.downloading && (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-neutral-400" />
                           )}
-                          {status?.failed && (
-                            <XCircle className="h-3.5 w-3.5 text-red-500" />
-                          )}
+                          {status?.failed && <XCircle className="h-3.5 w-3.5 text-red-500" />}
                         </div>
                         <div className="truncate text-xs text-neutral-400" title={target}>
                           {target}

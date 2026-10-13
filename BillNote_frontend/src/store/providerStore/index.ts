@@ -38,25 +38,28 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   // 设置整个 provider 列表
   setAllProviders: providers => set({ provider: providers }),
   loadProviderById: async (id: string) => {
-    const res:IResponse<IProvider> = await getProviderById(id)
+    const res: IResponse<IProvider> = await getProviderById(id)
 
-      const item = res
-      return {
-        id: item.id,
-        name: item.name,
-        logo: item.logo,
-        apiKey: item.api_key,
-        baseUrl: item.base_url,
-        type: item.type,
-        enabled: item.enabled,
-      }
-
+    const item = res
+    return {
+      id: item.id,
+      name: item.name,
+      logo: item.logo,
+      apiKey: item.api_key,
+      baseUrl: item.base_url,
+      type: item.type,
+      enabled: item.enabled,
+      maxConcurrency: item.max_concurrency,
+      maxRpm: item.max_rpm,
+    }
   },
   addNewProvider: async (provider: IProvider) => {
     const payload = {
       ...provider,
       api_key: provider.apiKey,
       base_url: provider.baseUrl,
+      max_concurrency: provider.maxConcurrency,
+      max_rpm: provider.maxRpm,
     }
     try {
       const res = await addProvider(payload)
@@ -65,7 +68,7 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
         console.log('Provider ', item)
 
         await get().fetchProviderList()
-        return  item
+        return item
       }
     } catch (error) {
       console.error('Error fetching provider:', error)
@@ -82,6 +85,8 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
         ...merged,
         api_key: merged.apiKey,
         base_url: merged.baseUrl,
+        max_concurrency: merged.maxConcurrency,
+        max_rpm: merged.maxRpm,
       }
       // 拦截器已解包：成功时直接返回 data 部分
       await updateProviderById(data)
@@ -93,31 +98,35 @@ export const useProviderStore = create<ProviderStore>((set, get) => ({
   getProviderList: () => get().provider,
   fetchProviderList: async () => {
     try {
-      const res  = await getProviderList()
+      const res = await getProviderList()
 
-        set({
-          provider: res.map(
-            (item: {
-              id: string
-              name: string
-              logo: string
-              api_key: string
-              base_url: string
-              type: string
-              enabled: number
-            }) => {
-              return {
-                id: item.id,
-                name: item.name,
-                logo: item.logo,
-                apiKey: item.api_key,
-                baseUrl: item.base_url,
-                type: item.type,
-                enabled: item.enabled,
-              }
+      set({
+        provider: res.map(
+          (item: {
+            id: string
+            name: string
+            logo: string
+            api_key: string
+            base_url: string
+            type: string
+            enabled: number
+            max_concurrency?: number
+            max_rpm?: number
+          }) => {
+            return {
+              id: item.id,
+              name: item.name,
+              logo: item.logo,
+              apiKey: item.api_key,
+              baseUrl: item.base_url,
+              type: item.type,
+              enabled: item.enabled,
+              maxConcurrency: item.max_concurrency,
+              maxRpm: item.max_rpm,
             }
-          ),
-        })
+          }
+        ),
+      })
     } catch (error) {
       console.error('Error fetching provider list:', error)
     }

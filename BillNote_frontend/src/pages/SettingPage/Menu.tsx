@@ -5,13 +5,17 @@ import {
   Database,
   HardDriveDownload,
   Info,
+  ScanText,
+  Settings,
 } from 'lucide-react'
 import MenuBar, { IMenuProps } from '@/pages/SettingPage/components/menuBar.tsx'
 
 const Menu = () => {
   const menuList: IMenuProps[] = [
+    { id: 'general', name: '通用设置', icon: <Settings />, path: '/settings/general' },
     { id: 'model', name: 'AI 模型设置', icon: <BotMessageSquare />, path: '/settings/model' },
     { id: 'transcriber', name: '音频转写配置', icon: <Captions />, path: '/settings/transcriber' },
+    { id: 'ocr', name: 'OCR 辅助', icon: <ScanText />, path: '/settings/ocr' },
     { id: 'media', name: '媒体资源管理', icon: <Database />, path: '/settings/media' },
     { id: 'download', name: '下载配置', icon: <HardDriveDownload />, path: '/settings/download' },
     { id: 'monitor', name: '部署监控', icon: <Activity />, path: '/settings/monitor' },
@@ -25,7 +29,9 @@ const Menu = () => {
         <div className="text-sm font-light text-gray-800">全局配置与模型设置</div>
       </div>
       <div className="mt-6 flex-1">
-        {menuList.map(item => <MenuBar key={item.id} menuItem={item} />)}
+        {menuList.map(item => (
+          <MenuBar key={item.id} menuItem={item} />
+        ))}
       </div>
     </div>
   )

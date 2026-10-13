@@ -47,6 +47,10 @@ class TranscriberConfigRequest(BaseModel):
     transcriber_type: str
     whisper_model_size: Optional[str] = None
     openai_asr_id: Optional[str] = None
+    whisper_device: Optional[str] = None
+    whisper_compute_type: Optional[str] = None
+    whisper_cpu_threads: Optional[int] = None
+    whisper_num_workers: Optional[int] = None
 
 
 class OpenAISREndpointRequest(BaseModel):
@@ -68,6 +72,9 @@ class OpenAISREndpointRequest(BaseModel):
     max_rpm: Optional[int] = None
     # 切片转写的并发请求数（1-32，1 即串行）；并发只填满 max_rpm 允许的额度
     chunk_concurrency: Optional[int] = None
+    # chat 风格是否按静音边界切片。默认 None：更新接口不传时保持原值。
+    # 关掉可省去「完整解码音频 + silencedetect」这一整轮耗时。
+    silence_split: Optional[bool] = None
 
 
 AVAILABLE_TRANSCRIBER_TYPES = [
@@ -98,7 +105,70 @@ def get_transcriber_config():
         "whisper_builtin_models": BUILTIN_WHISPER_MODELS,
         "whisper_custom_models": registry.get_custom_models(),
         "mlx_whisper_available": MLX_WHISPER_AVAILABLE,
+        # 供设置页展示本地推理硬件能力（CUDA 是否可用不依赖 torch）
+        "local_hardware": _detect_local_inference_hardware(),
     })
+
+
+def _detect_local_inference_hardware() -> dict:
+    """探测本地 faster-whisper 推理硬件能力。
+
+    用 ctranslate2（faster-whisper 的真正后端）探测 CUDA，而不是 torch——
+    torch 在纯用 faster-whisper + 在线转写引擎的轻量部署里可以不装，但
+    ctranslate2 自带 CUDA 运行时，缺的就是上层的算子库(site-packages/nvidia)。
+    """
+    result = {
+        "cpu_cores": os.cpu_count(),
+        "cuda_available": False,
+        "gpu_name": None,
+        "cuda_dll_ready": False,
+        "device": "cpu",
+    }
+    try:
+        import ctranslate2
+        result["cuda_available"] = ctranslate2.get_cuda_device_count() > 0
+        if result["cuda_available"]:
+            result["gpu_name"] = _gpu_name()
+            # 算子库就绪 = nvidia/cudnn/bin 里能找到 cudnn_ops 系列 DLL
+            result["cuda_dll_ready"] = _cuda_dll_ready()
+    except Exception as e:
+        logger.warning(f"探测本地 CUDA 能力失败: {e}")
+    result["device"] = transcriber_config_manager.get_whisper_device()
+    return result
+
+
+def _cuda_dll_ready() -> bool:
+    """检查 site-packages 里 cudnn/cublas 算子库是否就位（决定 GPU 能否真正跑）。"""
+    import site
+    for sp in site.getsitepackages():
+        candidates = [
+            Path(sp) / "nvidia" / "cudnn" / "bin",
+            Path(sp) / "nvidia" / "cublas" / "bin",
+        ]
+        for d in candidates:
+            if d.exists() and any(d.glob("cudnn_ops*.dll")):
+                return True
+    return False
+
+
+def _gpu_name() -> Optional[str]:
+    try:
+        import ctranslate2
+        dev = ctranslate2.get_cuda_device_count()
+        if dev <= 0:
+            return None
+        # ctranslate2 不直接暴露名字；从 CUDA 驱动查询是可选，尽力而为
+        try:
+            import torch  # 若有 torch 则拿名字最方便
+            if torch.cuda.is_available():
+                return torch.cuda.get_device_name(0)
+        except Exception as e:
+            # torch 未装/加载失败：拿不到名字，退回 CUDA 设备数提示
+            logger.debug(f"获取 GPU 名失败（{e}），回退设备数提示")
+        # 退而求其次：返回 CUDA 设备数提示
+        return f"CUDA device (x{dev})"
+    except Exception:
+        return None
 
 
 class WhisperCustomModelRequest(BaseModel):
@@ -140,6 +210,10 @@ def update_transcriber_config(data: TranscriberConfigRequest):
             transcriber_type=data.transcriber_type,
             whisper_model_size=data.whisper_model_size,
             openai_asr_id=data.openai_asr_id,
+            whisper_device=data.whisper_device,
+            whisper_compute_type=data.whisper_compute_type,
+            whisper_cpu_threads=data.whisper_cpu_threads,
+            whisper_num_workers=data.whisper_num_workers,
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -167,6 +241,9 @@ def add_openai_asr(data: OpenAISREndpointRequest):
             chunk_concurrency=(
                 data.chunk_concurrency if data.chunk_concurrency is not None else 4
             ),
+            silence_split=(
+                data.silence_split if data.silence_split is not None else True
+            ),
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -191,6 +268,7 @@ def update_openai_asr(endpoint_id: str, data: OpenAISREndpointRequest):
             min_silence_seconds=data.min_silence_seconds,
             max_rpm=data.max_rpm,
             chunk_concurrency=data.chunk_concurrency,
+            silence_split=data.silence_split,
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -233,6 +311,7 @@ def test_openai_asr(endpoint_id: str):
             min_silence_seconds=endpoint.get("min_silence_seconds") or 0.5,
             max_rpm=endpoint.get("max_rpm") or 30,
             chunk_concurrency=endpoint.get("chunk_concurrency") or 4,
+            silence_split=endpoint.get("silence_split"),
         )
         result = transcriber.transcript(file_path=wav_path)
         preview = (result.full_text or "").strip()[:50]

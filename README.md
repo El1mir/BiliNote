@@ -6,7 +6,6 @@
 <h1 align="center" > BiliNote Unoffical</h1>
 </div>
 
-
 <p align="center"><i>AI 视频笔记生成工具 让 AI 为你的视频做笔记</i></p>
 
 <p align="center">
@@ -22,7 +21,6 @@
   <a href="https://www.bilinote.app/"><b>🚀 官方BiliNote Pro · 在线版</b></a>
 </p>
 
-
 <p align="center">
   <b>不想折腾部署？</b>访问 <a href="https://www.bilinote.app/"><b>www.bilinote.app</b></a> 即开即用 —— 免安装、免配置环境、免下模型，注册即可把视频转成笔记。
   <br/>
@@ -34,8 +32,6 @@
     <img src="https://img.shields.io/badge/%E7%AB%8B%E5%8D%B3%E4%BD%93%E9%AA%8C-BiliNote%20Pro-ff5c5c?style=for-the-badge" alt="立即体验 BiliNote Pro" />
   </a>
 </p>
-
-
 
 ## ✨ 项目简介
 
@@ -79,7 +75,6 @@
 - 支持返回笔记格式选择
 - 支持笔记风格选择
 - 支持多模态视频理解
-- 支持多版本记录保留
 - 支持自行配置 GPT 大模型（OpenAI、DeepSeek、Qwen 等）
 - 本地模型音频转写（支持 Fast-Whisper、MLX-Whisper、Groq、BCut）
 - GPT 大模型总结视频内容
@@ -166,6 +161,7 @@
 - 性能优化与转写器配置改进
 
 ## 📸 截图预览
+
 ![screenshot](./doc/image1.png)
 ![screenshot](./doc/image3.png)
 ![screenshot](./doc/image.png)
@@ -216,17 +212,21 @@ docker-compose -f docker-compose.gpu.yml up --build -d
 
 - **方法 A：直接用预构建镜像（最省事）**——不要本地 build，跳到上面的 `docker pull ghcr.io/jefferyhcool/bilinote:latest` 路径，ghcr.io 在国内通常比 docker.io 顺。
 - **方法 B：配置 Docker daemon 镜像加速器**——编辑 `~/.docker/daemon.json`（Linux 在 `/etc/docker/daemon.json`），加：
+
   ```json
   {
     "registry-mirrors": ["https://docker.m.daocloud.io"]
   }
   ```
+
   然后重启 Docker Desktop / `sudo systemctl restart docker`。这是一劳永逸的做法。
 - **方法 C：临时切换 base image 镜像源**——本项目所有 Dockerfile 都暴露了 `BASE_REGISTRY` build-arg：
+
   ```bash
   BASE_REGISTRY=docker.m.daocloud.io docker-compose build
   docker-compose up -d
   ```
+
   或永久写到 `.env`：`echo 'BASE_REGISTRY=docker.m.daocloud.io' >> .env`。
 
 注意：Chinese 公共 docker 镜像源时常被关停，2025-2026 之间可用的列表会变；如果 `docker.m.daocloud.io` 不通，搜一下"Docker 镜像加速 可用"找最新可用源即可。
@@ -234,16 +234,20 @@ docker-compose -f docker-compose.gpu.yml up --build -d
 **1. 容器一直 restart / unhealthy**
 
 先看后端日志：
+
 ```bash
 docker logs -f bilinote-backend
 ```
+
 后端启动会按顺序打印 `[startup 1/5] ... [startup 5/5] 启动完成`。若日志卡在某一步或出现 `[startup FAILED]`，就是那一步的问题，常见：
+
 - **卡在 `[startup 3/5]`**：转写器配置读不到。检查 `.env` 里 `TRANSCRIBER_TYPE` 是否写错，`mlx-whisper` 只能在 Apple Silicon 用，Linux/Docker 请用 `fast-whisper` 或 `groq`。
 - **首次跑视频时容器被 kill**：whisper 模型下载触发 OOM。先把 `.env` 里 `WHISPER_MODEL_SIZE` 改成 `tiny`，跑通后再去前端「音频转写配置」里逐档升。
 
 **2. 改了 `.env` 没生效**
 
 区分两类变量：
+
 - `VITE_*` 是**构建时**变量（前端 bundle 里硬编码），改完必须 `docker-compose build frontend && docker-compose up -d`。只 `restart` 不会重新打包。
 - 其他后端变量（`TRANSCRIBER_TYPE`、`WHISPER_MODEL_SIZE`、`FFMPEG_BIN_PATH` 等）是**运行时**变量，改完 `docker-compose up -d` 即可。
 
@@ -252,6 +256,7 @@ docker logs -f bilinote-backend
 **3. 数据存在哪？删容器会丢吗？**
 
 `docker-compose` 用的是 `./backend:/app` 绑挂，下面这些文件都在宿主机的 `./backend/` 目录里、删容器不会丢：
+
 - `./backend/bili_note.db` —— SQLite 库（含 LLM 供应商配置、笔记历史）
 - `./backend/config/transcriber.json` —— 转写器运行时配置
 - `./backend/static/screenshots/` —— 视频截图
@@ -322,7 +327,9 @@ pnpm dev
 ## ⚙️ 依赖说明
 
 ### 🎬 FFmpeg
+
 本项目依赖 ffmpeg 用于音频处理与转码，源码部署时必须安装：
+
 ```bash
 # Mac (brew)
 brew install ffmpeg
@@ -333,6 +340,7 @@ sudo apt install ffmpeg
 # Windows
 # 请从官网下载安装：https://ffmpeg.org/download.html
 ```
+
 > ⚠️ 若系统无法识别 ffmpeg，请将其加入系统环境变量 PATH
 >
 > Docker 部署已内置 FFmpeg，无需额外安装。
@@ -345,9 +353,11 @@ sudo apt install ffmpeg
 
 - NVIDIA 显卡 + 较新驱动（CUDA ≥ 12.4），宿主机 `nvidia-smi` 能正常输出；
 - 安装 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)（最易漏的一步，没它 Docker 进不去 GPU）。装完验证：
+
   ```bash
   docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
   ```
+
   能列出显卡即 OK。
 
 **2. 切换到 GPU 编排**（在源码目录里）
@@ -428,9 +438,8 @@ docker-compose -f docker-compose.gpu.yml up --build -d
   </tr>
 </table>
 
-
-
 ## 🔎代码参考
+
 - 本项目中的 `抖音下载功能` 部分代码参考引用自：[Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)
 
 ## 📜 License
@@ -440,7 +449,9 @@ MIT License
 ---
 
 💬 你的支持与反馈是我持续优化的动力！欢迎 PR、提 issue、Star ⭐️
+
 ## Buy Me a Coffee / 捐赠
+
 如果你觉得项目对你有帮助，考虑支持我一下吧
 <div style='display:inline;'>
     <img width='30%' src='https://common-1304618721.cos.ap-chengdu.myqcloud.com/8986c9eb29c356a0cfa3d470c23d3b6.jpg'/>

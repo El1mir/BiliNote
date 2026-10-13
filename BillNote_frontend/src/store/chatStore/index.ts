@@ -28,16 +28,16 @@ export const useChatStore = create<ChatState>()(
           },
         })),
 
-      clearChat: (taskId) =>
+      clearChat: taskId =>
         set(state => {
           const { [taskId]: _, ...rest } = state.chatHistory
           return { chatHistory: rest }
         }),
 
-      getMessages: (taskId) => get().chatHistory[taskId] || [],
+      getMessages: taskId => get().chatHistory[taskId] || [],
     }),
     {
       name: 'bilinote-chat-storage',
-    },
-  ),
+    }
+  )
 )

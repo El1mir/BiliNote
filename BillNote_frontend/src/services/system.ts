@@ -50,4 +50,3 @@ export interface DeployStatus {
 export const getDeployStatus = async (): Promise<DeployStatus> => {
   return await request.get('/deploy_status')
 }
-

@@ -76,6 +76,14 @@ async def lifespan(app: FastAPI):
 
     import asyncio
     from app.services.media_resource_service import media_cleanup_loop
+    from app.services.task_recovery import start_recovery_thread
+
+    # 启动恢复（spec 009 ticket 03）：上次进程被杀时留在 PENDING/DOWNLOADING/… 的
+    # 任务，其内存队列已经随进程消失，界面上却永远停在「排队中」。这里在**独立线程**
+    # 里扫描数据库 + 重新入队，不阻塞启动序列（几百行 + 逐个读状态文件会拖慢启动）。
+    # 放在媒体清理循环之前：任务要落盘，恢复越早开始越好。
+    start_recovery_thread()
+
     media_stop = asyncio.Event()
     media_task = asyncio.create_task(media_cleanup_loop(media_stop))
     try:

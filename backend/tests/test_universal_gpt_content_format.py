@@ -56,6 +56,15 @@ def _install_stubs():
 
     utils_mod.fix_markdown = _fix_markdown
 
+    # spec 008 ticket 02：universal_gpt 现在也从 app.gpt.utils 取 load_llm_json。
+    # 按本文件的既有惯用法单独载入真实现：既不必在 stub 里复制一份容错逻辑
+    # （复制必然分叉），也不必为了一个纯函数去 import 整个 app 包。
+    _utils_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "gpt" / "utils.py"
+    _utils_spec = importlib.util.spec_from_file_location("_real_gpt_utils", _utils_path)
+    _real_utils = importlib.util.module_from_spec(_utils_spec)
+    _utils_spec.loader.exec_module(_real_utils)
+    utils_mod.load_llm_json = _real_utils.load_llm_json
+
     request_chunker_mod = types.ModuleType("app.gpt.request_chunker")
 
     class _RequestChunker:

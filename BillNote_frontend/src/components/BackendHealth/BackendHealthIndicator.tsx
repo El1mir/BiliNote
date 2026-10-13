@@ -17,7 +17,7 @@ const SYS_HEALTH_PATH = '/sys_health'
 function backendBase(): string {
   // 与 utils/request.ts 的 baseURL 计算保持一致：env 没设走 '/api' 兜底。
   const fromEnv = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined
-  return ((fromEnv && fromEnv.length > 0) ? fromEnv : '/api').replace(/\/$/, '')
+  return (fromEnv && fromEnv.length > 0 ? fromEnv : '/api').replace(/\/$/, '')
 }
 
 const BackendHealthIndicator = () => {
@@ -39,13 +39,11 @@ const BackendHealthIndicator = () => {
         if (ok) {
           setHealthCheckFailures(0)
           setLastHealthOk(true)
-        }
-        else {
+        } else {
           setHealthCheckFailures(c => c + 1)
           setLastHealthOk(false)
         }
-      }
-      catch {
+      } catch {
         if (!mounted) return
         setHealthCheckFailures(c => c + 1)
         setLastHealthOk(false)
@@ -91,7 +89,9 @@ const BackendHealthIndicator = () => {
         title={labelMap[health]}
         onClick={() => setOpen(true)}
       >
-        <span className={`inline-block h-2 w-2 rounded-full ${colorMap[health]}${health === 'red' || health === 'yellow' ? ' animate-pulse' : ''}`} />
+        <span
+          className={`inline-block h-2 w-2 rounded-full ${colorMap[health]}${health === 'red' || health === 'yellow' ? 'animate-pulse' : ''}`}
+        />
         <span className="text-gray-700">后端</span>
       </button>
 

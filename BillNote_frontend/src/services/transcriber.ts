@@ -24,6 +24,11 @@ export interface OpenAIASREndpoint {
   max_rpm: number
   /** 切片转写的并发请求数（1-32，1 即串行）；并发只填满 max_rpm 允许的额度 */
   chunk_concurrency: number
+  /**
+   * chat 风格是否按静音边界切片（默认 true）。
+   * 关掉可省去「完整解码音频 + silencedetect」这一整轮耗时，改走按字节等长切片。
+   */
+  silence_split: boolean
 }
 
 export interface OpenAIASREndpointInput {
@@ -39,11 +44,28 @@ export interface OpenAIASREndpointInput {
   min_silence_seconds?: number
   max_rpm?: number
   chunk_concurrency?: number
+  silence_split?: boolean
 }
 
 export interface TranscriberConfig {
   transcriber_type: string
   whisper_model_size: string
+  /** 本地推理设备：auto / cpu / cuda（仅 fast-whisper 生效） */
+  whisper_device?: string
+  /** 计算类型：auto / float16 / int8 / int8_float16 ...（仅 fast-whisper） */
+  whisper_compute_type?: string
+  /** CPU 推理线程数，0 = 自动（仅 fast-whisper） */
+  whisper_cpu_threads?: number
+  /** faster-whisper 推理 worker 数（仅 fast-whisper） */
+  whisper_num_workers?: number
+  /** 本机推理硬件能力探测（仅配置读取时下发） */
+  local_hardware?: {
+    cpu_cores: number
+    cuda_available: boolean
+    gpu_name?: string | null
+    cuda_dll_ready: boolean
+    device: string
+  }
   available_types: { value: string; label: string }[]
   whisper_model_sizes: string[]
   /** 内置模型映射：size → HF repo_id */
@@ -81,15 +103,17 @@ export const updateTranscriberConfig = async (data: {
   transcriber_type: string
   whisper_model_size?: string
   openai_asr_id?: string | null
+  whisper_device?: string
+  whisper_compute_type?: string
+  whisper_cpu_threads?: number
+  whisper_num_workers?: number
 }) => {
   return await request.post('/transcriber_config', data)
 }
 
 // ---------------- OpenAI 兼容 ASR 端点（spec 003） ----------------
 
-export const addOpenaiAsr = async (
-  data: OpenAIASREndpointInput,
-): Promise<{ id: string }> => {
+export const addOpenaiAsr = async (data: OpenAIASREndpointInput): Promise<{ id: string }> => {
   return await request.post('/openai_asr', data)
 }
 
@@ -106,7 +130,7 @@ export const testOpenaiAsr = async (id: string) => {
   return await request.post(
     `/openai_asr/${encodeURIComponent(id)}/test`,
     {},
-    { suppressToast: true },
+    { suppressToast: true }
   )
 }
 
@@ -114,10 +138,7 @@ export const getModelsStatus = async (): Promise<ModelsStatusResponse> => {
   return await request.get('/transcriber_models_status')
 }
 
-export const downloadModel = async (data: {
-  model_size: string
-  transcriber_type?: string
-}) => {
+export const downloadModel = async (data: { model_size: string; transcriber_type?: string }) => {
   return await request.post('/transcriber_download', data)
 }
 

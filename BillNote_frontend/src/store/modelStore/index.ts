@@ -5,7 +5,7 @@ import {
   addModel,
   fetchEnableModels,
   fetchEnableModelById,
-  deleteModelById
+  deleteModelById,
 } from '@/services/model'
 
 interface IModel {
@@ -40,7 +40,7 @@ interface ModelStore {
 }
 
 export const useModelStore = create<ModelStore>()(
-  devtools((set) => ({
+  devtools(set => ({
     models: [],
     modelList: [],
     loading: false,
@@ -103,7 +103,7 @@ export const useModelStore = create<ModelStore>()(
 
         if (res.code === 0) {
           console.log('新增模型成功:', modelId)
-          set((state) => ({
+          set(state => ({
             models: [
               ...state.models,
               {
@@ -129,8 +129,8 @@ export const useModelStore = create<ModelStore>()(
       try {
         await deleteModelById(modelId)
         //  删除后更新本地状态（可选）
-        set((state) => ({
-          models: state.models.filter((model) => model.id !== modelId.toString())
+        set(state => ({
+          models: state.models.filter(model => model.id !== modelId.toString()),
         }))
       } catch (error) {
         console.error('删除模型失败', error)

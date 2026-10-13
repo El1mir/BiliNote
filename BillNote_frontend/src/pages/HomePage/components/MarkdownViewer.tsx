@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo, FC, Children, isValidElement } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Button } from '@/components/ui/button.tsx'
-import { Copy, Download, ArrowRight, Play, ExternalLink } from 'lucide-react'
+import { Copy, ArrowRight, Play, ExternalLink } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import Error from '@/components/Lottie/error.tsx'
 import Loading from '@/components/Lottie/Loading.tsx'
@@ -19,7 +18,7 @@ import rehypeSlug from 'rehype-slug'
 import 'katex/dist/katex.min.css'
 import 'github-markdown-css/github-markdown-light.css'
 import { ScrollArea } from '@/components/ui/scroll-area.tsx'
-import { useTaskStore } from '@/store/taskStore'
+import { useTaskStore, readLatestMarkdown } from '@/store/taskStore'
 import { noteStyles } from '@/constant/note.ts'
 import { MarkdownHeader } from '@/pages/HomePage/components/MarkdownHeader.tsx'
 import TranscriptViewer from '@/pages/HomePage/components/transcriptViewer.tsx'
@@ -30,16 +29,7 @@ import { normalizeMathDelimiters } from '@/utils/markdown'
 import { asText } from '@/utils/text'
 import { downloadNoteArchive } from '@/services/note'
 
-interface VersionNote {
-  ver_id: string
-  content: string
-  style: string
-  model_name: string
-  created_at?: string
-}
-
 interface MarkdownViewerProps {
-  content: string | VersionNote[]
   status: 'idle' | 'loading' | 'success' | 'failed'
 }
 const remarkPlugins = [gfm, remarkMath]
@@ -87,15 +77,25 @@ function createMarkdownComponents(baseURL: string) {
       const containsImage = Children.toArray(children).some(child => {
         if (!isValidElement(child)) return false
         const childProps = child.props as { src?: unknown; children?: unknown }
-        return typeof childProps.src === 'string' || Children.toArray(childProps.children).some(n => isValidElement(n) && typeof (n.props as { src?: unknown }).src === 'string')
+        return (
+          typeof childProps.src === 'string' ||
+          Children.toArray(childProps.children).some(
+            n => isValidElement(n) && typeof (n.props as { src?: unknown }).src === 'string'
+          )
+        )
       })
-      const className = "leading-7 [&:not(:first-child)]:mt-6"
-      return containsImage ? <div className={className}>{children}</div> : <p className={className} {...props}>{children}</p>
+      const className = 'leading-7 [&:not(:first-child)]:mt-6'
+      return containsImage ? (
+        <div className={className}>{children}</div>
+      ) : (
+        <p className={className} {...props}>
+          {children}
+        </p>
+      )
     },
     a: ({ href, children, ...props }: any) => {
       const isOriginLink =
-        typeof children[0] === 'string' &&
-        (children[0] as string).startsWith('原片 @')
+        typeof children[0] === 'string' && (children[0] as string).startsWith('原片 @')
 
       if (isOriginLink) {
         const timeMatch = (children[0] as string).match(/原片 @ (\d{2}:\d{2})/)
@@ -130,8 +130,7 @@ function createMarkdownComponents(baseURL: string) {
           // LLM 生成的目录锚点可能和 heading 实际文本不完全一致
           //（例如 heading 带 *Content-[00:00]* 后缀，目录链接里没有）
           if (!target) {
-            const normalize = (s: string) =>
-              s.replace(/[-：:\s*\[\]]/g, '').toLowerCase()
+            const normalize = (s: string) => s.replace(/[-：:\s*\[\]]/g, '').toLowerCase()
             const search = normalize(id)
             const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6')
             for (const h of headings) {
@@ -171,9 +170,7 @@ function createMarkdownComponents(baseURL: string) {
           {...props}
         >
           {children}
-          {href?.startsWith('http') && (
-            <ExternalLink className="ml-0.5 inline-block h-3 w-3" />
-          )}
+          {href?.startsWith('http') && <ExternalLink className="ml-0.5 inline-block h-3 w-3" />}
         </a>
       )
     },
@@ -204,14 +201,20 @@ function createMarkdownComponents(baseURL: string) {
     li: ({ children, ordered: _ordered, index: _index, checked: _checked, ...props }: any) => {
       const rawText = String(children)
       const isFakeHeading = /^\*\*.+\*\*$/.test(rawText.trim())
-      if (isFakeHeading) return <div className="text-primary my-4 text-lg font-bold">{children}</div>
-      return <li className="my-1" {...props}>{children}</li>
+      if (isFakeHeading)
+        return <div className="text-primary my-4 text-lg font-bold">{children}</div>
+      return (
+        <li className="my-1" {...props}>
+          {children}
+        </li>
+      )
     },
     ul: ({ children, ordered: _ordered, depth: _depth, ...props }: any) => (
       <ul className="my-6 ml-6 list-disc [&>li]:mt-2" {...props}>
         {children}
       </ul>
-    ),    blockquote: ({ children, ...props }: any) => (
+    ),
+    blockquote: ({ children, ...props }: any) => (
       <blockquote
         className="border-primary/20 text-muted-foreground mt-6 border-l-4 pl-4 italic"
         {...props}
@@ -275,31 +278,38 @@ function createMarkdownComponents(baseURL: string) {
       </div>
     ),
     th: ({ children, isHeader: _isHeader, ...props }: any) => (
-      <th className="border-muted-foreground/20 border px-4 py-2 text-left font-medium [&[align=center]]:text-center [&[align=right]]:text-right" {...props}>{children}</th>
+      <th
+        className="border-muted-foreground/20 border px-4 py-2 text-left font-medium [&[align=center]]:text-center [&[align=right]]:text-right"
+        {...props}
+      >
+        {children}
+      </th>
     ),
     td: ({ children, isHeader: _isHeader, ...props }: any) => (
-      <td className="border-muted-foreground/20 border px-4 py-2 text-left [&[align=center]]:text-center [&[align=right]]:text-right" {...props}>{children}</td>
+      <td
+        className="border-muted-foreground/20 border px-4 py-2 text-left [&[align=center]]:text-center [&[align=right]]:text-right"
+        {...props}
+      >
+        {children}
+      </td>
     ),
-    hr: ({ ...props }: any) => (
-      <hr className="border-muted-foreground/20 my-8" {...props} />
-    ),
+    hr: ({ ...props }: any) => <hr className="border-muted-foreground/20 my-8" {...props} />,
   }
 }
 
 const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
   const [copied, setCopied] = useState(false)
-  const [currentVerId, setCurrentVerId] = useState<string>('')
   const [selectedContent, setSelectedContent] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
   const [style, setStyle] = useState<string>('')
   const [createTime, setCreateTime] = useState<string>('')
   // 确保baseURL没有尾部斜杠
-  const baseURL = (String(import.meta.env.VITE_API_BASE_URL || '').replace('/api','') || '').replace(/\/$/, '')
+  const baseURL = (
+    String(import.meta.env.VITE_API_BASE_URL || '').replace('/api', '') || ''
+  ).replace(/\/$/, '')
   const getCurrentTask = useTaskStore.getState().getCurrentTask
   const currentTask = useTaskStore(state => state.getCurrentTask())
   const taskStatus = currentTask?.status || 'PENDING'
-  const retryTask = useTaskStore.getState().retryTask
-  const isMultiVersion = Array.isArray(currentTask?.markdown)
   const [showTranscribe, setShowTranscribe] = useState(false)
   const [showChat, setShowChat] = useState<false | 'half' | 'full'>(false)
   const [viewMode, setViewMode] = useState<'map' | 'preview'>('preview')
@@ -308,37 +318,15 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
   // 缓存 ReactMarkdown components，仅在 baseURL 变化时重建
   const markdownComponents = useMemo(() => createMarkdownComponents(baseURL), [baseURL])
 
-  // 多版本内容处理
+  // 笔记内容与元信息（版本功能已删除，spec 008）
   useEffect(() => {
     if (!currentTask) return
 
-    if (!isMultiVersion) {
-      setCurrentVerId('') // 清空旧版本 ID
-      setModelName(asText(currentTask.formData?.model_name, '未知模型'))
-      setStyle(asText(currentTask.formData?.style, '未知风格'))
-      setCreateTime(currentTask.createdAt)
-      setSelectedContent(typeof currentTask?.markdown === 'string' ? currentTask.markdown : '')
-    } else {
-      const latestVersion = [...currentTask.markdown].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )[0]
-
-      if (latestVersion) {
-        setCurrentVerId(latestVersion.ver_id)
-      }
-    }
+    setModelName(asText(currentTask.formData?.model_name, '未知模型'))
+    setStyle(asText(currentTask.formData?.style, '未知风格'))
+    setCreateTime(currentTask.createdAt)
+    setSelectedContent(readLatestMarkdown(currentTask.markdown))
   }, [currentTask?.id, taskStatus])
-  useEffect(() => {
-    if (!currentTask || !isMultiVersion) return
-
-    const currentVer = currentTask.markdown.find(v => v.ver_id === currentVerId)
-    if (currentVer) {
-      setModelName(asText(currentVer.model_name, '未知模型'))
-      setStyle(asText(currentVer.style, '未知风格'))
-      setCreateTime(currentVer.created_at || '')
-      setSelectedContent(typeof currentVer.content === 'string' ? currentVer.content : '')
-    }
-  }, [currentVerId, currentTask?.id])
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(selectedContent)
@@ -422,17 +410,13 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
     )
   }
 
-  if (status === 'failed' && !isMultiVersion) {
+  if (status === 'failed') {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center gap-4 space-y-3">
         <Error />
         <div className="text-center">
           <p className="text-lg font-bold text-red-500">笔记生成失败</p>
           <p className="mt-2 mb-2 text-xs text-red-400">请检查后台或稍后再试</p>
-
-          <Button onClick={() => retryTask(currentTask.id)} size="lg">
-            重试
-          </Button>
         </div>
       </div>
     )
@@ -441,10 +425,6 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden">
       <MarkdownHeader
-        currentTask={currentTask}
-        isMultiVersion={isMultiVersion}
-        currentVerId={currentVerId}
-        setCurrentVerId={setCurrentVerId}
         modelName={modelName}
         style={style}
         noteStyles={noteStyles}
@@ -479,38 +459,38 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
                   <ChatPanel taskId={currentTask.id} mode="full" onModeChange={setShowChat} />
                 </div>
               ) : (
-              <>
-              <ScrollArea className="min-w-0 flex-1">
-                <div className="px-2">
-                  <VideoBanner
-                    audioMeta={currentTask?.audioMeta}
-                    videoUrl={currentTask?.formData?.video_url}
-                  />
-                </div>
-                <div className={'markdown-body w-full px-2'}>
-                  <ReactMarkdown
-                    remarkPlugins={remarkPlugins}
-                    rehypePlugins={rehypePlugins}
-                    components={markdownComponents}
-                  >
-                    {normalizeMathDelimiters(
-                      selectedContent.replace(/^>\s*来源链接：[^\n]*\n*/m, ''),
-                    )}
-                  </ReactMarkdown>
-                </div>
-              </ScrollArea>
-              {showTranscribe && (
-                <div className={'ml-2 w-2/4'}>
-                  <TranscriptViewer />
-                </div>
-              )}
-              {/* 侧边问答模式：markdown + ChatPanel 各占一半 */}
-              {showChat === 'half' && currentTask && (
-                <div className="ml-2 h-full w-1/2 shrink-0">
-                  <ChatPanel taskId={currentTask.id} mode="half" onModeChange={setShowChat} />
-                </div>
-              )}
-              </>
+                <>
+                  <ScrollArea className="min-w-0 flex-1">
+                    <div className="px-2">
+                      <VideoBanner
+                        audioMeta={currentTask?.audioMeta}
+                        videoUrl={currentTask?.formData?.video_url}
+                      />
+                    </div>
+                    <div className={'markdown-body w-full px-2'}>
+                      <ReactMarkdown
+                        remarkPlugins={remarkPlugins}
+                        rehypePlugins={rehypePlugins}
+                        components={markdownComponents}
+                      >
+                        {normalizeMathDelimiters(
+                          selectedContent.replace(/^>\s*来源链接：[^\n]*\n*/m, '')
+                        )}
+                      </ReactMarkdown>
+                    </div>
+                  </ScrollArea>
+                  {showTranscribe && (
+                    <div className={'ml-2 w-2/4'}>
+                      <TranscriptViewer />
+                    </div>
+                  )}
+                  {/* 侧边问答模式：markdown + ChatPanel 各占一半 */}
+                  {showChat === 'half' && currentTask && (
+                    <div className="ml-2 h-full w-1/2 shrink-0">
+                      <ChatPanel taskId={currentTask.id} mode="half" onModeChange={setShowChat} />
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : (

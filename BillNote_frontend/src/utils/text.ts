@@ -8,7 +8,11 @@ export function asText(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   if (value instanceof Date) return value.toLocaleString('zh-CN')
-  if (Array.isArray(value)) return value.map(item => asText(item)).filter(Boolean).join('、')
+  if (Array.isArray(value))
+    return value
+      .map(item => asText(item))
+      .filter(Boolean)
+      .join('、')
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>
     for (const key of ['title', 'name', 'label', 'value', 'model_name', 'style', 'text']) {

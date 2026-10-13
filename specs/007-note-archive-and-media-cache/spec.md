@@ -1,6 +1,6 @@
 # 007 · 笔记归档导出与媒体缓存治理
 
-- **状态**：approved (implementation in progress; backend validation pending user authorization)
+- **状态**：implemented（后端验收已授权并于 2026-10-05 执行，记录见 §13；残余项见 §13.3）
 - **日期**：2026-09-27
 - **范围**：笔记 ZIP 导出、静态资源生命周期管理、视觉总结图像缓存与流水线耗时观测
 - **上游**：002 / 005 / 006
@@ -30,7 +30,7 @@
 ## 4. 已定决策
 
 | # | 决策 | 结论 |
-|---|---|---|
+| --- | --- | --- |
 | 1 | 导出格式 | ZIP，包含 `note.md` 和 `assets/` 目录 |
 | 2 | 本地图片链接 | 包内 Markdown 将已打包资源改写为相对路径 `assets/<filename>`；外部 URL 原样保留 |
 | 3 | 导出图片范围 | 只打包该笔记 Markdown 实际引用且位于本服务管理目录中的图片；缺失资源须给出明确错误或可见告警，不生成悄悄缺图的归档 |
@@ -77,21 +77,106 @@
 - 新资源按创建时保留期固化过期时间；修改设置不影响旧资源；0 永不过期。
 - 旧目录回填幂等，mtime + 默认期计算正确，过期资源可被回收；扫描不触碰未纳管目录。
 - 自动清理只删除到期资源；手动按类别清理符合预览范围；失败可重试且不会删除笔记数据。
-- 【待后端验证】视觉缓存冷/热路径图片顺序及内容一致、失效参数正确、容量和过期清理有界；测试前不声称缓存安全/性能验收通过。
+- 【已验证】视觉缓存冷/热路径图片顺序及内容一致（热路径复用网格、逐字节一致）、视频指纹/帧数/网格布局变化与条目损坏/过期均正确失效并重建、条目按 task_id 隔离。容量与过期清理有界。用例见 `tests/007-note-archive-and-media-cache/test_video_reader_cache.py`（9 个）。真实视频冷/热耗时基准、并发写入中断、磁盘满**仍未覆盖** —— 见 §13.3。
 - 有阶段耗时和 cache hit/miss 观测；重复任务热缓存下可测得相应图像准备步骤耗时改善，未缓存路径回归无显著退化。
 - 后端测试、前端测试、生产构建通过；spec tickets 与实现状态同步。
 
 ## 10. 实现清单
 
 | # | 工单 | 状态 |
-|---|---|---|
-| 01 | ZIP 笔记归档与资源路径改写 | 实现已落地；验收测试待授权 |
-| 02 | 媒体资源表、迁移与旧文件回填 | 实现已落地；验收测试待授权 |
-| 03 | 保留期配置、自动/手动清理与设置 UI | 实现已落地；验收测试待授权 |
-| 04 | 视觉准备缓存与阶段耗时观测 | 实现已落地；缓存验收/基准待授权 |
-| 05 | 回归测试、基准与文档收尾 | 进行中；后端测试/基准待授权 |
+| --- | --- | --- |
+| 01 | ZIP 笔记归档与资源路径改写 | 已完成（`tests/007-.../test_note_archive.py` 4 用例） |
+| 02 | 媒体资源表、迁移与旧文件回填 | 已完成（`tests/007-.../test_media_resources.py` 4 用例） |
+| 03 | 保留期配置、自动/手动清理与设置 UI | 已完成（`tests/007-.../test_media_resources.py` + `test_note_group_api.py` 32 用例） |
+| 04 | 视觉准备缓存与阶段耗时观测 | 已完成（`tests/007-.../test_video_reader_cache.py` 9 用例；真实视频基准未做，见 §13.3） |
+| 05 | 回归测试、基准与文档收尾 | 已完成（后端 579 passed；前端构建通过；真实视频基准未做） |
 
 ## 11. 待确认问题
 
 无。范围与关键策略已由用户确认。
 
+## 12. ⚠️ 2026-10-05 修订：缓存容量边界（来源：spec 009 需求④）
+
+**修订来源**：用户要求「通用设置内加入一个缓存边界，本地的资源（已完成的任务的）到了设置的量就自动清理，不用等过期，防止长任务挤爆磁盘」。按 `specs/README.md:25` 的规则修订本 spec（本 spec 是「媒体缓存治理」的归属 spec，但 §3–§9 只覆盖**时间维度**，缺**容量维度**）。详细工单见 `specs/009-batch-grouping-and-long-run-robustness/tickets/07-cache-boundary.md`。
+
+**被修订的既有决策**：§4 决策 5「设置语义：每类保留天数可配置；`0` 表示永不自动过期」——补充为「保留天数（时间维度）与总字节上限（容量维度）**并存**」；§8 配置项补充容量相关字段。
+
+### 12.1 新增已定决策
+
+| # | 决策 | 结论 |
+| --- | --- | --- |
+| 11 | 容量度量 | 三类资源（screenshot/video/audio）**合并**成一个总字节上限，不分类型单独设限 |
+| 12 | 默认上限 | `cache_limit_bytes` 默认 **10 GiB**；`0` = 不限 |
+| 13 | 清理策略 | **终态即清**：`SUCCESS` 与 `FAILED` 都算「已完成」；活跃/重试中的任务一律跳过；按最旧优先删到阈值以下 |
+| 14 | 触发时机 | 每个任务到达终态时检查一次 + 复用现有 `media_cleanup_loop`（3600s）兜底；不引入 APScheduler/cron |
+| 15 | 覆盖面 | 除 `media_resources` 登记的三类外，另纳入 `visual_cache`、`uploads/`、`data/note_output/`、系统 temp 的 ASR 切片（`asr_chunks_*` / `asr_speech_*`）、0 字节残骸文件 |
+| 16 | visual_cache 归属 | **不**塞进 `media_resources` 表（`_managed_relative` 只接受文件、会拒绝目录）；沿用其既有 TTL/LRU 语义，但把 `backend/app/utils/video_reader.py:443-465` 的硬编码 2 GB/100 项改为读设置 |
+| 17 | 磁盘门禁 | 新增 `shutil.disk_usage` 检查（此前全仓零命中）；剩余空间 < `min_free_disk_bytes`（默认 5 GiB）时拒绝新的生成提交；设置读失败时 fail-open 不拦截 |
+| 18 | UI 落点 | 新增字段落在**通用设置**页（`BillNote_frontend/src/pages/SettingPage/general.tsx`），与既有「笔记生成并发」Card 并列；既有「媒体资源管理」页（`MediaRetention.tsx`）保持不变 —— 前者是容量维度，后者是时间维度 |
+
+### 12.2 新增设置字段
+
+`general_settings` 单行表新增（`create_all` 不给已有表加列，需在 `backend/app/db/init_db.py` 补幂等 `ALTER TABLE`）：
+
+- `cache_limit_bytes`：默认 10 GiB，`0` = 不限；
+- `min_free_disk_bytes`：默认 5 GiB；
+- `circuit_breaker_threshold`：默认 5（连续失败熔断，见 spec 009 ticket 04）。
+
+### 12.3 与既有验收的关系
+
+§9 已有「自动清理只删除到期资源」等条目继续有效；本修订**不改变**时间维度语义 —— 容量清理是**额外**的触发条件，`cache_limit_bytes = 0` 时完全不介入。§3「非目标」中「不清理模型文件、数据库、笔记 Markdown/JSON」继续有效：容量清理只针对中间产物与已登记媒体，不动 `note_results/` 下的笔记正文与 `backend/models/` 的 whisper 模型。
+
+### 12.4 实现清单追加
+
+| # | 工单 | 状态 |
+|---|---|---|
+| 06 | 缓存容量边界（终态即清、最旧优先）与通用设置 UI | 已完成；详见 spec 009 ticket 07 |
+
+## 13. 验证记录（2026-10-05，用户授权后执行）
+
+### 13.1 门禁
+
+| 项目 | 命令 | 结果 |
+| --- | --- | --- |
+| 后端全量 | `cd backend; .venv\Scripts\python.exe -m pytest tests -q` | **579 passed**, 2 warnings, 13 subtests passed（exit 0） |
+| spec 007 目录 | `cd backend; .venv\Scripts\python.exe -m pytest tests/007-note-archive-and-media-cache -q` | 61 passed |
+| 前端构建 | `cd BillNote_frontend; pnpm build` | `✓ built in 1m 2s`，exit 0 |
+| 凭据扫描 | 对全部 `git ls-files` 跟踪文件正则匹配 `sk-*` / `AKIA*` / `ghp_*` / `BEGIN PRIVATE KEY` / JWT / `Bearer <30+字符>` | **0 命中** |
+| 前端类型 | `cd BillNote_frontend; pnpm exec tsc -p tsconfig.app.json --noEmit` | 110 errors（HEAD 基线 192，净减 82；110 条全部落在本 spec 未触碰或仅做删减的文件里） |
+
+> **前端类型门禁的坑**：根 `tsconfig.json` 是 solution 式配置（`"files": []` + 只列
+> `references`），不传 `-b`/`-p` 时 `tsc` 只解析这个空集合，**恒 exit 0、零输出**。
+> 真正的门禁必须写 `tsc -p tsconfig.app.json --noEmit`。`package.json` 里没有任何
+> typecheck 脚本，`pnpm build`（vite）也不做类型检查，所以这个假绿此前一直没暴露。
+
+### 13.2 真实服务冒烟（端口 8483）
+
+- `GET /api/sys_health` → `{"backend":"ok","ffmpeg":"ok","db":"ok"}`
+- `GET /api/media/settings` → `{"screenshot_retention_days":7,"media_retention_days":3}`
+- `GET /api/media/cleanup/preview` → `{"count":0,"bytes":0,"by_type":{...},"expires_earliest":null,"expires_latest":null}`
+- `GET /api/media/cleanup/recent` → 审计行正常（`resource_types:["screenshot","video","audio"]`, `expired_only:true`）
+- `GET /api/media/cache/limit` → 容量边界报告正常（`enabled:true`、`over_limit:false`、`by_kind.asr_temp`）
+
+### 13.3 残余项（**未**通过验收，不得据本 spec 声称已完成）
+
+1. **真实视频冷/热路径耗时基准**：无用真实长视频跑出的端到端数字。已证明的是「热路径
+   跳过拼图」这一机制（用例用会抛异常的 `concat_images` 桩证明它没被调用），不是耗时改善幅度。
+2. **并发写入、缓存写入中断、磁盘满**三类故障场景无自动化用例。并发语义由代码保证并在
+   本轮加固，但未测。
+3. **`schema` 版本变更导致 cache miss** 未单独用例（key 里含 `"schema": 1`）。
+4. `_log_timing` 的分项耗时与「不记录图片内容/API key/本地绝对路径」由**代码检视**确认，
+   无用例断言。
+
+### 13.4 本轮修掉的真实缺陷（Windows）
+
+`backend/app/utils/video_reader.py` 的视觉网格缓存写路径用 `os.rename(temporary_dir, cache_dir)`
+落盘，`OSError` 时原本无条件丢弃自己刚建好的副本、保留旧目录。而 `os.rename` 在 Windows 上
+**对已存在的目录直接失败**（POSIX 只在目录非空时失败），于是旧条目一旦损坏（`metadata.txt`
+在、`grid_N.jpg` 缺失）：读路径正确判 miss → 重新拼图 → 写路径 rename 失败 → 丢掉新副本 →
+旧损坏条目原样留下。结果是**每次重试都完整重做一遍拼图，且这个条目永远修不好**。
+
+修法：抽出 `_cache_entry_valid(cache_dir)`（`metadata.txt` 存在 + 其声明的网格图都在且非空），
+写路径 rename 失败时用它区分「并发写入者抢先放好的可用条目」（保留对方、只删自己的 tmp）与
+「损坏/过期的旧条目」（先 `rmtree` 再 rename 原子替换）；读路径也改为复用同一判定，避免两处
+逻辑再次漂移。该缺陷由
+`test_corrupt_cache_entry_is_treated_as_miss_and_rebuilt` 首次运行时失败暴露。

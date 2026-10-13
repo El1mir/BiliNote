@@ -2,10 +2,31 @@ import request from '@/utils/request.ts'
 
 // opts.silent: 让本次请求失败时不弹全局红 toast（调用方自行 catch 处理，
 // 比如 onboarding 撞名重试这种预期内失败）
-interface CallOpts { silent?: boolean }
+interface CallOpts {
+  silent?: boolean
+}
 const cfg = (o?: CallOpts) => (o?.silent ? { suppressToast: true } : undefined)
 
-export const getProviderList = async (opts?: CallOpts) => {
+export interface ProviderSummary {
+  id: string
+  name: string
+  logo: string
+  api_key: string
+  base_url: string
+  type: string
+  enabled: number
+  max_concurrency?: number
+  max_rpm?: number
+}
+
+export interface EnabledModelSummary {
+  id: string
+  provider_id: string
+  model_name: string
+  created_at?: string
+}
+
+export const getProviderList = async (opts?: CallOpts): Promise<ProviderSummary[]> => {
   return await request.get('/get_all_providers', cfg(opts))
 }
 export const getProviderById = async (id: string) => {
@@ -31,14 +52,11 @@ export const fetchEnableModelById = async (id: string) => {
   return await request.get('/model_enable/' + id)
 }
 
-export async function addModel(
-  data: { provider_id: string; model_name: string },
-  opts?: CallOpts,
-) {
+export async function addModel(data: { provider_id: string; model_name: string }, opts?: CallOpts) {
   return request.post('/models', data, cfg(opts))
 }
 
-export const fetchEnableModels = async () => {
+export const fetchEnableModels = async (): Promise<EnabledModelSummary[]> => {
   return await request.get('/model_list')
 }
 

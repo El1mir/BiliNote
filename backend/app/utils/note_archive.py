@@ -33,8 +33,23 @@ def write_note_archive(
     image_base_url: str = "/static/screenshots",
     max_files: int = 500,
     max_bytes: int = 512 * 1024 * 1024,
+    skip_missing: bool = False,
+    skipped: list[str] | None = None,
+    compression: int = zipfile.ZIP_DEFLATED,
 ) -> tuple[int, int]:
-    """Write note.md and referenced local screenshot files; return (assets, bytes)."""
+    """Write note.md and referenced local screenshot files; return (assets, bytes).
+
+    ``skip_missing``：引用指向的本地图片已不存在时怎么办。默认抛
+    :class:`NoteArchiveError` —— 单篇导出要让用户知道「这篇导出不完整」。
+    批量导出必须传 ``True``：截图会被容量清理删掉，一篇笔记的图没了不该让另外
+    194 篇一起下载失败（实测 195 篇里有 64 篇、共 258 张图已被清理）。
+
+    ``skipped``：可选的累加器，被跳过的图片相对路径会追加进去，供调用方统计与
+    告知用户。跳过的图片在 markdown 里保持原样（不静默改写用户的笔记内容）。
+
+    ``compression``：单篇导出用默认的 DEFLATE；批量导出传 ``ZIP_STORED`` ——
+    这个 zip 只是中间产物，外层归档还会再压一次，压两遍纯属浪费 CPU。
+    """
     root = screenshot_root.resolve()
     base = image_base_url.rstrip("/")
     allowed_prefixes = {base}
@@ -77,6 +92,10 @@ def write_note_archive(
         if source != root and root not in source.parents:
             raise NoteArchiveError("本地图片路径超出截图目录")
         if not source.is_file():
+            if skip_missing:
+                if skipped is not None:
+                    skipped.append(str(local_suffix))
+                continue
             raise NoteArchiveError(f"笔记引用的图片不存在：{source.name}")
         assets.append(("", source))
 
@@ -122,7 +141,7 @@ def write_note_archive(
 
     rewritten = _IMAGE_LINK_RE.sub(replace_link, rewritten)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(output_path, "w", compression=compression) as archive:
         archive.writestr("note.md", rewritten)
         for source, name in source_to_name.items():
             archive.write(source, f"assets/{name}")

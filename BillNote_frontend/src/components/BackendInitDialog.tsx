@@ -1,5 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Loader2, AlertTriangle, RotateCcw, Clipboard } from 'lucide-react'
 import { useBackendEvents } from '@/components/BackendHealth/useBackendEvents'
@@ -31,9 +37,9 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
   const stderrPreview = useMemo(() => {
     if (!failed || !logs?.length) return []
     return logs
-      .filter((l) => l.level === 'error')
+      .filter(l => l.level === 'error')
       .slice(-STDERR_PREVIEW_LINES)
-      .map((l) => l.text)
+      .map(l => l.text)
   }, [failed, logs])
 
   // 任一态需要展示就保持 dialog 开着，关掉只在两个 flag 都熄灭时发生
@@ -63,18 +69,16 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="w-5 h-5" />
+              <AlertTriangle className="h-5 w-5" />
               后端启动失败
             </DialogTitle>
             <DialogDescription className="sr-only">后端服务初始化状态</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 mt-2 text-sm">
-            <p className="text-muted-foreground">
-              {lastError || '后端在预计时间内未就绪。'}
-            </p>
+          <div className="mt-2 space-y-3 text-sm">
+            <p className="text-muted-foreground">{lastError || '后端在预计时间内未就绪。'}</p>
             {stderrPreview.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
+                <p className="text-muted-foreground text-xs font-medium">
                   后端最近 {stderrPreview.length} 行错误日志
                   <span className="opacity-60">（完整日志请用「复制启动日志」）</span>:
                 </p>
@@ -83,31 +87,26 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
                 </pre>
               </div>
             )}
-            <div className="text-xs text-muted-foreground space-y-1">
+            <div className="text-muted-foreground space-y-1 text-xs">
               <p>常见原因：</p>
-              <ul className="list-disc list-inside space-y-0.5 pl-1">
+              <ul className="list-inside list-disc space-y-0.5 pl-1">
                 <li>安装路径含中文 / 空格（PyInstaller 在这种路径下经常起不来）</li>
                 <li>没装 ffmpeg / 端口 8483 被占用</li>
                 <li>首次启动时 whisper 模型下载未完成</li>
               </ul>
             </div>
             <div className="flex flex-wrap gap-2 pt-2">
-              <Button
-                size="sm"
-                onClick={handleRestart}
-                disabled={restarting}
-                className="gap-1.5"
-              >
+              <Button size="sm" onClick={handleRestart} disabled={restarting} className="gap-1.5">
                 {restarting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="h-4 w-4" />
                 )}
                 {isTauri ? (restarting ? '重启中…' : '重启后端') : '重试'}
               </Button>
               {isTauri && (
                 <Button size="sm" variant="outline" onClick={handleCopy} className="gap-1.5">
-                  <Clipboard className="w-4 h-4" />
+                  <Clipboard className="h-4 w-4" />
                   {copyResult === 'ok'
                     ? '已复制 ✓'
                     : copyResult === 'fail'
@@ -116,7 +115,7 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
                 </Button>
               )}
             </div>
-            <p className="text-xs text-muted-foreground pt-2">
+            <p className="text-muted-foreground pt-2 text-xs">
               仍然无法解决？复制日志去&nbsp;
               <a
                 href="https://github.com/JefferyHcool/BiliNote/issues"
@@ -140,10 +139,10 @@ function BackendInitDialog({ open, failed = false, lastError = null, onRetry }: 
       <DialogContent className="text-center">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-center gap-2">
-            <Loader2 className="animate-spin w-5 h-5" />
+            <Loader2 className="h-5 w-5 animate-spin" />
             后端正在初始化中…
           </DialogTitle>
-            <DialogDescription className="sr-only">后端服务初始化状态</DialogDescription>
+          <DialogDescription className="sr-only">后端服务初始化状态</DialogDescription>
         </DialogHeader>
         <p className="text-muted-foreground mt-2">
           请稍候，系统正在启动后端服务。首次启动可能需要 10-30 秒解压依赖。

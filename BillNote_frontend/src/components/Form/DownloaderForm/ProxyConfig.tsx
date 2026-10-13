@@ -71,14 +71,8 @@ const ProxyConfig = () => {
         onChange={e => setUrl(e.target.value)}
         className="text-sm"
       />
-      {fromEnv && (
-        <p className="text-xs text-amber-600">
-          当前生效（来自环境变量）：{effective}
-        </p>
-      )}
-      {enabled && effective && (
-        <p className="text-xs text-green-600">当前生效：{effective}</p>
-      )}
+      {fromEnv && <p className="text-xs text-amber-600">当前生效（来自环境变量）：{effective}</p>}
+      {enabled && effective && <p className="text-xs text-green-600">当前生效：{effective}</p>}
       <Button size="sm" onClick={handleSave} disabled={saving}>
         {saving ? '保存中…' : '保存代理配置'}
       </Button>

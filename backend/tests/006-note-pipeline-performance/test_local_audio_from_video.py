@@ -28,6 +28,35 @@ def _stub(name, **attrs):
     return module
 
 
+# 这些 stub 会把 app / app.services 等换成没有 __path__ 的裸模块。载入目标模块
+# 时必须留着它们，但载入之后必须还原——否则同一进程里其后任何真正
+# `import app.services.xxx` 的测试都会报 "'app.services' is not a package"。
+_STUB_NAMES = [
+    "app",
+    "app.downloaders",
+    "app.models",
+    "app.services",
+    "app.utils",
+    "app.utils.logger",
+    "app.downloaders.base",
+    "app.downloaders.bilibili_dm_patch",
+    "app.downloaders.bilibili_subtitle",
+    "app.models.notes_model",
+    "app.models.transcriber_model",
+    "app.services.cookie_manager",
+    "app.utils.path_helper",
+    "app.utils.url_parser",
+]
+
+
+def _restore_stubs(saved):
+    for name, previous in saved.items():
+        if previous is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = previous
+
+
 class _Downloader:
     def __init__(self):
         self.cache_data = "/tmp"
@@ -39,6 +68,7 @@ class _AudioDownloadResult:
 
 
 def _load_bilibili_downloader():
+    saved = {name: sys.modules.get(name) for name in _STUB_NAMES}
     _stub("app")
     _stub("app.downloaders")
     _stub("app.models")
@@ -71,6 +101,7 @@ def _load_bilibili_downloader():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.__dict__["_ymdl"] = module.yt_dlp.YoutubeDL
+    _restore_stubs(saved)
     return module
 
 

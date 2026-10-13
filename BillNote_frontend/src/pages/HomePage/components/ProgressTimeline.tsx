@@ -61,12 +61,20 @@ const stages = [
   { key: 'saving', label: '保存笔记' },
 ]
 
-interface Props { task: Task }
+interface Props {
+  task: Task
+}
 
 export default function ProgressTimeline({ task }: Props) {
-  const current = asText(task.stage) || (task.status === 'SUCCESS' ? 'success' : task.status === 'FAILED' ? 'failed' : 'queued')
+  const current =
+    asText(task.stage) ||
+    (task.status === 'SUCCESS' ? 'success' : task.status === 'FAILED' ? 'failed' : 'queued')
   const index = stages.findIndex(stage => stage.key === current)
-  const terminal = current === 'success' || current === 'failed' || task.status === 'SUCCESS' || task.status === 'FAILED'
+  const terminal =
+    current === 'success' ||
+    current === 'failed' ||
+    task.status === 'SUCCESS' ||
+    task.status === 'FAILED'
   const percent = toPercent(task.progress)
   const stagePercent = toPercent(task.stageProgress)
 
@@ -83,15 +91,32 @@ export default function ProgressTimeline({ task }: Props) {
     <section className="progress-panel animate-in fade-in slide-in-from-bottom-2 duration-500">
       <div className="progress-panel__header">
         <div>
-          <div className="eyebrow"><Sparkles className="h-3.5 w-3.5" />任务进度</div>
-          <h2>{asText(task.stageLabel) || (task.status === 'SUCCESS' ? '笔记已完成' : task.status === 'FAILED' ? '生成失败' : '正在生成笔记')}</h2>
+          <div className="eyebrow">
+            <Sparkles className="h-3.5 w-3.5" />
+            任务进度
+          </div>
+          <h2>
+            {asText(task.stageLabel) ||
+              (task.status === 'SUCCESS'
+                ? '笔记已完成'
+                : task.status === 'FAILED'
+                  ? '生成失败'
+                  : '正在生成笔记')}
+          </h2>
           <p>{asText(task.message) || asText(task.detail) || '正在处理，请稍候'}</p>
         </div>
         {percent !== null && <strong className="progress-percent">{percent}%</strong>}
       </div>
-      <div className="progress-track"><span style={{ width: `${percent ?? 38}%` }} className={percent === null ? 'is-indeterminate' : ''} /></div>
+      <div className="progress-track">
+        <span
+          style={{ width: `${percent ?? 38}%` }}
+          className={percent === null ? 'is-indeterminate' : ''}
+        />
+      </div>
       <div className="progress-meta">
-        <span>{stagePercent !== null ? `当前阶段进度 ${stagePercent}%` : '后端将按实际处理阶段更新状态'}</span>
+        <span>
+          {stagePercent !== null ? `当前阶段进度 ${stagePercent}%` : '后端将按实际处理阶段更新状态'}
+        </span>
         <span>
           {elapsed && `${terminal ? '总耗时' : '已用时'} ${elapsed}`}
           {elapsed && sinceUpdate !== null && ' · '}
@@ -101,19 +126,40 @@ export default function ProgressTimeline({ task }: Props) {
       {stale && (
         <div className="progress-stale">
           <CircleAlert className="h-3.5 w-3.5" />
-          后端仍在处理，已超过 {Math.round(STALE_AFTER_MS / 1000)} 秒没有状态更新；长音频 / 长视频属正常，可先观察，不必重复提交
+          后端仍在处理，已超过 {Math.round(STALE_AFTER_MS / 1000)} 秒没有状态更新；长音频 /
+          长视频属正常，可先观察，不必重复提交
         </div>
       )}
       <div className="timeline" aria-label="任务处理阶段">
         {stages.map((stage, stageIndex) => {
           const complete = index >= 0 && stageIndex < index
           const active = stage.key === current
-          return <div key={stage.key} className={`timeline-item ${complete ? 'is-complete' : ''} ${active ? 'is-active' : ''}`}>
-            <div className="timeline-dot">{complete ? <Check className="h-3.5 w-3.5" /> : active && !terminal ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span />}</div>
-            <span>{stage.label}</span>
-          </div>
+          return (
+            <div
+              key={stage.key}
+              className={`timeline-item ${complete ? 'is-complete' : ''} ${active ? 'is-active' : ''}`}
+            >
+              <div className="timeline-dot">
+                {complete ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : active && !terminal ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <span />
+                )}
+              </div>
+              <span>{stage.label}</span>
+            </div>
+          )
         })}
-        {(current === 'failed' || task.status === 'FAILED') && <div className="timeline-item is-error"><div className="timeline-dot"><CircleAlert className="h-3.5 w-3.5" /></div><span>任务失败</span></div>}
+        {(current === 'failed' || task.status === 'FAILED') && (
+          <div className="timeline-item is-error">
+            <div className="timeline-dot">
+              <CircleAlert className="h-3.5 w-3.5" />
+            </div>
+            <span>任务失败</span>
+          </div>
+        )}
       </div>
     </section>
   )

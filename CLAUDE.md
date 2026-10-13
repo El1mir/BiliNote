@@ -9,6 +9,7 @@ BiliNote is an AI video note generation tool. It extracts content from video lin
 ## Development Commands
 
 ### Backend (Python 3.11 + FastAPI, 用 uv 管理环境)
+
 ```bash
 cd backend
 uv venv --python 3.11 .venv       # 创建 Python 3.11 虚拟环境（首次）
@@ -21,6 +22,7 @@ pytest tests/test_request_chunker.py::test_name   # Run a single test
 ```
 
 ### Frontend (React 19 + Vite + TypeScript)
+
 ```bash
 cd BillNote_frontend
 pnpm install
@@ -30,18 +32,21 @@ pnpm lint         # ESLint
 ```
 
 ### Docker
+
 ```bash
 docker-compose up                              # Web stack (backend + frontend + nginx)
 docker-compose -f docker-compose.gpu.yml up    # GPU variant
 ```
 
 ### Desktop (Tauri)
+
 ```bash
 cd backend && ./build.sh          # Build PyInstaller backend binary
 cd BillNote_frontend && pnpm tauri build
 ```
 
 ### Browser Extension (Vue 3 + vitesse-webext, MV3)
+
 ```bash
 cd BillNote_extension
 pnpm install
@@ -51,11 +56,13 @@ pnpm typecheck
 pnpm test         # Vitest unit tests
 pnpm test:e2e     # Playwright e2e
 ```
+
 Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension/`. Talks to the same backend at `http://localhost:8483` (configurable in the options page). CORS in `backend/main.py` already accepts `chrome-extension://` and `moz-extension://` via regex.
 
 ## Architecture
 
 **Backend** (`backend/`) — FastAPI app, entry point `main.py`:
+
 - `app/routers/` — API routes: `note.py` (generation), `provider.py`, `model.py`, `config.py`, `chat.py` (RAG Q&A on generated notes)
 - `app/services/` — Business logic:
   - `note.py` — `NoteGenerator` orchestrates the full pipeline (download → transcribe → LLM → notes)
@@ -74,6 +81,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 - `backend/ffmpeg_helper.py` — `ensure_ffmpeg_or_raise` is called at startup; respects `FFMPEG_BIN_PATH`
 
 **Frontend** (`BillNote_frontend/src/`) — React 19 + Vite + Tailwind + shadcn/ui:
+
 - `pages/HomePage/` — Main note generation UI: `NoteForm.tsx` (input), `MarkdownViewer.tsx` (preview), `MarkmapComponent.tsx` (mind map)
 - `pages/SettingPage/` — LLM provider management, system monitoring, transcriber config
 - `store/` — Zustand stores: `taskStore`, `modelStore`, `configStore`, `providerStore`. Persists to IndexedDB.
@@ -86,6 +94,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 **Core Workflow**: User submits URL → task queued → download video → extract audio (FFmpeg) → transcribe (Whisper/Groq/etc) → generate notes (LLM) → frontend polls for completion → display Markdown + mind map.
 
 **Browser Extension** (`BillNote_extension/`) — Vue 3 + Vite + UnoCSS + webextension-polyfill, MV3:
+
 - `src/popup/Popup.vue` — main entry: detects platform from active tab URL, drives generate flow, shows progress + markdown
 - `src/options/Options.vue` — settings: backend URL, default provider/model (loaded from `/get_all_providers` + `/get_models_by_provider/{id}`), quality, screenshot/link toggles, style
 - `src/logic/api.ts` — backend API client (uses `settings.backendUrl`, unwraps `ResponseWrapper`, absolutizes `/static/screenshots/...` image paths)
@@ -120,6 +129,12 @@ Rules:
 - ticket 完成后，在 `spec.md` 的「实现清单」里更新状态，并在 `specs/README.md` 索引里同步。
 - 测试与实现同一 ticket，并**按改动分目录**：后端 `backend/tests/<NNN>-<slug>/`、前端 `BillNote_frontend/tests/<NNN>-<slug>/`，编号与 `specs/<NNN>-<slug>/` 对应。
 - 完成后 spec 状态改 `implemented`。
+
+## 与用户交互的硬规则
+
+- **一切提问必须走 `ask_user_question`（askuser）工具，禁止在正文里用「❓ Q1 …… ➡️ 选 A」这类文字形式提问。** 每一次提问都生效，没有例外：设计选择、需求确认、方案取舍、参数取值、是否继续，一律弹成选项。正文只用于陈述已确认的结论、给出证据、报告进度。
+- 每个问题都要列出可选项、把推荐项放第一位并在 label 末尾标「（推荐）」，同时用一句话说明该选项的代价或影响。
+- 一次可以批量提多个问题（同一个 `ask_user_question` 调用里放多条），但不要用正文代替工具。
 
 ## Code Style
 

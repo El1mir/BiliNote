@@ -7,19 +7,18 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form.tsx'
-import { useEffect,useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { useForm, useWatch, type FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
-import { Info, Loader2, Plus } from 'lucide-react'
+import { Info, Loader2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert.tsx'
 import { expandUrl, generateNote } from '@/services/note.ts'
 import type { BatchGenerateResult, ExpandResult } from '@/services/note.ts'
 import BatchImportDialog from './BatchImportDialog'
 import { uploadFile } from '@/services/upload.ts'
 import { useTaskStore } from '@/store/taskStore'
-import { useModelStore } from '@/store/modelStore'
 import {
   Tooltip,
   TooltipContent,
@@ -27,7 +26,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
-import { ScrollArea } from '@/components/ui/scroll-area.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import {
   Select,
@@ -39,7 +37,6 @@ import {
 import { Input } from '@/components/ui/input.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { noteStyles, noteFormats, videoPlatforms } from '@/constant/note.ts'
-import { fetchModels } from '@/services/model.ts'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
@@ -54,7 +51,6 @@ const formSchema = z
     quality: z.enum(['fast', 'medium', 'slow']),
     screenshot: z.boolean().optional(),
     link: z.boolean().optional(),
-    model_name: z.string().nonempty('请选择模型'),
     format: z.array(z.string()).default([]),
     style: z.string().nonempty('请选择笔记生成风格'),
     extras: z.string().optional(),
@@ -65,6 +61,9 @@ const formSchema = z
     max_frames: z.coerce.number().min(5).default(60).optional(),
     frames_per_second: z.coerce.number().min(1).max(10).default(2).optional(),
     frame_limit_mode: z.enum(['total', 'per_second']).default('total').optional(),
+    // spec 008 ticket 02：本次任务的 OCR 辅助覆盖。
+    // null = 不覆盖，跟随设置页的全局开关（默认）。
+    ocr_assist: z.boolean().nullable().optional(),
     batch_mode: z.boolean().optional(),
     grid_size: z
       .tuple([z.coerce.number().min(1).max(10), z.coerce.number().min(1).max(10)])
@@ -76,25 +75,26 @@ const formSchema = z
       if (!video_url) {
         ctx.addIssue({ code: 'custom', message: '本地视频路径不能为空', path: ['video_url'] })
       }
-    }
-    else {
+    } else {
       if (!video_url) {
         ctx.addIssue({ code: 'custom', message: '视频链接不能为空', path: ['video_url'] })
-      }
-      else {
+      } else {
         try {
           const url = new URL(withScheme(video_url))
-          if (!['http:', 'https:'].includes(url.protocol))
-            throw new Error()
-        }
-        catch {
+          if (!['http:', 'https:'].includes(url.protocol)) throw new Error()
+        } catch {
           ctx.addIssue({ code: 'custom', message: '请输入正确的视频链接', path: ['video_url'] })
         }
       }
     }
   })
 
-export type NoteFormValues = z.infer<typeof formSchema>
+type NoteFormInput = z.input<typeof formSchema>
+export type NoteFormValues = z.output<typeof formSchema>
+
+type NoteQuality = NoteFormValues['quality']
+const normalizeQuality = (quality: string | undefined): NoteQuality =>
+  quality === 'fast' || quality === 'slow' ? quality : 'medium'
 
 /* -------------------- 可复用子组件 -------------------- */
 const SectionHeader = ({ title, tip }: { title: string; tip?: string }) => (
@@ -140,30 +140,28 @@ const CheckboxGroup = ({
 
 /* -------------------- 主组件 -------------------- */
 const NoteForm = () => {
-  const navigate = useNavigate();
+  const navigate = useNavigate()
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [batchOpen, setBatchOpen] = useState(false)
   const [expanding, setExpanding] = useState(false)
   const [expandResult, setExpandResult] = useState<ExpandResult | null>(null)
   /* ---- 全局状态 ---- */
-  const { addPendingTask, currentTaskId, setCurrentTask, getCurrentTask, retryTask } =
-    useTaskStore()
-  const { loadEnabledModels, modelList, showFeatureHint, setShowFeatureHint } = useModelStore()
+  const { addPendingTask, currentTaskId, getCurrentTask } = useTaskStore()
 
   /* ---- 表单 ---- */
-  const form = useForm<NoteFormValues>({
+  const form = useForm<NoteFormInput, unknown, NoteFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       platform: 'bilibili',
       quality: 'medium',
-      model_name: modelList[0]?.model_name || '',
       style: 'minimal',
       video_interval: 6,
       sampling_mode: 'interval',
       max_frames: 60,
       frames_per_second: 2,
       frame_limit_mode: 'total',
+      ocr_assist: null,
       batch_mode: false,
       grid_size: [2, 2],
       format: [],
@@ -177,17 +175,12 @@ const NoteForm = () => {
   const samplingMode = useWatch({ control: form.control, name: 'sampling_mode' })
   const frameLimitMode = useWatch({ control: form.control, name: 'frame_limit_mode' })
   const batchMode = useWatch({ control: form.control, name: 'batch_mode' })
-  const editing = currentTask && currentTask.id
+  const ocrAssist = useWatch({ control: form.control, name: 'ocr_assist' })
+  // 三态收敛成一个字符串给 Select 用：null 是合法的第三态（跟随设置），
+  // 不能塞进 boolean，否则「跟随设置」和「本次关闭」会渲染成同一项。
+  const ocrAssistMode = ocrAssist === true ? 'on' : ocrAssist === false ? 'off' : 'global'
 
-  const goModelAdd = () => {
-    navigate("/settings/model");
-  };
   /* ---- 副作用 ---- */
-  useEffect(() => {
-    loadEnabledModels()
-
-    return
-  }, [])
   useEffect(() => {
     if (!currentTask) return
     const { formData } = currentTask
@@ -197,9 +190,8 @@ const NoteForm = () => {
     form.reset({
       platform: formData.platform || 'bilibili',
       video_url: formData.video_url || '',
-      model_name: formData.model_name || modelList[0]?.model_name || '',
       style: formData.style || 'minimal',
-      quality: formData.quality || 'medium',
+      quality: normalizeQuality(formData.quality),
       extras: formData.extras || '',
       screenshot: formData.screenshot ?? false,
       link: formData.link ?? false,
@@ -209,6 +201,8 @@ const NoteForm = () => {
       max_frames: formData.max_frames ?? 60,
       frames_per_second: formData.frames_per_second ?? 2,
       frame_limit_mode: formData.frame_limit_mode ?? 'total',
+      // 老任务的 formData 里没有这个字段，?? null 会把 undefined 收敛成「跟随设置」
+      ocr_assist: formData.ocr_assist ?? null,
       batch_mode: formData.batch_mode ?? false,
       grid_size: formData.grid_size ?? [2, 2],
       format: formData.format ?? [],
@@ -216,8 +210,6 @@ const NoteForm = () => {
   }, [
     // 当下面任意一个变了，就重新 reset
     currentTaskId,
-    // modelList 用来兜底 model_name
-    modelList.length,
     // 还要加上 formData 的各字段，或者直接 currentTask
     currentTask?.formData,
   ])
@@ -232,10 +224,9 @@ const NoteForm = () => {
     setUploadSuccess(false)
 
     try {
-  
-      const  data  = await uploadFile(formData)
-        cb(data.url)
-        setUploadSuccess(true)
+      const data = await uploadFile(formData)
+      cb(data.url)
+      setUploadSuccess(true)
     } catch (err) {
       console.error('上传失败:', err)
       // message.error('上传失败，请重试')
@@ -251,31 +242,31 @@ const NoteForm = () => {
       return
     }
     console.log('Not even go here')
-    const payload: NoteFormValues = {
+    // axios 拦截器 reject 出来的是普通对象 `{code,msg,data}`，不是 Error 实例；
+    // 只读这两个字段，避免 any。
+    const videoUrl =
+      values.platform === 'local' ? values.video_url || '' : withScheme(values.video_url || '')
+    const payload = {
       ...values,
-      video_url:
-        values.platform === 'local' ? values.video_url : withScheme(values.video_url || ''),
-      provider_id: modelList.find(m => m.model_name === values.model_name)!.provider_id,
-      task_id: currentTaskId || '',
+      video_url: videoUrl,
     }
-    if (currentTaskId) {
-      retryTask(currentTaskId, payload)
-      return
-    }
+    const apiError = (err: unknown): { reason?: string; downloading?: boolean } | undefined =>
+      (err as { data?: { reason?: string; downloading?: boolean } } | undefined)?.data
 
-    // message.success('已提交任务')
     try {
       const data = await generateNote(payload)
+      if (!data) return
       addPendingTask(data.task_id, values.platform, payload)
-    } catch (e: any) {
+    } catch (e) {
       // 就绪门禁：本地转写模型还没下载好。后端返回 reason='transcriber_model_not_ready'，
       // 引导用户去「设置 → 音频转写配置」下载，而不是留一个静默失败的任务。
-      if (e?.data?.reason === 'transcriber_model_not_ready') {
-        const downloading = e?.data?.downloading
+      const data = apiError(e)
+      if (data?.reason === 'transcriber_model_not_ready') {
+        const downloading = data.downloading
         toast.error(
           downloading
             ? '转写模型正在下载中，请稍候再提交'
-            : '转写模型尚未下载，请先去「音频转写配置」页下载',
+            : '转写模型尚未下载，请先去「音频转写配置」页下载'
         )
         if (!downloading) navigate('/settings/transcriber')
         return
@@ -284,14 +275,9 @@ const NoteForm = () => {
       console.error('提交任务失败：', e)
     }
   }
-  const onInvalid = (errors: FieldErrors<NoteFormValues>) => {
+  const onInvalid = (errors: FieldErrors<NoteFormInput>) => {
     console.warn('表单校验失败：', errors)
     // message.error('请完善所有必填项后再提交')
-  }
-  const handleCreateNew = () => {
-    // 🔁 这里清空当前任务状态
-    // 比如调用 resetCurrentTask() 或者 navigate 到一个新页面
-    setCurrentTask(null)
   }
   // 批量模式主按钮：先在主表单里请求 /expand，成功后才打开对话框
   const handleExpandPreview = async () => {
@@ -313,13 +299,13 @@ const NoteForm = () => {
   }
 
   const FormButton = () => {
-    const label = generating ? '正在生成…' : editing ? '重新生成' : '生成笔记'
+    const label = generating ? '正在生成…' : '生成笔记'
 
     return (
       <div className="flex gap-2">
         <Button
           type={batchMode ? 'button' : 'submit'}
-          className={(!editing ? 'flex-1' : 'w-2/3') + ' bg-primary'}
+          className="bg-primary flex-1"
           disabled={generating || expanding}
           onClick={batchMode ? handleExpandPreview : undefined}
         >
@@ -328,25 +314,14 @@ const NoteForm = () => {
           )}
           {batchMode ? (expanding ? '展开中…' : '展开预览') : label}
         </Button>
-
-        {editing && (
-          <Button type="button" variant="outline" className="w-1/3" onClick={handleCreateNew}>
-            <Plus className="mr-2 h-4 w-4" />
-            新建笔记
-          </Button>
-        )}
       </div>
     )
   }
 
   const batchDefaults = () => {
     const values = form.getValues()
-    const providerId =
-      modelList.find(m => m.model_name === values.model_name)?.provider_id || ''
     return {
       quality: values.quality,
-      model_name: values.model_name,
-      provider_id: providerId,
       format: values.format,
       style: values.style,
       extras: values.extras,
@@ -359,15 +334,27 @@ const NoteForm = () => {
       max_frames: values.max_frames,
       frames_per_second: values.frames_per_second,
       frame_limit_mode: values.frame_limit_mode,
+      ocr_assist: values.ocr_assist ?? null,
     }
   }
 
-  const handleBatchSubmitted = (results: BatchGenerateResult[]) => {
+  const handleBatchSubmitted = (
+    results: BatchGenerateResult[],
+    groupName: string,
+    groupId: string | null
+  ) => {
     const values = form.getValues()
+    // 展开/批量只支持 B 站（BatchImportDialog 里 platform 恒为 'bilibili'），
+    // 但仍从表单取值，避免再把平台写死。
+    const platform = (values.platform as string) || 'bilibili'
     results
       .filter(r => r.status === 'queued' && r.task_id)
       .forEach(r => {
-        addPendingTask(r.task_id as string, 'bilibili', { ...values })
+        // 组名 + 组 id 要一起带进本地任务：NoteHistory 要求两者同时存在才归组，
+        // 只带组名会让这次批量在分组视图里先显示成「未分组」，要等下一次
+        // loadTasks 才跳回正确的组（spec 009 决策 4）。
+        // groupId 为 null（整批被去重跳过、后端没建组）时由 store 保持 null。
+        addPendingTask(r.task_id as string, platform, { ...values }, groupName, groupId)
       })
   }
   /* -------------------- 渲染 -------------------- */
@@ -400,7 +387,6 @@ const NoteForm = () => {
               render={({ field }) => (
                 <FormItem>
                   <Select
-                    disabled={!!editing}
                     value={field.value}
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -436,10 +422,10 @@ const NoteForm = () => {
                 <FormItem className="flex-1">
                   {platform === 'local' ? (
                     <>
-                      <Input disabled={!!editing} placeholder="请输入本地视频路径" {...field} />
+                      <Input placeholder="请输入本地视频路径" {...field} />
                     </>
                   ) : (
-                    <Input disabled={!!editing} placeholder="请输入视频网站链接" {...field} />
+                    <Input placeholder="请输入视频网站链接" {...field} />
                   )}
                   <FormMessage style={{ display: 'none' }} />
                 </FormItem>
@@ -494,54 +480,15 @@ const NoteForm = () => {
             )}
           />
           <div className="grid grid-cols-2 gap-2">
-            {/* 模型选择 */}
-            {
-
-             modelList.length>0?(     <FormField
-               className="w-full"
-               control={form.control}
-               name="model_name"
-               render={({ field }) => (
-                 <FormItem>
-                   <SectionHeader title="模型选择" tip="不同模型效果不同，建议自行测试" />
-                   <Select
-                     onOpenChange={()=>{
-                       loadEnabledModels()
-                     }}
-                     value={field.value}
-                     onValueChange={field.onChange}
-                     defaultValue={field.value}
-                   >
-                     <FormControl>
-                       <SelectTrigger className="w-full min-w-0 truncate">
-                         <SelectValue />
-                       </SelectTrigger>
-                     </FormControl>
-                     <SelectContent>
-                       {modelList.map(m => (
-                         <SelectItem key={m.id} value={m.model_name}>
-                           {m.model_name}
-                         </SelectItem>
-                       ))}
-                     </SelectContent>
-                   </Select>
-                   <FormMessage />
-                 </FormItem>
-               )}
-             />): (
-               <FormItem>
-                 <SectionHeader title="模型选择" tip="不同模型效果不同，建议自行测试" />
-                  <Button type={'button'} variant={
-                    'outline'
-                  } onClick={()=>{goModelAdd()}}>请先添加模型</Button>
-                 <FormMessage />
-               </FormItem>
-             )
-            }
+            <FormItem>
+              <SectionHeader title="当前模型" tip="模型在设置 → 通用设置中统一切换" />
+              <Button type="button" variant="outline" onClick={() => navigate('/settings/general')}>
+                前往通用设置
+              </Button>
+            </FormItem>
 
             {/* 笔记风格 */}
             <FormField
-              className="w-full"
               control={form.control}
               name="style"
               render={({ field }) => (
@@ -576,13 +523,13 @@ const NoteForm = () => {
             <FormField
               control={form.control}
               name="video_understanding"
-              render={({ field }) => (
+              render={() => (
                 <FormItem>
                   <div className="flex items-center gap-2">
                     <FormLabel>启用</FormLabel>
                     <Checkbox
-                      checked={videoUnderstandingEnabled}
-                      onCheckedChange={v => form.setValue('video_understanding', v)}
+                      checked={videoUnderstandingEnabled === true}
+                      onCheckedChange={v => form.setValue('video_understanding', v === true)}
                     />
                   </div>
                   <FormMessage />
@@ -743,6 +690,37 @@ const NoteForm = () => {
                 )}
               />
             </div>
+            {/* OCR 辅助：设置页管「配没配好」，这里管「这一次用不用」 */}
+            <FormField
+              control={form.control}
+              name="ocr_assist"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>OCR 辅助</FormLabel>
+                  <Select
+                    disabled={!videoUnderstandingEnabled}
+                    value={ocrAssistMode}
+                    onValueChange={v => field.onChange(v === 'global' ? null : v === 'on')}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="global">跟随设置</SelectItem>
+                      <SelectItem value="on">本次启用</SelectItem>
+                      <SelectItem value="off">本次关闭</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-muted-foreground text-xs">
+                    关闭只跳过「把图上文字搬进笔记」这一步；画面值不值得编入笔记的判定
+                    仍然会跑，插图集合不变。
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <Alert variant="warning" className="text-sm">
               <AlertDescription>
                 <strong>提示：</strong>视频理解功能必须使用多模态模型。

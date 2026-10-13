@@ -12,11 +12,7 @@ export interface IProviderCardProps {
   enable: number
 }
 
-const ProviderCard: FC<IProviderCardProps> = ({
-  providerName,
-  Icon,
-  id,
-}: IProviderCardProps) => {
+const ProviderCard: FC<IProviderCardProps> = ({ providerName, Icon, id }: IProviderCardProps) => {
   const navigate = useNavigate()
   const updateProvider = useProviderStore(state => state.updateProvider)
   const enabled = useProviderStore(state => state.provider.find(p => p.id === id)?.enabled)
@@ -57,10 +53,7 @@ const ProviderCard: FC<IProviderCardProps> = ({
 
       {/* Switch 自己的点击不应该冒泡触发整行跳转 */}
       <div onClick={e => e.stopPropagation()}>
-        <Switch
-          checked={isChecked}
-          onCheckedChange={handleToggle}
-        />
+        <Switch checked={isChecked} onCheckedChange={handleToggle} />
       </div>
     </div>
   )

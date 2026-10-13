@@ -108,12 +108,12 @@ const StartupBanner = () => {
 
   return (
     <div
-      className={`fixed left-0 right-0 top-0 z-[9999] flex items-start gap-3 border-b px-4 py-2 text-sm shadow-sm ${colorByLevel[banner.severity]}`}
+      className={`fixed top-0 right-0 left-0 z-[9999] flex items-start gap-3 border-b px-4 py-2 text-sm shadow-sm ${colorByLevel[banner.severity]}`}
     >
       <span className="text-lg">{iconByLevel[banner.severity]}</span>
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="font-medium">{banner.title}</div>
-        <pre className="mt-0.5 whitespace-pre-wrap break-words font-sans text-xs opacity-90">
+        <pre className="mt-0.5 font-sans text-xs break-words whitespace-pre-wrap opacity-90">
           {banner.detail}
         </pre>
       </div>

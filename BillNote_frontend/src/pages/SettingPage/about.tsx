@@ -25,13 +25,7 @@ export default function AboutPage() {
         {/* Hero Section */}
         <div className="mb-16 flex flex-col items-center justify-center text-center">
           <div className="mb-4 flex items-center gap-4">
-            <img
-              src={logo}
-              alt="BiliNote Logo"
-              width={50}
-              height={50}
-              className="rounded-lg"
-            />
+            <img src={logo} alt="BiliNote Logo" width={50} height={50} className="rounded-lg" />
             <h1 className="text-4xl font-bold">BiliNote v{appVersion}</h1>
           </div>
           <p className="text-muted-foreground mb-6 text-xl italic">
@@ -206,9 +200,15 @@ export default function AboutPage() {
               <div className="text-center">
                 <h3 className="mb-3 text-xl font-semibold">BiliNote 公众号</h3>
                 <div className="bg-muted mx-auto flex h-52 w-52 items-center justify-center rounded-md">
-                  <img src={wechatQr} alt="BiliNote 公众号" className="h-full w-full object-contain" />
+                  <img
+                    src={wechatQr}
+                    alt="BiliNote 公众号"
+                    className="h-full w-full object-contain"
+                  />
                 </div>
-                <p className="text-muted-foreground mt-3 text-sm">扫描公众号，回复「交流群」获取二维码</p>
+                <p className="text-muted-foreground mt-3 text-sm">
+                  扫描公众号，回复「交流群」获取二维码
+                </p>
               </div>
               <div className="text-center">
                 <h3 className="mb-3 text-xl font-semibold">BiliNote AI笔记系统一对一搭建服务</h3>

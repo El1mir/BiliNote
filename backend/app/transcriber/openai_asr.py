@@ -58,6 +58,10 @@ _DEFAULT_MIN_SILENCE_SECONDS = 0.5
 _DEFAULT_CHUNK_CONCURRENCY = 4
 _CHUNK_CONCURRENCY_MAX = 32
 
+# chat 风格（MiMo）默认按静音边界切片。静音检测要完整解码音频，
+# 耗时与音频时长成正比；关掉后改走按字节等长切片，省掉这一整轮解码。
+_DEFAULT_SILENCE_SPLIT = True
+
 
 class _RateLimiter:
     """线程安全的匀速限流器，按每分钟请求数计算间隔。"""
@@ -158,6 +162,7 @@ class OpenAIASRTranscriber(Transcriber):
         min_silence_seconds: float = _DEFAULT_MIN_SILENCE_SECONDS,
         max_rpm: Optional[float] = None,
         chunk_concurrency: Optional[int] = None,
+        silence_split: Optional[bool] = None,
     ):
         if not str(model or "").strip():
             raise ValueError("OpenAI 兼容 ASR 未配置模型名")
@@ -173,6 +178,11 @@ class OpenAIASRTranscriber(Transcriber):
         self.max_speech_chunks = int(max_speech_chunks or _DEFAULT_SPEECH_MAX_CHUNKS)
         self.silence_noise_db = float(silence_noise_db or _DEFAULT_SILENCE_NOISE_DB)
         self.min_silence_seconds = float(min_silence_seconds or _DEFAULT_MIN_SILENCE_SECONDS)
+        # 静音分割开关（仅 chat 风格有意义）。None = 未显式指定 → 走默认（开）。
+        if silence_split is None:
+            self.silence_split = _DEFAULT_SILENCE_SPLIT
+        else:
+            self.silence_split = bool(silence_split)
         # API 调用限流：优先使用设置页配置；兼容旧的 OPENAI_ASR_MAX_QPS 环境变量。
         configured_rpm = max_rpm
         if configured_rpm is None:
@@ -220,10 +230,19 @@ class OpenAIASRTranscriber(Transcriber):
 
         # chat 风格（MiMo 等）不返回时间轴 → 优先按「说话」自动切片，
         # 每片的 start/end 就是真实语音边界，作为该片文本的时间轴。
+        #
+        # 静音分割开关（设置 → 音频转写配置）关掉时整段跳过：静音检测要完整
+        # 解码音频，耗时与时长成正比；跳过之后下面 size 比较那段会走
+        # _transcribe_in_chunks，按字节等长切割，时间轴退化为等分切片的偏移。
         if self.api_style == "chat":
-            speech_result = self._transcribe_by_speech(client, file_path, limit)
-            if speech_result is not None:
-                return speech_result
+            if self.silence_split:
+                speech_result = self._transcribe_by_speech(client, file_path, limit)
+                if speech_result is not None:
+                    return speech_result
+            else:
+                logger.info(
+                    "静音分割已关闭，跳过静音检测，改走按字节等长切片"
+                )
 
         size = os.path.getsize(file_path)
         temp_dir: Optional[str] = None
@@ -417,8 +436,12 @@ class OpenAIASRTranscriber(Transcriber):
             return self._transcribe_one(client, path)
         except Exception as exc:  # noqa: BLE001 - 统一翻成人话再抛给上层
             error = RuntimeError(_friendly_error(exc))
-            # 429/鉴权/模型不存在等错误重试整条流程只会重复下载和切片，直接标记不可重试。
-            if getattr(exc, "status_code", None) in (400, 401, 403, 404, 429):
+            status = getattr(exc, "status_code", None)
+            # 429 与其它 4xx 分开（spec 012）：配额/频率受限是「还没轮到」，应当等
+            # 冷却窗口后重试；而鉴权失败、模型不存在重跑整条流程只会重复下载和切片。
+            if status == 429:
+                error.rate_limited = True  # type: ignore[attr-defined]
+            elif status in (400, 401, 403, 404):
                 error.non_retryable = True  # type: ignore[attr-defined]
             raise error from exc
 

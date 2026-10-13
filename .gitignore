@@ -330,3 +330,5 @@ ffmpg*/
 
 # Runtime artifacts
 /artifacts/
+/backend/bili_note.db-shm
+/backend/bili_note.db-wal

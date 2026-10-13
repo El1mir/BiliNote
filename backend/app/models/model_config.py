@@ -14,3 +14,9 @@ class ModelConfig:
     base_url: str               # 模型 API 接口地址（OpenAI SDK兼容）
     model_name: str             # 实际请求用的模型名称，如 "gpt-4-turbo"
     created_at: Optional[datetime] = None  # 可选：创建时间（从 SQLite 自动生成）
+
+    # spec 007：供应商级限流。三个字段默认为 None/空 = 不限流，
+    # 这样「列出模型」「连通性测试」这类短调用不受影响，只有生成笔记时才带上。
+    provider_key: Optional[str] = None      # 供应商 id，限流按它聚合
+    max_concurrency: Optional[int] = None   # 该供应商同时在途的请求数上限
+    max_rpm: Optional[float] = None         # 该供应商每分钟请求数上限

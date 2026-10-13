@@ -3,41 +3,26 @@
 import { useEffect, useState } from 'react'
 import { Copy, Download, BrainCircuit, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { asText } from '@/utils/text'
 
-interface VersionNote {
-  ver_id: string
-  model_name?: string
-  style?: string
-  created_at?: string
-}
-
 interface NoteHeaderProps {
-  currentTask?: {
-    markdown: VersionNote[] | string
-  }
-  isMultiVersion: boolean
-  currentVerId: string
-  setCurrentVerId: (id: string) => void
   modelName: string
   style: string
   noteStyles: { value: string; label: string }[]
   onCopy: () => void
   onDownload: () => void
   createAt?: string | Date
+  showTranscribe: boolean
   setShowTranscribe: (show: boolean) => void
   showChat?: false | 'half' | 'full'
   setShowChat?: (mode: false | 'half' | 'full') => void
+  viewMode: 'map' | 'preview'
+  setViewMode: (mode: 'map' | 'preview') => void
 }
 
 export function MarkdownHeader({
-  currentTask,
-  isMultiVersion,
-  currentVerId,
-  setCurrentVerId,
   modelName,
   style,
   noteStyles,
@@ -68,10 +53,6 @@ export function MarkdownHeader({
 
   const styleName = asText(noteStyles.find(v => v.value === style)?.label || style, '未知风格')
 
-  const reversedMarkdown: VersionNote[] = Array.isArray(currentTask?.markdown)
-    ? [...currentTask!.markdown].reverse()
-    : []
-
   const formatDate = (date: string | Date | undefined) => {
     if (!date) return ''
     const d = typeof date === 'string' ? new Date(date) : date
@@ -89,32 +70,8 @@ export function MarkdownHeader({
 
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-white/95 px-4 py-2 backdrop-blur-sm">
-      {/* 左侧区域：版本 + 标签 + 创建时间 */}
+      {/* 左侧区域：标签 + 创建时间 */}
       <div className="flex flex-wrap items-center gap-3">
-        {isMultiVersion && (
-          <Select value={currentVerId} onValueChange={setCurrentVerId}>
-            <SelectTrigger className="h-8 w-[160px] text-sm">
-              <div className="flex items-center">
-                {(() => {
-                  const idx = currentTask?.markdown.findIndex(v => v.ver_id === currentVerId)
-                  return idx !== -1 ? `版本（${currentVerId.slice(-6)}）` : ''
-                })()}
-              </div>
-            </SelectTrigger>
-
-            <SelectContent>
-              {(currentTask?.markdown || []).map((v, idx) => {
-                const shortId = v.ver_id.slice(-6)
-                return (
-                  <SelectItem key={v.ver_id} value={v.ver_id}>
-                    {`版本（${shortId}）`}
-                  </SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
-        )}
-
         <Badge variant="secondary" className="bg-pink-100 text-pink-700 hover:bg-pink-200">
           {asText(modelName, '未知模型')}
         </Badge>

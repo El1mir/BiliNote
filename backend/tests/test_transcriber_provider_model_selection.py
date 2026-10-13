@@ -21,9 +21,12 @@ class _Logger:
 
 
 class _Whisper:
-    def __init__(self, model_size, device):
+    def __init__(self, model_size, device, compute_type=None, cpu_threads=0, num_workers=1):
         self.model_size = model_size
         self.device = device
+        self.compute_type = compute_type
+        self.cpu_threads = cpu_threads
+        self.num_workers = num_workers
 
 
 def _stub(monkeypatch, name, **attrs):
@@ -39,6 +42,7 @@ def _load_provider(monkeypatch):
     _stub(monkeypatch, "app.utils")
     _stub(monkeypatch, "app.transcriber.groq", GroqTranscriber=object)
     _stub(monkeypatch, "app.transcriber.whisper", WhisperTranscriber=_Whisper)
+    _stub(monkeypatch, "app.transcriber.openai_asr", OpenAIASRTranscriber=object)
     _stub(monkeypatch, "app.transcriber.bcut", BcutTranscriber=object)
     _stub(monkeypatch, "app.transcriber.kuaishou", KuaishouTranscriber=object)
     _stub(monkeypatch, "app.utils.logger", get_logger=lambda _name: _Logger())

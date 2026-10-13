@@ -17,6 +17,10 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 截图/抽帧类 ffmpeg 调用的上限。视频损坏、路径是网络盘、或 ffmpeg 等着读
+# 标准输入时都会永久阻塞，而调用方（ThreadPoolExecutor.map）会把整个任务挂死。
+_FFMPEG_TIMEOUT_SECONDS = 60
+
 
 def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index: int) -> str:
     """
@@ -42,7 +46,21 @@ def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index:
     ]
 
     logger.debug("Running command: %s", command)
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        # 没有 timeout 时这里会**永久**阻塞，而调用方是 executor.map，
+        # 于是整个任务无日志卡死（真机排障时极难定位）。超时就当失败返回，
+        # 交给上层的「生成截图失败」分支统一处理。
+        logger.error(
+            "ffmpeg 截图超时（超过 %ss，ts=%s）：%s",
+            _FFMPEG_TIMEOUT_SECONDS,
+            timestamp,
+            (video_path or ""),
+        )
+        return ""
 
     if result.returncode != 0:
         logger.error("ffmpeg 截图失败 (ts=%s): %s", timestamp, (result.stderr or "").strip())

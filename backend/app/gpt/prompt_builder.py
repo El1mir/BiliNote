@@ -21,7 +21,17 @@ note_styles = [
 
 
 # 生成 BASE_PROMPT 函数
-def generate_base_prompt(title, segment_text, tags, _format=None, style=None, extras=None):
+def generate_base_prompt(
+    title,
+    segment_text,
+    tags,
+    _format=None,
+    style=None,
+    extras=None,
+    ocr_assist=False,
+    approved_shots=None,
+    ocr_reference=None,
+):
     # 生成 Base Prompt 开头部分
     prompt = BASE_PROMPT.format(
         video_title=title,
@@ -29,9 +39,28 @@ def generate_base_prompt(title, segment_text, tags, _format=None, style=None, ex
         tags=tags
     )
 
+    # OCR 参考内容：放在字幕之后、格式与风格说明之前。
+    #
+    # 为什么是「参考」而不是「正文」（m04445 + q2_inject_shape=A）：图上抄回来的
+    # 文字只用来帮模型把内容写准，笔记的行文仍由模型自己组织。所以这里明确告诉
+    # 它「不要原样照搬」，否则模型很容易把整块 OCR 结果贴成正文。
+    if ocr_reference and str(ocr_reference).strip():
+        prompt += (
+            "\n\n## 画面文字参考（OCR）\n"
+            "以下是本次判定为「值得编入笔记」的画面里识别出的全部内容，"
+            "按时间点分节。它**只是参考资料**：请用它把对应段落写准确"
+            "（尤其是公式、表格、板书这类抄不下来的内容），"
+            "但不要原样照搬整块内容，也不要为它单独开一节。\n"
+            "每个 `[[SHOT-n]]` 仍然只对应一张即将插入的截图。\n\n"
+            + str(ocr_reference).strip()
+        )
+
     # 添加用户选择的格式
     if _format:
-        prompt += "\n" + "\n".join([get_format_function(f) for f in _format])
+        prompt += "\n" + "\n".join([
+            get_format_function(f, ocr_assist=ocr_assist, approved_shots=approved_shots)
+            for f in _format
+        ])
 
     # 根据用户选择的笔记风格添加描述
     if style:
@@ -44,7 +73,11 @@ def generate_base_prompt(title, segment_text, tags, _format=None, style=None, ex
 
 
 # 获取格式函数
-def get_format_function(format_type):
+def get_format_function(format_type, ocr_assist=False, approved_shots=None):
+    # spec 008 ticket 02：截图格式在 OCR 辅助模式下换成「编号占位符」版本，
+    # 关闭时一字不改地走原来的 *Screenshot-[mm:ss] 契约。
+    if format_type == 'screenshot' and ocr_assist:
+        return get_ocr_assist_screenshot_format(approved_shots or [])
     format_map = {
         'toc': get_toc_format,
         'link': get_link_format,
@@ -107,6 +140,34 @@ def get_screenshot_format():
 - 格式：`*Screenshot-[mm:ss]`
 
     '''
+
+
+def get_ocr_assist_screenshot_format(approved_shots):
+    """OCR 辅助模式下的截图指令：只允许使用判定通过的编号占位符。
+
+    为什么不再用 `*Screenshot-[mm:ss]`（spec 008 §5.6e）：
+      - 那个正则的分钟位是两位数字，超过 99 分钟的时间点根本表达不出来；
+      - 编号被结构性约束在判定清单内，模型无法凭空插入一个没被判定的时间点。
+    """
+    from app.services.ocr_assist import render_shot_table
+
+    if not approved_shots:
+        return '''
+11. **原片截图**: 本次没有任何画面通过价值判定，请不要插入任何截图标记。
+'''
+
+    table = render_shot_table(approved_shots)
+    return f'''
+11. **原片截图**: 本次已由画面价值判定筛出下列 {len(approved_shots)} 个截图点。
+你必须在正文最合适的位置为**每一个**编号插入一次标记，格式严格为 `[[SHOT-n]]`：
+
+{table}
+
+要求：
+- 只能使用上表列出的编号，禁止自己发明编号或时间点；
+- 每个编号必须出现且只出现一次，并且紧跟在为它写的说明文字之后；
+- 除 `[[SHOT-n]]` 外，不要再写 `*Screenshot-...` 之类的其它截图标记。
+'''
 
 
 def get_summary_format():

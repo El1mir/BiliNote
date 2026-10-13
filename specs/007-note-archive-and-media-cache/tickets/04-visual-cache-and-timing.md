@@ -2,7 +2,7 @@
 
 - **依赖**：—
 - **关联**：spec §4 决策 9；§7
-- **状态**：实现草案；安全性、性能与后端测试待用户授权
+- **状态**：已完成（后端验收已授权并执行，2026-10-05；残余项见文末）
 
 ## 目标
 
@@ -19,13 +19,41 @@
 
 ## 验收
 
-- 【待验证】同视频同参数冷/热路径图片数量、顺序、内容一致；热路径复用网格且图像准备时间改善。
-- 【待验证】改变视频指纹、帧选择、帧数、网格布局或处理版本后 cache miss。
-- 【待验证】并发、缓存写入中断、损坏缓存和磁盘满时可恢复且不改变任务终态。
-- 【待验证】分项耗时和模型标识完整、安全，后端基准确认实际瓶颈；当前不宣称整体提速。
-
+- 【已验证】同视频同参数冷/热路径图片数量、顺序、内容一致；热路径复用网格。
+  `tests/007-note-archive-and-media-cache/test_video_reader_cache.py::test_cold_path_writes_entry_and_hot_path_reuses_it`
+  —— 热路径把 `concat_images` 换成会抛 `AssertionError("热路径不应重新拼图")` 的桩，
+  证明它**确实跳过了拼图**；`hot_urls == cold_urls` 逐字节一致。
+- 【已验证】改变视频指纹、帧数、网格布局后 cache miss。
+  `test_cache_miss_when_video_content_changes` / `..._sampling_config_changes` / `..._grid_layout_changes`。
+- 【已验证（损坏缓存）】损坏条目（metadata 声明 N 张、文件缺失）视为 miss 并**重建**。
+  `test_corrupt_cache_entry_is_treated_as_miss_and_rebuilt`。该用例在首次运行时失败，
+  并因此暴露了一个真实缺陷（见「实现说明」）。
+- 【已验证（过期）】条目过期（TTL 7 天）不被复用，且被清理而不是永远占盘。
+  `test_expired_cache_entry_is_not_reused_and_is_cleaned`。
+- 【已验证（隔离）】缓存按 task_id 隔离，别的任务不能命中本任务的条目。
+  `test_cache_entries_are_isolated_per_task`。
+- 【仍待验证】热路径**图像准备时间改善**的真实视频基准（本机无真实长视频基准脚本；
+  现有用例证明的是「跳过拼图」这一机制，不是端到端耗时数字）。
+- 【仍待验证】并发写入、缓存写入中断、磁盘满三类故障场景。
+  其中「并发」的语义已由代码保证并在本轮加固（见「实现说明」），但没有自动化用例。
+- 【仍待验证】`schema` 版本变更导致 cache miss（key 里含 `"schema": 1`，未单独用例）。
+- 【部分已验证】分项耗时完整、安全：`_log_timing` 记录 `phase`/`seconds`/`cache_hit`/`task_id`
+  与 `frames`/`grids`/`image_count`/`input_bytes`/`data_url_bytes`，**不记录图片内容、
+  API key 或本地绝对路径**（`fields` 只放计数与字节数）。由代码检视确认，无用例断言。
+  视觉模型请求的耗时/模型标识属另一条链路（`backend/app/gpt/`），不在本 ticket 改动范围。
+- 不宣称整体提速（抽帧仍重做）。
 
 ## 实现说明
 
 - 当前复用范围仅为同一 task_id 的网格图缓存；视频抽帧仍会重新执行。
-- 缓存一致性、并发/损坏恢复、磁盘故障及真实冷/热基准待后端授权测试，不宣称整体提速。
+- **本轮修掉的真实缺陷（Windows）**：写路径用 `os.rename(temporary_dir, cache_dir)`
+  落盘，失败时（`OSError`）原本无条件丢弃自己刚建好的副本、保留旧目录。而 `os.rename`
+  在 Windows 上**对已存在的目录直接失败**（POSIX 只在目录非空时失败），于是当旧条目
+  已损坏（metadata 在、`grid_N.jpg` 缺失）时：读路径正确判 miss → 重新拼图 → 写路径
+  rename 失败 → 丢掉新副本 → 旧损坏条目原样留下。结果是**每次重试都完整重做一遍拼图，
+  且这个条目永远修不好**。
+  修法：抽出 `_cache_entry_valid(cache_dir)`（metadata 存在 + 声明的网格图都在且非空），
+  写路径 rename 失败时用它区分「并发写入者抢先放好的可用条目」（保留对方、只删自己的
+  tmp）与「损坏/过期的旧条目」（先 `rmtree` 再 rename 原子替换）；读路径也改为复用
+  同一个判定，避免两处逻辑再次漂移。
+- 真实冷/热基准、并发写入中断与磁盘满仍未覆盖；不宣称整体提速。

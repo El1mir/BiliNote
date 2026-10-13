@@ -27,8 +27,6 @@ class AskRequest(BaseModel):
     task_id: str
     question: str
     history: list[ChatMessage] = []
-    provider_id: str
-    model_name: str
 
 
 def _do_index(task_id: str):
@@ -90,8 +88,6 @@ def ask_question(data: AskRequest):
             task_id=data.task_id,
             question=data.question,
             history=history,
-            provider_id=data.provider_id,
-            model_name=data.model_name,
         )
         return R.success(data=result)
     except ValueError as e:

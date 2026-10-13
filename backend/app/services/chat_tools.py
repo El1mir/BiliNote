@@ -18,8 +18,13 @@ def _load_note_data(task_id: str) -> Optional[dict]:
     path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.json")
     if not os.path.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError) as exc:
+        # 文件被并发删除或内容损坏时不该让整个对话工具链崩掉，按「数据不存在」处理。
+        logger.warning("读取笔记数据失败：%s（%s）", path, exc)
+        return None
 
 
 # ── 工具定义（OpenAI function calling 格式）──────────────────────
@@ -176,8 +181,11 @@ def _get_video_info(data: dict) -> str:
 def _get_note_content(data: dict) -> str:
     md = data.get("markdown", "")
     if isinstance(md, list):
-        # 多版本，取最新
-        md = md[-1].get("content", "") if md else ""
+        # 历史数据里 markdown 曾是「多版本」数组，按新 → 旧排列；该能力已在 spec 008
+        # 移除，新数据一律是字符串。这里保留兼容读，但必须取第一个元素才是最新版本
+        # （旧实现取 md[-1]，拿到的是最旧一版，与注释「取最新」相反）。
+        first = md[0] if md else None
+        md = first.get("content", "") if isinstance(first, dict) else ""
     # 限制长度
     if len(md) > 5000:
         md = md[:5000] + "\n\n... (内容过长已截断)"

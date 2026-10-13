@@ -5,11 +5,27 @@ import { normalizeMathDelimiters } from '@/utils/markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Trash2, ChevronDown, ChevronUp, BookOpen, UserRound, Bot, Maximize2, Minimize2 } from 'lucide-react'
+import {
+  Loader2,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  BookOpen,
+  UserRound,
+  Bot,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { useChatStore } from '@/store/chatStore'
 import { useTaskStore } from '@/store/taskStore'
-import { askQuestion, getChatStatus, indexTask, type ChatSource, type IndexStatus } from '@/services/chat'
+import {
+  askQuestion,
+  getChatStatus,
+  indexTask,
+  type ChatSource,
+  type IndexStatus,
+} from '@/services/chat'
 
 type ChatMode = 'half' | 'full'
 
@@ -62,7 +78,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
   const tasks = useTaskStore(state => state.tasks)
   const currentTask = useMemo(
     () => tasks.find(t => t.id === currentTaskId) ?? null,
-    [tasks, currentTaskId],
+    [tasks, currentTaskId]
   )
 
   // 检查索引状态，未索引时自动触发，indexing 时轮询
@@ -104,13 +120,6 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
       const question = value.trim()
       if (!question || loading) return
 
-      const providerId = currentTask?.formData?.provider_id
-      const modelName = currentTask?.formData?.model_name
-      if (!providerId || !modelName) {
-        toast.error('无法获取模型配置，请确认任务已完成')
-        return
-      }
-
       addMessage(taskId, { role: 'user', content: question })
       setInput('')
       setLoading(true)
@@ -121,8 +130,6 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
           task_id: taskId,
           question,
           history,
-          provider_id: providerId,
-          model_name: modelName,
         })
         addMessage(taskId, {
           role: 'assistant',
@@ -135,7 +142,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
         setLoading(false)
       }
     },
-    [loading, taskId, currentTask, messages, addMessage],
+    [loading, taskId, currentTask, messages, addMessage]
   )
 
   // 转换为 Bubble.List 的数据格式
@@ -184,7 +191,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
         ),
         variant: 'outlined' as const,
         contentRender: (content: any) => (
-          <div className="markdown-body prose prose-sm max-w-none prose-p:my-1 prose-li:my-0.5 prose-headings:my-2">
+          <div className="markdown-body prose prose-sm prose-p:my-1 prose-li:my-0.5 prose-headings:my-2 max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {normalizeMathDelimiters(typeof content === 'string' ? content : String(content))}
             </ReactMarkdown>
@@ -192,7 +199,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
         ),
       },
     }),
-    [],
+    []
   )
 
   if (indexStatus === null || indexStatus === 'indexing' || indexStatus === 'idle') {
@@ -272,11 +279,7 @@ export default function ChatPanel({ taskId, mode, onModeChange }: ChatPanelProps
             </div>
           </div>
         ) : (
-          <Bubble.List
-            items={bubbleItems}
-            role={roles}
-            style={{ height: '100%' }}
-          />
+          <Bubble.List items={bubbleItems} role={roles} style={{ height: '100%' }} />
         )}
       </div>
 

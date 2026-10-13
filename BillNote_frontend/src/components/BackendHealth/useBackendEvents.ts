@@ -41,8 +41,7 @@ export function useBackendEvents(): BackendEvents {
 
   function append(entry: LogEntry) {
     const next = logsRef.current.concat(entry)
-    if (next.length > MAX_LOG_LINES)
-      next.splice(0, next.length - MAX_LOG_LINES)
+    if (next.length > MAX_LOG_LINES) next.splice(0, next.length - MAX_LOG_LINES)
     logsRef.current = next
     setLogs(next)
   }
@@ -64,7 +63,9 @@ export function useBackendEvents(): BackendEvents {
       const offRestarting = await listen('backend-restarting', () => {
         // 紧接着到达的 terminated 是我们主动 kill 老 sidecar 引发的，跳过 3s
         ignoreNextTerminatedRef.current = true
-        setTimeout(() => { ignoreNextTerminatedRef.current = false }, 3000)
+        setTimeout(() => {
+          ignoreNextTerminatedRef.current = false
+        }, 3000)
         append({ level: 'info', text: '[Backend restarting]', ts: Date.now() })
       })
       const offTerm = await listen<number | null>('backend-terminated', event => {
@@ -105,22 +106,27 @@ export function useBackendEvents(): BackendEvents {
     const { invoke } = await import('@tauri-apps/api/core')
     try {
       await invoke('restart_backend_sidecar')
-    }
-    catch (e) {
-      append({ level: 'error', text: `[Restart failed] ${(e as Error).message ?? e}`, ts: Date.now() })
+    } catch (e) {
+      append({
+        level: 'error',
+        text: `[Restart failed] ${(e as Error).message ?? e}`,
+        ts: Date.now(),
+      })
       throw e
     }
   }
 
   async function copyLogs() {
     const text = logsRef.current
-      .map(l => `${new Date(l.ts).toISOString().slice(11, 19)} ${l.level === 'error' ? 'E' : 'I'} ${l.text}`)
+      .map(
+        l =>
+          `${new Date(l.ts).toISOString().slice(11, 19)} ${l.level === 'error' ? 'E' : 'I'} ${l.text}`
+      )
       .join('\n')
     try {
       await navigator.clipboard.writeText(text)
       return true
-    }
-    catch {
+    } catch {
       return false
     }
   }
@@ -132,7 +138,6 @@ export function useBackendEvents(): BackendEvents {
 // 这里做兼容：去掉外层单引号（如果有的话）。
 function stripQuotes(s: string): string {
   if (typeof s !== 'string') return String(s)
-  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'"))
-    return s.slice(1, -1)
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1)
   return s
 }

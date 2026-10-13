@@ -14,24 +14,45 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 // 直接用 fetch 而非 utils/request 的共享 axios：那个 axios 装了全局 toast 拦截器，
 // 启动期每次 /sys_check 失败都会弹一个红色 toast，2s 一次轮询会叠出十几个。
 function getBackendBase(): string {
-  const fromEnv = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined
-  return ((fromEnv && fromEnv.length > 0) ? fromEnv : '/api').replace(/\/$/, '')
+  const fromEnv = import.meta.env.VITE_API_BASE_URL
+  return (fromEnv && fromEnv.length > 0 ? fromEnv : '/api').replace(/\/$/, '')
 }
 
-async function probeSysCheck(): Promise<boolean> {
+/** 探活结果：ok=就绪；ready=后端确实答复了（哪怕业务码非 0）；err=网络层原因。 */
+interface ProbeResult {
+  ok: boolean
+  ready: boolean
+  err?: string
+}
+
+/**
+ * 探测一次后端。
+ *
+ * 判定口径刻意放宽：**只要后端答复了 HTTP 2xx 就认为「已就绪」**，不再要求
+ * `code === 0`。原因是一次误判为「网络异常」的现场排查（2026-10-04）：
+ * `/sys_check` 是装配级检查，ffmpeg / whisper / db 任何一项不达标它都可能返回
+ * 非 0 业务码。旧的 `json?.code === 0` 会把这种「后端活得好好的、只是某项检查
+ * 没过」也判成未就绪，前端于是整屏停在「网络异常」，用户完全无从下手。
+ * 真正的健康细节交给 `/sys_health` + StartupBanner / 设置页展示。
+ */
+async function probeSysCheck(): Promise<ProbeResult> {
   const url = `${getBackendBase()}/sys_check`
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS)
   try {
     const res = await fetch(url, { signal: ctrl.signal })
-    if (!res.ok) return false
+    if (!res.ok) {
+      return { ok: false, ready: false, err: `后端返回 HTTP ${res.status}` }
+    }
+    // 2xx 就算答复了：业务码细节交给 /sys_health，别在这里卡启动。
     const json = await res.json().catch(() => null)
-    return json?.code === 0
-  }
-  catch {
-    return false
-  }
-  finally {
+    // 2xx 且能解析出 code === 0 → 完全就绪；2xx 但业务码非 0 → 仍然算「后端在线」。
+    return { ok: json?.code === 0, ready: true }
+  } catch (e) {
+    // AbortError 是本地 5s 超时；TypeError: Failed to fetch 是连不上 / 被代理挡掉。
+    const err = e instanceof Error ? e.name : String(e)
+    return { ok: false, ready: false, err: err === 'AbortError' ? '探测超时' : err }
+  } finally {
     clearTimeout(t)
   }
 }
@@ -75,7 +96,7 @@ export const useCheckBackend = (): BackendCheck => {
   const retry = useCallback(() => {
     settledRef.current = false
     setStatus(initialStatus)
-    setTick((t) => t + 1)
+    setTick(t => t + 1)
   }, [])
 
   useEffect(() => {
@@ -98,20 +119,32 @@ export const useCheckBackend = (): BackendCheck => {
 
     const poll = async () => {
       if (cancelled || settledRef.current) return
-      const ok = await probeSysCheck()
+      const probe = await probeSysCheck()
       if (cancelled || settledRef.current) return
-      if (ok) {
+      // 后端只要答复过（哪怕某项装配检查没通过）就放行进主界面，
+      // 否则一次 `/sys_check` 非 0 就会让用户整屏卡在「网络异常」。
+      if (probe.ready) {
         markReady()
         return
       }
-      // 单次失败不报 toast、不抛错，继续轮询
-      setStatus((s) => ({ ...s, lastError: '后端尚未响应' }))
+      // 真·网络层失败：不报 toast、不抛错，继续轮询，但把原始原因记下来，
+      // 这样 60s 后失败态里能显示「连不上」还是「超时」，而不是笼统一句网络异常。
+      setStatus(s => ({ ...s, lastError: probe.err || '后端尚未响应' }))
       pollTimerId = setTimeout(poll, POLL_INTERVAL_MS)
     }
 
-    // 总超时兜底
+    // 总超时兜底：带上最后一轮的真实原因，方便用户自己定位。
     timeoutId = setTimeout(() => {
-      markFailed(`后端 ${TOTAL_TIMEOUT_MS / 1000}s 内未就绪，请检查后端日志或重启`)
+      setStatus(s => {
+        if (settledRef.current) return s
+        settledRef.current = true
+        return {
+          loading: false,
+          initialized: false,
+          failed: true,
+          lastError: `后端 ${TOTAL_TIMEOUT_MS / 1000}s 内未就绪（${s.lastError || '无响应'}），请检查后端是否已启动，或点「重试」`,
+        }
+      })
     }, TOTAL_TIMEOUT_MS)
 
     // 桌面端订阅 Tauri 事件（动态 import 避免 web 端打包报错）
@@ -120,16 +153,16 @@ export const useCheckBackend = (): BackendCheck => {
         .then(async ({ listen }) => {
           if (cancelled) return
           const offReady = await listen<number>('backend-ready', () => markReady())
-          const offTimeout = await listen<string>('backend-startup-timeout', (e) => {
+          const offTimeout = await listen<string>('backend-startup-timeout', e => {
             markFailed(typeof e.payload === 'string' ? e.payload : '后端启动超时')
           })
-          const offTerm = await listen<number | null>('backend-terminated', (e) => {
+          const offTerm = await listen<number | null>('backend-terminated', e => {
             const code = e.payload
             markFailed(`后端进程已退出 (code=${code ?? 'unknown'})`)
           })
           tauriUnsubs.push(offReady, offTimeout, offTerm)
         })
-        .catch((err) => {
+        .catch(err => {
           // 拿不到 @tauri-apps/api/event 不致命，继续走 HTTP 轮询
           console.warn('[useCheckBackend] 无法订阅 Tauri 事件:', err)
         })
@@ -142,7 +175,7 @@ export const useCheckBackend = (): BackendCheck => {
       cancelled = true
       if (timeoutId) clearTimeout(timeoutId)
       if (pollTimerId) clearTimeout(pollTimerId)
-      tauriUnsubs.forEach((off) => {
+      tauriUnsubs.forEach(off => {
         try {
           off()
         } catch {

@@ -13,16 +13,35 @@ DEFAULT_MIN_SILENCE_SECONDS = 0.5  # 多长的停顿算一次「说完了」
 DEFAULT_ASR_MAX_RPM = 30           # 每分钟最多请求次数（防 429）
 DEFAULT_ASR_CHUNK_CONCURRENCY = 4  # 切片转写的并发请求数（1-32，1 即串行）
 ASR_CHUNK_CONCURRENCY_MAX = 32
+DEFAULT_ASR_SILENCE_SPLIT = True   # chat 风格是否按静音边界切片（关掉改等长切割）
 
 # 允许通过 update_openai_asr 修改的字段
 _ASR_EDITABLE_FIELDS = (
     "name", "base_url", "api_key", "model", "timeout", "chunk_size_mb", "api_style",
     "max_speech_chunks", "silence_noise_db", "min_silence_seconds", "max_rpm",
-    "chunk_concurrency",
+    "chunk_concurrency", "silence_split",
 )
 
 # 接口风格：transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
 ASR_API_STYLES = ("transcriptions", "chat")
+
+
+def _as_bool(value, default: bool) -> bool:
+    """把前端传来的布尔/字符串统一成 bool。
+
+    前端开关可能以 ``"true"`` / ``"false"`` 的形式回来，直接 ``bool("false")``
+    会得到 True，所以这里显式认识字符串形式。
+    """
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    return default
 
 
 def _as_int(value, default: int) -> int:
@@ -115,6 +134,11 @@ class TranscriberConfigManager:
                     _as_int(raw.get("chunk_concurrency"), DEFAULT_ASR_CHUNK_CONCURRENCY),
                 ),
             ),
+            # chat 风格（MiMo）默认按静音边界切片；关掉后走「按字节等长切片」，
+            # 省掉整个音频解码 + silencedetect 的耗时。
+            "silence_split": _as_bool(
+                raw.get("silence_split"), DEFAULT_ASR_SILENCE_SPLIT
+            ),
         }
 
     def _endpoints(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -200,6 +224,7 @@ class TranscriberConfigManager:
         min_silence_seconds: float = DEFAULT_MIN_SILENCE_SECONDS,
         max_rpm: int = DEFAULT_ASR_MAX_RPM,
         chunk_concurrency: int = DEFAULT_ASR_CHUNK_CONCURRENCY,
+        silence_split: bool = DEFAULT_ASR_SILENCE_SPLIT,
     ) -> str:
         endpoint = self._normalize_endpoint({
             "id": uuid.uuid4().hex,
@@ -215,6 +240,7 @@ class TranscriberConfigManager:
             "min_silence_seconds": min_silence_seconds,
             "max_rpm": max_rpm,
             "chunk_concurrency": chunk_concurrency,
+            "silence_split": silence_split,
         })
         self._validate_endpoint(endpoint)
 
@@ -287,6 +313,25 @@ class TranscriberConfigManager:
                 "whisper_model_size",
                 os.getenv("WHISPER_MODEL_SIZE", "tiny"),
             ),
+            # 本地转写性能相关配置（仅 fast-whisper 生效）。
+            # whisper_device: auto=自动探测（有 CUDA 用 GPU，否则 CPU）；cpu/cuda 强制。
+            # whisper_compute_type: auto=按设备选（CUDA→float16，CPU→int8）；也可显式指定。
+            # whisper_cpu_threads: CPU 推理线程数，0=自动（用物理核心数）。GPU 下忽略。
+            # whisper_num_workers: faster-whisper 推理 worker 数，>1 时多任务可真正并行。
+            "whisper_device": data.get(
+                "whisper_device", os.getenv("WHISPER_DEVICE", "auto")
+            ),
+            "whisper_compute_type": data.get(
+                "whisper_compute_type", os.getenv("WHISPER_COMPUTE_TYPE", "auto")
+            ),
+            "whisper_cpu_threads": _as_int(
+                data.get("whisper_cpu_threads"),
+                int(os.getenv("WHISPER_CPU_THREADS", "0")),
+            ),
+            "whisper_num_workers": _as_int(
+                data.get("whisper_num_workers"),
+                int(os.getenv("WHISPER_NUM_WORKERS", "1")),
+            ),
             "openai_asr_id": data.get("openai_asr_id") or None,
             "openai_asr_endpoints": self._endpoints(data),
         }
@@ -305,14 +350,31 @@ class TranscriberConfigManager:
         transcriber_type: str,
         whisper_model_size: Optional[str] = None,
         openai_asr_id: Optional[str] = None,
+        whisper_device: Optional[str] = None,
+        whisper_compute_type: Optional[str] = None,
+        whisper_cpu_threads: Optional[int] = None,
+        whisper_num_workers: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """更新转写器配置并持久化。"""
+        """更新转写器配置并持久化。
+
+        whisper_* 性能参数只在「非 None」时写入，避免调用方漏传把用户改好的值重置。
+        """
         data = self._read()
         data["transcriber_type"] = transcriber_type
         if whisper_model_size is not None:
             data["whisper_model_size"] = whisper_model_size
         if openai_asr_id is not None:
             data["openai_asr_id"] = openai_asr_id
+        if whisper_device is not None:
+            if whisper_device not in ("auto", "cpu", "cuda"):
+                raise ValueError("本地转写设备只能是 auto / cpu / cuda")
+            data["whisper_device"] = whisper_device
+        if whisper_compute_type is not None:
+            data["whisper_compute_type"] = whisper_compute_type
+        if whisper_cpu_threads is not None:
+            data["whisper_cpu_threads"] = max(0, int(whisper_cpu_threads))
+        if whisper_num_workers is not None:
+            data["whisper_num_workers"] = max(1, int(whisper_num_workers))
         self._write(data)
         return self.get_config()
 
@@ -321,6 +383,18 @@ class TranscriberConfigManager:
 
     def get_whisper_model_size(self) -> str:
         return self.get_config()["whisper_model_size"]
+
+    def get_whisper_device(self) -> str:
+        return self.get_config()["whisper_device"]
+
+    def get_whisper_compute_type(self) -> str:
+        return self.get_config()["whisper_compute_type"]
+
+    def get_whisper_cpu_threads(self) -> int:
+        return self.get_config()["whisper_cpu_threads"]
+
+    def get_whisper_num_workers(self) -> int:
+        return self.get_config()["whisper_num_workers"]
 
     def is_model_ready(self) -> Dict[str, Any]:
         """当前转写器是否就绪可用。
