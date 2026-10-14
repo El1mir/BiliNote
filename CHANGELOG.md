@@ -2,6 +2,38 @@
 
 本项目所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- **后端任务状态与只读端点缓存优化（spec 014）**：三条高频路径不再重复做同步系统调用。端到端实测（N=200，`cd backend && .venv\Scripts\python.exe tests\014-backend-cache-optimization\baseline_measure.py --tasks 200 --repeat 5 --cache both`）：
+
+  | 端点 | stat 前 → 后 | p50 前 → 后 |
+  |---|---|---|
+  | `POST /api/task_status/batch`（200 条/轮） | 1260.8 → **12.4** | 166.97ms → **5.52ms**（30.25×） |
+  | `GET /task_list`（整表） | 1970.6 → **908.6** | 162.27ms → **78.80ms**（2.06×） |
+  | `GET /transcriber_models_status` | 82.4 → **7.0** | 6.88ms → **1.32ms**（5.21×） |
+
+  - **任务状态改为内存权威**：批量轮询此前对每个任务做一次同步 `os.path.exists` + `open` + `json.load`（N=200 时约 198ms/轮、899 stat/轮，且**与任务是否在动无关** —— 终态文件内容不变却每轮重读）。新增进程内注册表 `backend/app/services/task_status_cache.py`，读状态先查字典、未命中才回落到 `<task_id>.status.json`；状态文件降级为**投影**，职责收敛为「重启后把权威读回来」，spec 009 的重启恢复不受影响。后端是单进程 uvicorn（`backend/main.py:137` `reload=False`），进程内缓存天然一致，不需要跨进程失效协议。
+  - **`/task_list` 合并同文件两次读**：`_task_title_from_file` 与 `_task_has_note` 读的是同一个结果文件、做同一遍解析，现合并为一次读取（每行文件读 112.68ms → 60.67ms）；解析改用仓库里早已写进 `requirements.txt`、却从未被任何代码调用的 `orjson`（单独 159.88ms → 54.49ms，2.93×）。该端点**不加缓存**，「入队即落库、新建任务立刻可见」的既有承诺不变。
+  - **`transcriber_models_status` 目录扫描加 5s TTL**：此前每次请求都对每个可见模型重扫一次模型目录（HF 布局还要 `iterdir()`）。只缓存扫描结果，**不**缓存下载状态（那是进程内内存态、直读零成本）；下载流程收尾时主动失效，让新落盘的模型立刻可见。`/sys_health`、`/deploy_status`、`/transcriber_config` 经核对**刻意不改**：`/sys_health` 的 5s 轮询只在 Tauri 挂（浏览器探活走不查任何外部依赖的 `/sys_check` 且就绪即停），`/deploy_status` 仅在监控页打开时 30s 一次，`/transcriber_config` 切页一次 —— 收益接近 0。
+  - **删除 / 重试的失效挂载点**：删除收敛到 `task_cleanup.delete_task_completely` 一处，且**先删投影文件、后删内存**（反过来的话，中间任何一次轮询都会把已删除的任务状态从文件里读回来重新缓存，表现为「删了又冒出来」）；重试用「覆盖」而不是「清空」，避免「内存已清、磁盘仍是旧值」的同款窗口。
+  - **零新增依赖**：未引入 `cachetools` / `redis` / `celery` —— 本项目的部署形态是 PyInstaller 单文件 + Docker + Tauri 三者并存，`cachetools` 技术上可加但净收益≈0（它给 LRU/TTL 容器，而这里要的是「按 task_id 存 dict + 写方推失效」，用了仍要自己写失效钩子）。`git diff backend/requirements.txt` 为空。
+  - 新增 `BILINOTE_CACHE=off` 开关（默认开启），用于在同一次运行内做前后对比。
+
+### Fixed
+
+- **并发写任务状态时，读者可能读到半截 JSON**：`NoteGenerator._update_status` 在 `os.replace` 失败时会降级为**原地覆盖** —— 先截断再写。Windows 下目标文件被别的线程打开时 `os.replace` 会抛 `WinError 5 (ACCESS_DENIED)`（截图阶段有 8 个 `screenshot_*` 线程写同一个 task_id），于是这条「兜底」路径反而成了唯一会产生半截文件的路径：实测并发读 121 次拿到空文件或截断 JSON。现改为 `os.replace` 重试（5 次 × 10ms），并**删掉原地覆盖兜底** —— 失败时让磁盘投影停在上一次的完整值（内存才是权威，且本函数有约 35 个调用点，下一次状态更新马上会重试落盘）。「不写」的代价是投影短暂偏旧，「乱写」的代价是读者拿到垃圾。同一用例重跑：半截读 121 → **0**。
+- **`/task_list` 遇到非字典形态的结果 JSON 会让整个接口 500**：旧的 `_task_title_from_file` 在 `try` 之外访问 `result.get("audio_meta")`，非 dict 的结果会抛 `AttributeError`，被外层 `except` 捕获成 `R.error(..., code=500)`，任务列表整体不可用。现退化为「无标题、无笔记标记」。
+
+### Internal
+
+- 新增 `specs/014-backend-cache-optimization/`（spec + 6 张实现工单，状态 `implemented`）与 `backend/tests/014-backend-cache-optimization/`（98 用例 + 基线/对比测量脚本与结果 JSON）。
+- 新增 `backend/tests/014-backend-cache-optimization/conftest.py` —— 仓库第一份 pytest 测试基建（此前无 `conftest.py` / `pytest.ini` / `pyproject.toml`）。
+- 新增 `backend/pyrightconfig.json`：`pyright` 与 LSP 此前都无法发现 `backend/.venv`（会落到系统 Python 的 site-packages），导致任何 `import pytest` 的测试文件误报 `reportMissingImports`。
+- `GLOSSARY.md` 补两组概念：**权威 / 投影**（任务状态的两份来源地位不平等）与**缓存槽 / 陈旧窗口**（槽丢了只是慢一次，权威丢了才是丢数据）。
+- 全量后端回归 **777 passed**（历史基线 653，无退化）；pyright 与 ruff 对本次改动零新增问题。
+
 ## [2.4.4] - 2026-06-23
 
 ### Security

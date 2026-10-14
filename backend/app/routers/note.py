@@ -17,6 +17,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, field_validator, model_validator
 from dataclasses import asdict
 
+import orjson
+
 from app.db.video_task_dao import get_task_by_video
 from app.enmus.exception import NoteErrorEnum
 from app.enmus.note_enums import DownloadQuality
@@ -1692,6 +1694,38 @@ def _task_row_exists(task_id: str) -> bool:
         return True
 
 
+def _light_status_payload(task_id: str, source: dict) -> dict:
+    """把任意来源的状态字典裁成对外的轻量 payload。
+
+    契约的唯一出口：无论 payload 来自内存注册表还是 ``.status.json``，都经过这里，
+    保证两条路径返回的字段集合完全一致（``_STATUS_LIGHT_KEYS`` + ``message`` 默认值）。
+    """
+    payload = {"task_id": task_id}
+    for key in _STATUS_LIGHT_KEYS:
+        if key in source:
+            payload[key] = source[key]
+    payload.setdefault("message", "")
+    return payload
+
+
+def _read_result_payload(task_id: str):
+    """读 ``<task_id>.json`` 的完整结果；文件不存在或读失败返回 ``None``。
+
+    **结果不进内存注册表**：实测 873 个结果文件共 47.6MB、平均 55.9KB，而注册表
+    存的是 216 字节量级的状态。详情页本来就不是高频路径（批量端点传
+    ``include_result=False``），把 markdown 常驻内存换不来任何东西。
+    """
+    result_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.json")
+    if not os.path.exists(result_path):
+        return None
+    try:
+        with open(result_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
+        return None
+
+
 def _read_task_status(
     task_id: str,
     include_result: bool = True,
@@ -1706,9 +1740,28 @@ def _read_task_status(
     ``unknown_is_none`` 控制「状态文件与结果文件都不存在」时的返回值。单任务
     端点（``GET /task_status/{task_id}``）历来把这种情况当成 PENDING 占位，保持
     不变；批量端点要求未知 id 返回 ``None``，由调用方按需回落到占位。
+
+    **内存优先（spec 014 ticket 02）**：先查进程内注册表（纯 dict 查找，零系统
+    调用），未命中才回落文件。这是收益的全部来源 —— 基线 N=200 时每轮 899.8 次
+    ``stat``、198.46ms，全是同步系统调用，在单进程 uvicorn 里每 3 秒阻塞一次
+    事件循环。**不做指纹校验**（该机制已在 spec §12.1 作废）：注册表的权威性靠
+    写方主动 ``put`` 与删除/重试路径主动 ``drop`` 维持，不是靠比对文件时间戳。
     """
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", str(task_id or "")):
         return None
+
+    from app.services import task_status_cache
+
+    cached = task_status_cache.get(task_id)
+    if cached is not None:
+        # _light_status_payload 建的是新 dict，所以下面补 result 不会污染注册表。
+        payload = _light_status_payload(task_id, cached)
+        if payload.get("status") == TaskStatus.SUCCESS.value and include_result:
+            result = _read_result_payload(task_id)
+            if result is not None:
+                payload["result"] = result
+        return payload
+
     status_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.status.json")
     result_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.json")
 
@@ -1720,19 +1773,14 @@ def _read_task_status(
             logger.debug("读取任务状态失败（%s）：%s", task_id, exc)
             return None
 
-        payload = {"task_id": task_id}
-        for key in _STATUS_LIGHT_KEYS:
-            if key in status_content:
-                payload[key] = status_content[key]
-        payload.setdefault("message", "")
+        payload = _light_status_payload(task_id, status_content)
+        # 存副本：payload 随后可能被塞入 result（几十 KB），不能连带写进注册表。
+        task_status_cache.put(task_id, dict(payload))
 
         if payload.get("status") == TaskStatus.SUCCESS.value and include_result:
-            if os.path.exists(result_path):
-                try:
-                    with open(result_path, "r", encoding="utf-8") as rf:
-                        payload["result"] = json.load(rf)
-                except Exception as exc:
-                    logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
+            result = _read_result_payload(task_id)
+            if result is not None:
+                payload["result"] = result
         return payload
 
     if os.path.exists(result_path):
@@ -1745,16 +1793,16 @@ def _read_task_status(
             "stage_progress": 100,
             "message": "",
         }
+        task_status_cache.put(task_id, dict(payload))
         if include_result:
-            try:
-                with open(result_path, "r", encoding="utf-8") as f:
-                    payload["result"] = json.load(f)
-            except Exception as exc:
-                logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
+            result = _read_result_payload(task_id)
+            if result is not None:
+                payload["result"] = result
         return payload
 
     if unknown_is_none:
         return None
+    # 「排队中」占位**不进注册表**：它表达的是「没有任何落盘痕迹」，不是权威状态。
     return _pending_status(task_id)
 
 
@@ -1901,34 +1949,86 @@ class TaskIdRequest(BaseModel):
     task_id: str
 
 
+def _loads_result(raw: bytes):
+    """解析结果文件内容：``orjson`` 优先，标准库 ``json`` 兜底。
+
+    **为什么必须留兜底**：``orjson`` 比标准库严格的不是一个档次 ——
+
+    - 它拒绝裸 ``NaN`` / ``Infinity``（严格 JSON），而标准库 ``json.dump`` 在默认
+      ``allow_nan=True`` 下就会把它们写出来，结果文件恰恰是 ``save_note_to_file``
+      用 ``json.dump(asdict(note), f, ensure_ascii=False, indent=2)`` 写的；
+    - 它把超出 64 位的整数**降级成 float**（丢精度），标准库保留精确整数。本函数只取
+      ``markdown`` 与 ``audio_meta.title`` 两个字符串字段，所以不影响结果 —— 但别拿
+      这两个函数去解析需要精确大整数的数据。
+
+    少了这层兜底，历史上一直读得动的结果文件会突然解析失败，用户看到的是「标题丢了、
+    笔记标记没了」这种**静默降级**。这两条差异都有 ``test_task_list_single_read.py``
+    的 ``test_orjson_strictness_is_absorbed_by_the_fallback`` 用例钉住。
+
+    显式 ``decode("utf-8")`` 而不是把 bytes 直接喂给 ``json.loads``：后者会自动嗅探
+    UTF-16/32，等于悄悄放宽了改动前 ``read_text(encoding="utf-8")`` 的语义。
+    """
+    try:
+        return orjson.loads(raw)
+    except Exception:
+        return json.loads(raw.decode("utf-8"))
+
+
+def _read_result_summary(task_id: str) -> tuple:
+    """一次读盘同时算出 ``(title, has_note)``。
+
+    ``/task_list`` 的每一行原本**分别**调 :func:`_task_title_from_file` 与
+    :func:`_task_has_note`，而这两个函数读的是**同一个** ``note_results/<task_id>.json``、
+    做的是**同一遍**解析。结果文件实测平均 **55.9KB**（中位 18.1KB，873 个共 47.6MB），
+    重复解析的代价是实打实的：N=200 时 ``/task_list`` p50 78.09ms 里有 151.4ms 花在这
+    两次读上，而纯 SQL 只有 2.9ms。
+
+    解析用 ``orjson``（已在 ``requirements.txt`` 且装好，此前全仓零处使用）：它比标准库
+    ``json`` 快 2–5 倍，而这里是本 spec 唯一真正的「大文件重解析」场景——状态文件只有
+    216B，换过去毫无收益，所以全仓其它 ``json.loads`` 一律不动。
+    ``orjson.loads`` 吃 ``bytes``，所以走 ``read_bytes()``（顺带省掉一次 UTF-8 解码）。
+    解析本身在 :func:`_loads_result`：``orjson`` 优先、标准库兜底 —— 它比标准库严格，
+    裸 ``NaN`` / 超 64 位整数它都拒收，而结果文件正是标准库 ``json.dump`` 写的。
+
+    失败态与原来的两个函数保持一致：文件缺失 / 读失败 / JSON 损坏 → ``("", False)``。
+    """
+    result_path = Path(NOTE_OUTPUT_DIR) / f"{task_id}.json"
+    if not result_path.is_file():
+        return "", False
+    try:
+        result = _loads_result(result_path.read_bytes())
+    except Exception as exc:
+        logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
+        return "", False
+    if not isinstance(result, dict):
+        # 合法 JSON 但不是对象（比如 ``[1,2,3]``）：原实现在 ``result.get(...)`` 处抛
+        # AttributeError，会顺着 ``list_tasks`` 的兜底 except 把**整个列表接口**打成 500
+        # ——一个坏文件毁掉全表。这里退化成「这个任务没有标题也没有笔记」。
+        logger.debug("任务结果不是对象（%s）：%s", task_id, type(result).__name__)
+        return "", False
+    markdown = result.get("markdown")
+    has_note = isinstance(markdown, str) and bool(markdown.strip())
+    return _result_title(result), has_note
+
+
 def _task_title_from_file(task_id: str) -> str:
     """从 ``note_results/<task_id>.json`` 里取视频标题；读不到就返回空串。
+
+    薄封装：真正的读盘与解析在 :func:`_read_result_summary`（``/task_list`` 用它一次
+    读出一行需要的两个字段）。保留本函数是因为测量脚本按函数粒度计开销。
 
     结果 JSON 顶层只有 markdown / transcript / audio_meta，标题在 audio_meta.title
     （见 :func:`_result_title`）。
     """
-    result_path = Path(NOTE_OUTPUT_DIR) / f"{task_id}.json"
-    if not result_path.is_file():
-        return ""
-    try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
-        return ""
-    return _result_title(result)
+    return _read_result_summary(task_id)[0]
 
 
 def _task_has_note(task_id: str) -> bool:
-    """结果文件存在且 markdown 非空，才算「已有笔记」。"""
-    result_path = Path(NOTE_OUTPUT_DIR) / f"{task_id}.json"
-    if not result_path.is_file():
-        return False
-    try:
-        result = json.loads(result_path.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    markdown = result.get("markdown")
-    return isinstance(markdown, str) and bool(markdown.strip())
+    """结果文件存在且 markdown 非空，才算「已有笔记」。
+
+    薄封装，原因见 :func:`_task_title_from_file`。
+    """
+    return _read_result_summary(task_id)[1]
 
 
 @router.get("/task_list")
@@ -1953,6 +2053,9 @@ def list_tasks():
             if not task_id:
                 continue
             group_id = row.get("group_id")
+            # 一次读盘同时拿 title 与 has_note：原本这里分别调 _task_title_from_file 与
+            # _task_has_note，两个函数读的是同一个结果文件、做同一遍解析。
+            title, has_note = _read_result_summary(task_id)
             tasks.append(
                 {
                     "task_id": task_id,
@@ -1962,8 +2065,8 @@ def list_tasks():
                     "group_name": group_names.get(str(group_id), "")
                     if group_id
                     else "",
-                    "title": _task_title_from_file(task_id),
-                    "has_note": _task_has_note(task_id),
+                    "title": title,
+                    "has_note": has_note,
                     "created_at": str(row.get("created_at") or ""),
                 }
             )

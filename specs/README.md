@@ -4,7 +4,7 @@
 
 ## 约定
 
-```
+```text
 specs/
 ├── README.md                       # 本文件：约定说明
 └── <NNN>-<slug>/                   # 一个需求 = 一个目录，NNN 递增
@@ -41,3 +41,4 @@ specs/
 | 011 | [011-failed-task-retry](./011-failed-task-retry/spec.md) | implemented | 失败任务批量重试（按当前可见范围原地重跑，沿用创建时的参数） |
 | 012 | [012-rate-limit-backoff](./012-rate-limit-backoff/spec.md) | implemented | 429 退避与停放（全局冷却窗口 5 分钟、单条最长等 1 小时、不判失败、不计熔断） |
 | 013 | [013-local-transcriber-hardware-acceleration](./013-local-transcriber-hardware-acceleration/spec.md) | implemented | 本地转写器硬件加速与并行（GPU 默认启用 / CPU 线程数 / 推理并行数） |
+| 014 | [014-backend-cache-optimization](./014-backend-cache-optimization/spec.md) | **implemented** | 后端缓存优化（2026-10-14 二审后缩范围）：轮询改为内存字典查找（N=200 实测 stat 1260.8/轮 → 12.4/轮、p50 166.97ms → 5.52ms）、`/task_list` 合并同文件两次读 + 用上已装的 `orjson`（stat 1970.6 → 908.6、p50 162.27ms → 78.80ms；合并读 112.68ms → 60.67ms、orjson 单独 2.93×）、`transcriber_models_status` 目录扫描加 5s TTL（stat 82.4 → 7.0、p50 6.88ms → 1.32ms）。**不引入任何新依赖**。顺带修掉一个既有并发缺陷（`os.replace` 失败时原地覆盖 → 读者读到半截 JSON）。进度：01–06 全部 resolved |

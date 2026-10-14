@@ -179,6 +179,29 @@ def _normalize_for_compare(text: str) -> str:
     return re.sub(r"[\s\W_]+", "", text or "").lower()
 
 
+# 状态文件原子替换的重试参数。
+#
+# 为什么需要重试：``os.replace`` 是原子操作，但如果目标文件此刻正被别的线程打开
+# （读或写），Windows 会抛 ``WinError 5 (ACCESS_DENIED)`` —— 这不是理论问题：截图阶段
+# 有 8 个 ``screenshot_*`` 线程在写同一个 task_id，同时 HTTP 轮询线程在读同一个文件。
+# 重试成本可以忽略（毫秒级），而**降级路径会失去原子性**：原地覆盖会让读者看到半截
+# JSON。所以先重试，把降级留成真正的最后手段。
+_STATUS_REPLACE_ATTEMPTS = 5
+_STATUS_REPLACE_DELAY_SECONDS = 0.01
+
+
+def _replace_with_retry(temp_file: Path, status_file: Path) -> None:
+    """把临时文件原子地换成状态文件；遇到瞬时占用就重试。"""
+    for attempt in range(_STATUS_REPLACE_ATTEMPTS):
+        try:
+            temp_file.replace(status_file)
+            return
+        except OSError:
+            if attempt == _STATUS_REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(_STATUS_REPLACE_DELAY_SECONDS)
+
+
 class NoteGenerator:
     """
     NoteGenerator 用于执行视频/音频下载、转写、GPT 生成笔记、插入截图/链接、
@@ -1506,20 +1529,44 @@ class NoteGenerator:
         }
 
         try:
+            # 先写内存（权威），再落盘（投影）。
+            #
+            # 顺序不能反：读者以内存为准，若先落盘再 put，中间那一小段窗口里
+            # 内存还是旧值，读者会拿到刚被覆盖掉的旧状态。
+            #
+            # 关于并发：本函数确实会被多个线程同时调到——实测截图阶段有 8 个
+            # ``screenshot_*`` 线程在写同一个 task_id（见 ticket 02 Comments）。
+            # 这里不加锁，因为 ``data`` 每次都是**整份重建**的完整 payload，
+            # 不是读-改-写，dict 的单个 ``__setitem__`` 在 GIL 下已足够：
+            # 并发的后果只是「最后写的人赢」，任何一方写进去的都是完整状态，
+            # 不存在读到半截状态或字段互相污染。
+            # （与落盘侧「唯一临时文件 + 原子 replace」同一个论证：都靠整份替换，
+            #  而不是靠互斥。）
+            from app.services import task_status_cache
+
+            task_status_cache.put(task_id, {"task_id": task_id, **data})
+        except Exception:
+            logger.exception("写入内存状态失败 (task_id=%s)", task_id)
+
+        try:
             # Keep a unique temporary file so concurrent writes cannot collide.
             temp_file = status_file.with_name(
                 f"{status_file.name}.{uuid.uuid4().hex[:8]}.tmp"
             )
             with temp_file.open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            temp_file.replace(status_file)
+            _replace_with_retry(temp_file, status_file)
         except Exception as e:
-            logger.error(f"写入状态文件失败 (task_id={task_id})：{e}")
-            try:
-                with status_file.open("w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-            except Exception:
-                logger.exception("写入状态文件兜底失败 (task_id=%s)", task_id)
+            # ⚠️ 这里**故意不做**「原地覆盖」兜底。
+            #
+            # 原地写会截断目标文件再写回去，中间那段时间读者能读到空文件或半截
+            # JSON —— 那是唯一一种读者拿不到完整状态的路径。而什么都不做只是让磁盘
+            # 上的投影停在上一次**完整**的值：内存注册表才是权威（读者优先读它），
+            # 且本函数有 ~35 个调用点，下一次状态更新马上会重试落盘。也就是说
+            # 「不写」的代价是投影短暂偏旧，「乱写」的代价是读者拿到垃圾 —— 后者更糟。
+            #
+            # 保留临时文件不删，方便排查（它带 uuid 后缀，不会与后续写入冲突）。
+            logger.error(f"写入状态文件失败 (task_id={task_id})：{e}（保持上一次完整投影，不做原地覆盖）")
 
     def _handle_exception(self, task_id, exc):
         logger.error(f"任务异常 (task_id={task_id})", exc_info=True)

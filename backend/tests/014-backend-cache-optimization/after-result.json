@@ -1,0 +1,258 @@
+{
+  "generated_at": "2026-10-15T01:02:59",
+  "source_run": "baseline-result.json",
+  "how_to_read": "「前」= 同一次运行的 BILINOTE_CACHE=off 腿（受开关管辖的路径上等价于改动前行为）；/task_list 的改动前后对比见 task_list_split 与 task_list 行的 *_ticket04 字段。口径：stat 计数为准，open 计数因 app/ 下的 Cython 产物而偏低。",
+  "comparison": [
+    {
+      "endpoint": "POST /api/task_status/batch",
+      "unit": "200 条任务，稳态每轮",
+      "stat_before": 1260.8,
+      "stat_after": 12.4,
+      "p50_before_ms": 166.97,
+      "p50_after_ms": 5.52,
+      "speedup": 30.25,
+      "mechanism": "终态任务命中进程内注册表后不再 os.path.exists；冷启动一轮（注册表为空）仍是 167.28ms / 834 stat，与关缓存等价 —— 说明收益来自命中而不是少做事。"
+    },
+    {
+      "endpoint": "GET /api/task_status/{id}",
+      "unit": "单条",
+      "stat_before": 22.8,
+      "stat_after": 12.2,
+      "p50_before_ms": 3.31,
+      "p50_after_ms": 3.07,
+      "speedup": 1.08,
+      "mechanism": "单条本来就是一次文件读（基线 1.62ms），收益有限；主要是不再每次 stat。"
+    },
+    {
+      "endpoint": "GET /task_list",
+      "unit": "整表（N=200）",
+      "stat_before": 1970.6,
+      "stat_after": 908.6,
+      "p50_before_ms": 162.27,
+      "p50_after_ms": 78.8,
+      "speedup": 2.06,
+      "mechanism": "**不受 BILINOTE_CACHE 管辖**（合并读 + orjson 两条腿都在跑）。改动后：stat/行 4.21、两根读合并后 58.98ms。",
+      "before_source": "baseline-result.pre-ticket04.json（cache-off 腿）",
+      "cache_gated": false,
+      "stat_speedup": 2.17,
+      "per_row_file_read_before_ms": 152.64,
+      "per_row_file_read_after_ms": 58.98
+    },
+    {
+      "endpoint": "GET /transcriber_models_status",
+      "unit": "TTL 内命中一次",
+      "stat_before": 82.4,
+      "stat_after": 7.0,
+      "p50_before_ms": 6.88,
+      "p50_after_ms": 1.32,
+      "speedup": 5.21,
+      "mechanism": "目录扫描（每个可见模型一次 Path.exists，HF 布局还要 iterdir）进 5s 槽后归零。未命中仍是 cold 态：6.78ms / 79.8 stat。命中后残留 7.0 stat/次来自 get_registry().visible_model_names() 读注册表文件 —— **刻意不缓存**（收益 ≈0.1ms，代价是「刚加的自定义模型 5s 内不出现」）。",
+      "cache_off_control": {
+        "cold_p50_ms": 6.76,
+        "warm_p50_ms": 6.88,
+        "cold_stat": 84.6,
+        "warm_stat": 82.4,
+        "meaning": "阴性对照：关掉开关后 cold 与 warm 一致，证明收益来自槽而不是测量噪声。"
+      },
+      "legs": {
+        "缓存关（= 改动前行为）": {
+          "cold": {
+            "p50_ms": 6.76,
+            "p95_ms": 7.68,
+            "open_calls_per_call": 0.0,
+            "stat_calls_per_call": 84.6
+          },
+          "warm": {
+            "p50_ms": 6.88,
+            "p95_ms": 7.22,
+            "open_calls_per_call": 0.0,
+            "stat_calls_per_call": 82.4
+          }
+        },
+        "缓存开": {
+          "cold": {
+            "p50_ms": 6.78,
+            "p95_ms": 7.41,
+            "open_calls_per_call": 1.0,
+            "stat_calls_per_call": 79.8
+          },
+          "warm": {
+            "p50_ms": 1.32,
+            "p95_ms": 1.48,
+            "open_calls_per_call": 0.0,
+            "stat_calls_per_call": 7.0
+          }
+        }
+      }
+    },
+    {
+      "endpoint": "/api/sys_health",
+      "unit": "单次",
+      "stat_before": 278.6,
+      "stat_after": 310.8,
+      "p50_before_ms": 39.97,
+      "p50_after_ms": 39.48,
+      "speedup": 1.01,
+      "mechanism": "**明确不做**。5s 轮询只在 Tauri 挂；浏览器探活走 /sys_check（不查外部依赖）。两腿数值差异属测量噪声。"
+    },
+    {
+      "endpoint": "/api/deploy_status",
+      "unit": "单次",
+      "stat_before": 301.0,
+      "stat_after": 324.2,
+      "p50_before_ms": 40.34,
+      "p50_after_ms": 39.74,
+      "speedup": 1.02,
+      "mechanism": "**明确不做**。仅开着设置页监控页时 30s 一次，38ms × 每 30s ≈ 0.13%。两腿数值差异属测量噪声。"
+    },
+    {
+      "endpoint": "/api/transcriber_config",
+      "unit": "单次",
+      "stat_before": 29.8,
+      "stat_after": 39.2,
+      "p50_before_ms": 4.85,
+      "p50_after_ms": 4.7,
+      "speedup": 1.03,
+      "mechanism": "**明确不做**。切设置页才调一次，4.47ms。两腿数值差异属测量噪声。"
+    },
+    {
+      "endpoint": "NoteGenerator._update_status（写一次）",
+      "unit": "单次写入",
+      "stat_before": 14.0,
+      "stat_after": 14.2,
+      "p50_before_ms": 1.75,
+      "p50_after_ms": 1.64,
+      "speedup": 1.07,
+      "mechanism": "**未改动**。原来就是「唯一临时文件 + os.replace」的原子写；ticket 02 只在它前面加了一次 dict 写入（零系统调用），落盘成本不变。"
+    }
+  ],
+  "task_list_split": {
+    "merged_read": {
+      "before_ms": 112.68,
+      "after_ms": 60.67,
+      "speedup": 1.86,
+      "stat_per_row_before": 7.67,
+      "stat_per_row_after": 4.09,
+      "mechanism": "_task_title_from_file 与 _task_has_note 读的是同一个 note_results/<id>.json、做同一遍解析；合成 _read_result_summary 后每行只读一次。",
+      "measured_with_cache": "off"
+    },
+    "orjson": {
+      "file_count": 200,
+      "total_bytes": 17396607,
+      "median_file_bytes": 32176,
+      "json_p50_ms": 159.88,
+      "orjson_p50_ms": 54.49,
+      "speedup": 2.93,
+      "mechanism": "同一份 bytes 上只比解析（真实 note_results/ 文件，不是造的样例）。orjson 已在 requirements.txt 且装好，此前全仓零处使用 —— 零新增依赖。",
+      "measured_with_cache": "n/a（与开关无关）"
+    },
+    "cache_on_leg": {
+      "before_ms": 127.4,
+      "after_ms": 58.98,
+      "stat_per_row_before": 9.15,
+      "stat_per_row_after": 4.21
+    }
+  },
+  "gates": {
+    "cache_off_control_matches_baseline": "缓存关那一腿就是对照组：受开关管辖的路径上 stat/p50 与历史基线同量级（batch 约 1190 stat/轮 vs 历史 1176.8；/task_list 两腿基本相同）。",
+    "regression": "见 ticket 06 Comments 记录的 pytest 全量结果。"
+  },
+  "results": [
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "cache": "on",
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "cache": "on",
+        "p50_ms": 5.52,
+        "p95_ms": 6.14,
+        "min_ms": 5.17,
+        "max_ms": 6.14,
+        "open_calls_per_round": 4.4,
+        "stat_calls_per_round": 12.4,
+        "bytes_read_per_round": 1285.2,
+        "cold_ms": 167.28,
+        "cold_open_calls": 405,
+        "cold_stat_calls": 834
+      },
+      "single_status": {
+        "p50_ms": 3.07,
+        "open_calls_per_call": 5.0,
+        "stat_calls_per_call": 12.2
+      },
+      "task_list": {
+        "p50_ms": 78.8,
+        "p95_ms": 88.11,
+        "open_calls_per_call": 12.4,
+        "stat_calls_per_call": 908.6,
+        "bytes_read_per_call": 3642.2
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.78,
+        "per_row_file_reads_p50_ms": 127.4,
+        "open_calls_per_row": 0.03,
+        "stat_calls_per_row": 9.15,
+        "merged_read_p50_ms": 58.98,
+        "merged_stat_calls_per_row": 4.21
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 39.48,
+          "p95_ms": 43.22,
+          "open_calls_per_call": 4.2,
+          "stat_calls_per_call": 310.8,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 39.74,
+          "p95_ms": 41.21,
+          "open_calls_per_call": 0.6,
+          "stat_calls_per_call": 324.2,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 1.31,
+          "p95_ms": 1.46,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 6.6,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.7,
+          "p95_ms": 5.55,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 39.2,
+          "ok": true
+        }
+      },
+      "transcriber_models_status": {
+        "cold": {
+          "p50_ms": 6.78,
+          "p95_ms": 7.41,
+          "open_calls_per_call": 1.0,
+          "stat_calls_per_call": 79.8
+        },
+        "warm": {
+          "p50_ms": 1.32,
+          "p95_ms": 1.48,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 7.0
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.64,
+        "p95_ms": 1.71,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 14.2,
+        "bytes_written_per_write": 237
+      }
+    }
+  ]
+}

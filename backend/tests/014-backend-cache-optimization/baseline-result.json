@@ -1,0 +1,207 @@
+{
+  "generated_at": "2026-10-15T01:02:59",
+  "orjson_benefit": {
+    "available": true,
+    "source_dir": "C:\\Users\\Administrator\\Desktop\\prjs\\BiliNote\\backend\\note_results",
+    "file_count": 200,
+    "total_bytes": 17396607,
+    "median_file_bytes": 32176,
+    "json_p50_ms": 159.88,
+    "orjson_p50_ms": 54.49,
+    "speedup": 2.93
+  },
+  "results": [
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "cache": "off",
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "cache": "off",
+        "p50_ms": 166.97,
+        "p95_ms": 172.95,
+        "min_ms": 153.3,
+        "max_ms": 172.95,
+        "open_calls_per_round": 242.2,
+        "stat_calls_per_round": 1260.8,
+        "bytes_read_per_round": 70432.0,
+        "cold_ms": 189.43,
+        "cold_open_calls": 405,
+        "cold_stat_calls": 825
+      },
+      "single_status": {
+        "p50_ms": 3.31,
+        "open_calls_per_call": 2.0,
+        "stat_calls_per_call": 22.8
+      },
+      "task_list": {
+        "p50_ms": 64.29,
+        "p95_ms": 65.88,
+        "open_calls_per_call": 2.0,
+        "stat_calls_per_call": 810.2,
+        "bytes_read_per_call": 0.0
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.43,
+        "per_row_file_reads_p50_ms": 112.68,
+        "open_calls_per_row": 0.05,
+        "stat_calls_per_row": 7.67,
+        "merged_read_p50_ms": 60.67,
+        "merged_stat_calls_per_row": 4.09
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 39.97,
+          "p95_ms": 47.14,
+          "open_calls_per_call": 3.6,
+          "stat_calls_per_call": 278.6,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 40.34,
+          "p95_ms": 41.26,
+          "open_calls_per_call": 0.8,
+          "stat_calls_per_call": 301.0,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 6.84,
+          "p95_ms": 7.03,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 83.4,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.85,
+          "p95_ms": 5.41,
+          "open_calls_per_call": 1.6,
+          "stat_calls_per_call": 29.8,
+          "ok": true
+        }
+      },
+      "transcriber_models_status": {
+        "cold": {
+          "p50_ms": 6.76,
+          "p95_ms": 7.68,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 84.6
+        },
+        "warm": {
+          "p50_ms": 6.88,
+          "p95_ms": 7.22,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 82.4
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.75,
+        "p95_ms": 1.97,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 14.0,
+        "bytes_written_per_write": 237
+      }
+    },
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "cache": "on",
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "cache": "on",
+        "p50_ms": 5.52,
+        "p95_ms": 6.14,
+        "min_ms": 5.17,
+        "max_ms": 6.14,
+        "open_calls_per_round": 4.4,
+        "stat_calls_per_round": 12.4,
+        "bytes_read_per_round": 1285.2,
+        "cold_ms": 167.28,
+        "cold_open_calls": 405,
+        "cold_stat_calls": 834
+      },
+      "single_status": {
+        "p50_ms": 3.07,
+        "open_calls_per_call": 5.0,
+        "stat_calls_per_call": 12.2
+      },
+      "task_list": {
+        "p50_ms": 78.8,
+        "p95_ms": 88.11,
+        "open_calls_per_call": 12.4,
+        "stat_calls_per_call": 908.6,
+        "bytes_read_per_call": 3642.2
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.78,
+        "per_row_file_reads_p50_ms": 127.4,
+        "open_calls_per_row": 0.03,
+        "stat_calls_per_row": 9.15,
+        "merged_read_p50_ms": 58.98,
+        "merged_stat_calls_per_row": 4.21
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 39.48,
+          "p95_ms": 43.22,
+          "open_calls_per_call": 4.2,
+          "stat_calls_per_call": 310.8,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 39.74,
+          "p95_ms": 41.21,
+          "open_calls_per_call": 0.6,
+          "stat_calls_per_call": 324.2,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 1.31,
+          "p95_ms": 1.46,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 6.6,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.7,
+          "p95_ms": 5.55,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 39.2,
+          "ok": true
+        }
+      },
+      "transcriber_models_status": {
+        "cold": {
+          "p50_ms": 6.78,
+          "p95_ms": 7.41,
+          "open_calls_per_call": 1.0,
+          "stat_calls_per_call": 79.8
+        },
+        "warm": {
+          "p50_ms": 1.32,
+          "p95_ms": 1.48,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 7.0
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.64,
+        "p95_ms": 1.71,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 14.2,
+        "bytes_written_per_write": 237
+      }
+    }
+  ]
+}

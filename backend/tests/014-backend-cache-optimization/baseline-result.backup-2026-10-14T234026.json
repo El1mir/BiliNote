@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-10-14T22:38:10",
+  "results": [
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "p50_ms": 202.9,
+        "p95_ms": 263.2,
+        "min_ms": 190.75,
+        "max_ms": 263.2,
+        "open_calls_per_round": 81.0,
+        "stat_calls_per_round": 893.6,
+        "bytes_read_per_round": 27405.0
+      },
+      "single_status": {
+        "p50_ms": 1.85,
+        "open_calls_per_call": 0.0,
+        "stat_calls_per_call": 7.2
+      },
+      "task_list": {
+        "p50_ms": 83.97,
+        "p95_ms": 89.04,
+        "open_calls_per_call": 0.0,
+        "stat_calls_per_call": 1172.4,
+        "bytes_read_per_call": 0.0
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.9,
+        "per_row_file_reads_p50_ms": 148.25,
+        "open_calls_per_row": 1.02
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 39.62,
+          "p95_ms": 41.28,
+          "open_calls_per_call": 2.8,
+          "stat_calls_per_call": 269.8,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 40.8,
+          "p95_ms": 41.44,
+          "open_calls_per_call": 4.6,
+          "stat_calls_per_call": 273.8,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 6.97,
+          "p95_ms": 7.1,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 80.4,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.79,
+          "p95_ms": 4.97,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 38.0,
+          "ok": true
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.58,
+        "p95_ms": 1.64,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 12.6,
+        "bytes_written_per_write": 237
+      }
+    }
+  ]
+}

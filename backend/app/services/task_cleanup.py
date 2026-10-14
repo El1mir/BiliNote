@@ -178,5 +178,16 @@ def delete_task_completely(
 
     removed = delete_video_task(text)
     files = _delete_artifacts(text)
+    # 内存注册表必须同步失效（spec 014 ticket 02/03）：否则删掉的任务会被
+    # ``_read_task_status`` 继续命中内存里的旧状态返回给前端 —— 症状正是
+    # 前端删掉一条、列表刷新后它又冒出来。放在删文件之后是刻意的：
+    # 先删投影再删内存，任何中途崩溃都只会退化成「多读一次文件」，
+    # 不会留下「内存已清但文件还在」这种读者能看见的窗口。
+    try:
+        from app.services import task_status_cache
+
+        task_status_cache.drop(text)
+    except Exception:
+        logger.exception("删除任务后清理内存状态失败（%s）", text)
     logger.info("彻底删除任务 %s：DB 行 %d，文件 %s", text, removed, files or "无")
     return {"task_id": text, "removed": removed, "files": files}

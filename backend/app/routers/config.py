@@ -1,14 +1,16 @@
 import os
 import platform
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 from app.utils.response import ResponseWrapper as R
 from app.utils.logger import get_logger
 from app.utils.path_helper import get_model_dir
 
+from app.services import task_status_cache
 from app.services.cookie_manager import CookieConfigManager
 from app.services.transcriber_config_manager import TranscriberConfigManager
 from app.transcriber import model_download_state as dl_state
@@ -416,14 +418,63 @@ def _check_mlx_whisper_model_exists(model_size: str) -> bool:
     return (Path(model_path) / "config.json").exists()
 
 
+#: 模型目录扫描结果的缓存 TTL（秒）。取 5s：与前端「下载中每 3s 轮询」同量级，
+#: 状态不会晚两个周期才可见。
+_MODELS_STATUS_TTL_SECONDS = 5.0
+
+#: 单槽缓存 {at: 上次扫描时刻(monotonic), downloaded: {模型名: 是否已下载}}。
+#:
+#: **只缓存目录扫描，不缓存下载状态**：下载状态在 dl_state 里本来就是进程内内存态，
+#: 每次直读零成本；把它一起缓存只会让「下载中 / 已完成」晚一个周期才可见，那就违背了
+#: 本 ticket 的初衷（消除扫描开销，而不是让 UI 变迟钝）。
+#:
+#: 无锁：单进程 uvicorn 下最坏情况是两个线程各扫一遍，结果相同，没有正确性问题。
+_MODELS_STATUS_CACHE: dict[str, Any] = {"at": 0.0, "downloaded": None}
+
+
+def _invalidate_models_status_cache() -> None:
+    """清掉模型目录扫描缓存。
+
+    下载流程收尾时调用（放在 finally 里，成功失败都走），让「这个模型现在在磁盘上了」
+    立刻可见，不必等 TTL 到期。
+    """
+    _MODELS_STATUS_CACHE["at"] = 0.0
+    _MODELS_STATUS_CACHE["downloaded"] = None
+
+
+def _scan_downloaded_models(model_names: list) -> dict:
+    """各模型「是否已下载完整」的扫描结果，带 5s 进程内缓存。
+
+    收益来源：_check_whisper_model_exists 对**每个**可见模型都要走一次
+    Path.exists()（HF 布局还要 iterdir() 逐 snapshot 探 model.bin）。实测
+    /transcriber_models_status p50 6.51ms、stat 86.0/次，而前端在「下载模型进行中」
+    每 3s 轮询一次（BillNote_frontend/src/pages/SettingPage/transcriber.tsx:190-197）。
+    缓存命中时这一整块扫描归零。
+
+    BILINOTE_CACHE=off 时直通（复用 ticket 01 的判定函数），照旧只跳过「读」。
+    """
+    now = time.monotonic()
+    cached = _MODELS_STATUS_CACHE["downloaded"]
+    if (
+        cached is not None
+        and not task_status_cache.disabled()
+        and now - _MODELS_STATUS_CACHE["at"] < _MODELS_STATUS_TTL_SECONDS
+    ):
+        return cached
+
+    downloaded = {name: _check_whisper_model_exists(name, "whisper") for name in model_names}
+    _MODELS_STATUS_CACHE["at"] = time.monotonic()
+    _MODELS_STATUS_CACHE["downloaded"] = downloaded
+    return downloaded
+
+
 @router.get("/transcriber_models_status")
 def get_transcriber_models_status():
     """返回所有 whisper 模型的下载状态（含用户自定义模型）。"""
     from app.transcriber.whisper_models import get_registry
-    statuses = []
-    for size in get_registry().visible_model_names():
-        downloaded = _check_whisper_model_exists(size, "whisper")
-        statuses.append(dl_state.status_row(size, downloaded))
+    names = list(get_registry().visible_model_names())
+    downloaded_map = _scan_downloaded_models(names)
+    statuses = [dl_state.status_row(size, downloaded_map.get(size, False)) for size in names]
 
     # 也检查 mlx-whisper（仅 macOS）
     mlx_available = platform.system() == "Darwin"
@@ -539,6 +590,8 @@ def _do_download_whisper(model_size: str):
         msg = _friendly_download_error(e)
         logger.error(f"whisper 模型下载失败: {model_size}, {e}")
         dl_state.mark_failed(model_size, msg)
+    finally:
+        _invalidate_models_status_cache()
 
 
 def _do_download_mlx_whisper(model_size: str):
@@ -576,6 +629,8 @@ def _do_download_mlx_whisper(model_size: str):
         msg = _friendly_download_error(e)
         logger.error(f"mlx-whisper 模型下载失败: {model_size}, {e}")
         dl_state.mark_failed(key, msg)
+    finally:
+        _invalidate_models_status_cache()
 
 
 @router.post("/transcriber_download")

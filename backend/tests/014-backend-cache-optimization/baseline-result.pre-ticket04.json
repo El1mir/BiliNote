@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-10-14T23:41:25",
+  "results": [
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "cache": "off",
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "cache": "off",
+        "p50_ms": 162.89,
+        "p95_ms": 174.86,
+        "min_ms": 146.85,
+        "max_ms": 174.86,
+        "open_calls_per_round": 240.0,
+        "stat_calls_per_round": 1113.0,
+        "bytes_read_per_round": 70445.8,
+        "cold_ms": 167.33,
+        "cold_open_calls": 404,
+        "cold_stat_calls": 807
+      },
+      "single_status": {
+        "p50_ms": 3.22,
+        "open_calls_per_call": 2.0,
+        "stat_calls_per_call": 25.4
+      },
+      "task_list": {
+        "p50_ms": 162.27,
+        "p95_ms": 172.03,
+        "open_calls_per_call": 210.8,
+        "stat_calls_per_call": 1970.6,
+        "bytes_read_per_call": 1711560.0
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.54,
+        "per_row_file_reads_p50_ms": 152.64,
+        "open_calls_per_row": 1.03
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 40.86,
+          "p95_ms": 41.65,
+          "open_calls_per_call": 3.0,
+          "stat_calls_per_call": 315.8,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 41.03,
+          "p95_ms": 41.85,
+          "open_calls_per_call": 3.8,
+          "stat_calls_per_call": 300.2,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 6.78,
+          "p95_ms": 7.48,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 85.2,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.98,
+          "p95_ms": 5.23,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 39.2,
+          "ok": true
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.57,
+        "p95_ms": 1.94,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 13.8,
+        "bytes_written_per_write": 237
+      }
+    },
+    {
+      "task_count": 200,
+      "repeat": 5,
+      "cache": "on",
+      "batch_poll": {
+        "task_count": 200,
+        "rounds": 5,
+        "cache": "on",
+        "p50_ms": 5.37,
+        "p95_ms": 5.76,
+        "min_ms": 5.25,
+        "max_ms": 5.76,
+        "open_calls_per_round": 4.2,
+        "stat_calls_per_round": 12.8,
+        "bytes_read_per_round": 1285.2,
+        "cold_ms": 159.65,
+        "cold_open_calls": 403,
+        "cold_stat_calls": 811
+      },
+      "single_status": {
+        "p50_ms": 2.87,
+        "open_calls_per_call": 5.2,
+        "stat_calls_per_call": 12.4
+      },
+      "task_list": {
+        "p50_ms": 196.61,
+        "p95_ms": 203.15,
+        "open_calls_per_call": 204.4,
+        "stat_calls_per_call": 2060.4,
+        "bytes_read_per_call": 1711560.0
+      },
+      "task_list_breakdown": {
+        "rows": 200,
+        "sql_only_p50_ms": 2.68,
+        "per_row_file_reads_p50_ms": 150.25,
+        "open_calls_per_row": 1.05
+      },
+      "readonly_endpoints": {
+        "/api/sys_health": {
+          "status_code": 200,
+          "p50_ms": 39.24,
+          "p95_ms": 40.13,
+          "open_calls_per_call": 0.6,
+          "stat_calls_per_call": 331.8,
+          "ok": true
+        },
+        "/api/deploy_status": {
+          "status_code": 200,
+          "p50_ms": 40.18,
+          "p95_ms": 41.7,
+          "open_calls_per_call": 3.0,
+          "stat_calls_per_call": 329.8,
+          "ok": true
+        },
+        "/api/transcriber_models_status": {
+          "status_code": 200,
+          "p50_ms": 6.71,
+          "p95_ms": 6.79,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 85.8,
+          "ok": true
+        },
+        "/api/transcriber_config": {
+          "status_code": 200,
+          "p50_ms": 4.43,
+          "p95_ms": 4.72,
+          "open_calls_per_call": 0.0,
+          "stat_calls_per_call": 39.4,
+          "ok": true
+        }
+      },
+      "status_write": {
+        "p50_ms": 1.51,
+        "p95_ms": 1.93,
+        "open_calls_per_write": 0.0,
+        "stat_calls_per_write": 13.0,
+        "bytes_written_per_write": 237
+      }
+    }
+  ]
+}

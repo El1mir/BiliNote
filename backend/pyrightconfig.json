@@ -1,0 +1,13 @@
+{
+  "//": "本文件存在的唯一原因：让 pyright/LSP 能解析 backend/.venv 里的第三方包（pytest 等）。",
+  "//why": "pi-lens 的 LSP 与独立 pyright 在本机都无法自动发现 backend/.venv（会自动落到系统 Python 3.13 的 site-packages），导致每个 `import pytest` 的测试文件都报 reportMissingImports。显式把 venv 的 site-packages 列进 extraPaths 即解决——实测 pyright 确实读取了这个 extraPath（--verbose 输出里可见），但它排在自动发现的搜索路径之后，所以同样要写进下面两项。",
+  "venvPath": "C:/Users/Administrator/Desktop/prjs/BiliNote/backend",
+  "venv": ".venv",
+  "extraPaths": [
+    "C:/Users/Administrator/Desktop/prjs/BiliNote/backend",
+    "C:/Users/Administrator/Desktop/prjs/BiliNote/backend/.venv/Lib/site-packages"
+  ],
+  "pythonVersion": "3.11",
+  "include": ["app", "tests", "events", "main.py"],
+  "exclude": ["**/__pycache__", ".venv", ".ruff_cache", "note_results", "data"]
+}
