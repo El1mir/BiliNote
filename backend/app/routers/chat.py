@@ -1,8 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
-from app.services.chat_service import chat as chat_service
-from app.services.vector_store import VectorStoreManager
 from app.utils.logger import get_logger
 from app.utils.response import ResponseWrapper as R
 
@@ -32,6 +30,8 @@ class AskRequest(BaseModel):
 def _do_index(task_id: str):
     """后台执行索引任务。"""
     try:
+        from app.services.vector_store import VectorStoreManager
+
         _index_status[task_id] = "indexing"
         store = VectorStoreManager()
         store.index_task(task_id)
@@ -49,6 +49,8 @@ def index_task(data: IndexRequest, background_tasks: BackgroundTasks):
         return R.success(msg="正在索引中")
 
     # 如果已经索引过，直接返回
+    from app.services.vector_store import VectorStoreManager
+
     store = VectorStoreManager()
     if store.is_indexed(data.task_id):
         _index_status[data.task_id] = "indexed"
@@ -69,11 +71,15 @@ def chat_status(task_id: str):
             return R.success(data={"status": status, "indexed": status == "indexed"})
 
         # 内存没有记录，检查持久化
+        from app.services.vector_store import VectorStoreManager
+
         store = VectorStoreManager()
         indexed = store.is_indexed(task_id)
         if indexed:
             _index_status[task_id] = "indexed"
-        return R.success(data={"status": "indexed" if indexed else "idle", "indexed": indexed})
+        return R.success(
+            data={"status": "indexed" if indexed else "idle", "indexed": indexed}
+        )
     except Exception as e:
         logger.error(f"查询索引状态失败: {e}")
         return R.success(data={"status": "idle", "indexed": False})
@@ -83,6 +89,8 @@ def chat_status(task_id: str):
 def ask_question(data: AskRequest):
     """基于笔记内容的 RAG 问答。"""
     try:
+        from app.services.chat_service import chat as chat_service
+
         history = [{"role": m.role, "content": m.content} for m in data.history]
         result = chat_service(
             task_id=data.task_id,
