@@ -263,7 +263,8 @@ class NoteGenerator:
         link: bool = False,
         screenshot: bool = False,
         _format: Optional[List[str]] = None,
-        style: Optional[str] = None,
+        scene: Optional[str] = None,
+        detail: Optional[str] = None,
         extras: Optional[str] = None,
         output_path: Optional[str] = None,
         video_understanding: bool = False,
@@ -289,7 +290,8 @@ class NoteGenerator:
         :param link: 是否在笔记中插入视频片段链接
         :param screenshot: 是否在笔记中替换 Screenshot 标记为图片
         :param _format: 包含 'link' 或 'screenshot' 等字符串的列表，决定后续处理
-        :param style: GPT 生成笔记的风格
+        :param scene: 笔记场景（life / academic / professional，见 spec 015）
+        :param detail: 篇幅详略（brief / detailed，见 spec 015）
         :param extras: 额外参数，传递给 GPT
         :param output_path: 下载输出目录（可选）
         :param video_understanding: 是否需要视频拼图理解（生成缩略图）
@@ -613,7 +615,8 @@ class NoteGenerator:
                 link=link,
                 screenshot=screenshot,
                 formats=_format or [],
-                style=style,
+                scene=scene,
+                detail=detail,
                 extras=extras,
                 video_img_urls=prompt_img_urls,
                 ocr_reference=ocr_reference,
@@ -1968,7 +1971,8 @@ class NoteGenerator:
         link: bool,
         screenshot: bool,
         formats: List[str],
-        style: Optional[str],
+        scene: Optional[str],
+        detail: Optional[str],
         extras: Optional[str],
         video_img_urls: List[str],
         ocr_assist: bool = False,
@@ -1986,7 +1990,8 @@ class NoteGenerator:
         :param link: 是否在笔记中插入链接
         :param screenshot: 是否在笔记中生成截图占位
         :param formats: 包含 'link' 或 'screenshot' 的列表
-        :param style: GPT 输出风格
+        :param scene: 笔记场景（见 spec 015）
+        :param detail: 篇幅详略（见 spec 015）
         :param extras: GPT 额外参数
         :param ocr_assist: 是否走 OCR 辅助路径（决定截图指令的形态）
         :param approved_shots: 判定通过的截图清单，供提示词生成 [[SHOT-n]] 对照表
@@ -2013,7 +2018,8 @@ class NoteGenerator:
             video_img_urls=video_img_urls,
             link=link,
             _format=formats,
-            style=style,
+            scene=scene,
+            detail=detail,
             extras=extras,
             checkpoint_key=task_id,
             # spec 008 ticket 02：OCR 辅助模式下截图指令换成编号占位符版本

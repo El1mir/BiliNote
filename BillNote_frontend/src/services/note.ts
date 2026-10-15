@@ -74,7 +74,8 @@ export const generateNote = async (data: {
   quality: string
   task_id?: string
   format: Array<string>
-  style: string
+  scene: string
+  detail: string
   extras?: string
   video_understanding?: boolean
   video_interval?: number
@@ -238,7 +239,8 @@ export interface BatchGeneratePayload {
   items: BatchGenerateItem[]
   quality: string
   format?: Array<string>
-  style?: string
+  scene?: string
+  detail?: string
   extras?: string
   screenshot?: boolean
   link?: boolean

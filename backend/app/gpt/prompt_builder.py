@@ -7,17 +7,53 @@ note_formats = [
     {'label': 'AI总结', 'value': 'summary'}
 ]
 
-note_styles = [
-    {'label': '精简', 'value': 'minimal'},
-    {'label': '详细', 'value': 'detailed'},
-    {'label': '学术', 'value': 'academic'},
-    {"label": '教程',"value": 'tutorial', },
-    {'label': '小红书', 'value': 'xiaohongshu'},
-    {'label': '生活向', 'value': 'life_journal'},
-    {'label': '任务导向', 'value': 'task_oriented'},
-    {'label': '商业风格', 'value': 'business'},
-    {'label': '会议纪要', 'value': 'meeting_minutes'}
-]
+# 场景（scene）与详略（detail）是两个正交维度：场景定内容与措辞，详略定覆盖范围。
+# 取值见 spec 015。前端 web 与浏览器扩展各自维护一份同名清单，一致性由
+# backend/tests/015-note-preset-scene-and-detail/test_preset_vocabulary_sync.py 守住。
+#
+# 每段都以 **粗体标签** 起头而不是 Markdown 标题：与下面的 format 片段写法一致，
+# 避免模型把新增的标题当成要复现的正文结构。
+#
+# 所有「按勾选追加」的片段（本文件的 format 函数，以及 prompt.py 里的 LINK / SCREENSHOT）
+# 都不写行首编号：它们一次只追加一条，编号既会让模型看到孤立的「7.」，也无法保证连续
+# （没勾目录时就会从 8. 直接跳到前后都没有）。编号只留给 BASE_PROMPT 里那六条恒定原则。
+SCENE_PROMPTS = {
+    "life": (
+        "**场景：生活**\n"
+        "读者是看视频的本人，几个月后回来翻看这份笔记回忆当时。\n"
+        "- 保留具体的人名、地点、时间、价格、数字：它们比结论更值得留。\n"
+        "- 用第一人称记下当时的感受，以及这件事为什么值得记。\n"
+        "- 一段话讲一件事，段与段之间空行分开。"
+    ),
+    "academic": (
+        "**场景：学术**\n"
+        "读者要引用或复述这份内容，可能在写论文、做汇报、备考。\n"
+        "- 术语首次出现时同时给出原文（英文 / 拉丁文），此后统一用同一个译名。\n"
+        "- 一个论点一小节：先写结论句，再写支撑它的证据或推导。\n"
+        "- 视频里没有讲清、或与常识冲突的地方，标注「视频未说明」，照实留白。\n"
+        "- 引用具体说法时附上时间点，便于回查。"
+    ),
+    "professional": (
+        "**场景：专业**\n"
+        "读者要照着这份笔记把内容用起来：做项目、跑流程、上手工具。\n"
+        "- 把可执行的部分拆成有序步骤，每步写清「做什么」和「怎么判断这一步成了」。\n"
+        "- 命令、参数、配置项原样抄进代码块，不改写、不省略。\n"
+        "- 视频一带而过、实际操作会卡住的地方，单独写成「待确认」。\n"
+        "- Docker、token、embedding 这类术语保留原词。"
+    ),
+}
+
+DETAIL_PROMPTS = {
+    "brief": (
+        "**篇幅：精简**\n"
+        "只写结论层：每个小节一到三句话，给出该节的结论与关键步骤。"
+    ),
+    "detailed": (
+        "**篇幅：详细**\n"
+        "逐段覆盖字幕内容：每个小节把该段的例子、数字、推导、原话都写进去。\n"
+        "小节按视频的段落顺序排列。"
+    ),
+}
 
 
 # 生成 BASE_PROMPT 函数
@@ -26,7 +62,8 @@ def generate_base_prompt(
     segment_text,
     tags,
     _format=None,
-    style=None,
+    scene=None,
+    detail=None,
     extras=None,
     ocr_assist=False,
     approved_shots=None,
@@ -62,9 +99,12 @@ def generate_base_prompt(
             for f in _format
         ])
 
-    # 根据用户选择的笔记风格添加描述
-    if style:
-        prompt += "\n" + get_style_format(style)
+    # 根据用户选择的笔记场景与详略添加描述。
+    # 顺序固定为「场景 → 详略」：场景先定读者与措辞，详略再定覆盖范围。
+    if scene:
+        prompt += "\n" + get_scene_prompt(scene)
+    if detail:
+        prompt += "\n" + get_detail_prompt(detail)
 
     # 添加额外内容
     if extras:
@@ -87,56 +127,38 @@ def get_format_function(format_type, ocr_assist=False, approved_shots=None):
     return format_map.get(format_type, lambda: '')()
 
 
-# 风格描述的处理
-def get_style_format(style):
-    style_map = {
-        'minimal': '1. **精简信息**: 仅记录最重要的内容，简洁明了。',
-        'detailed': '2. **详细记录**: 包含完整的内容和每个部分的详细讨论。需要尽可能多的记录视频内容，最好详细的笔记',
-        'academic': '3. **学术风格**: 适合学术报告，正式且结构化。',
-        'xiaohongshu': '''4. **小红书风格**: 
-### 擅长使用下面的爆款关键词：
-好用到哭，大数据，教科书般，小白必看，宝藏，绝绝子神器，都给我冲,划重点，笑不活了，YYDS，秘方，我不允许，压箱底，建议收藏，停止摆烂，上天在提醒你，挑战全网，手把手，揭秘，普通女生，沉浸式，有手就能做吹爆，好用哭了，搞钱必看，狠狠搞钱，打工人，吐血整理，家人们，隐藏，高级感，治愈，破防了，万万没想到，爆款，永远可以相信被夸爆手残党必备，正确姿势
-
-### 采用二极管标题法创作标题：
-- 正面刺激法:产品或方法+只需1秒 (短期)+便可开挂（逆天效果）
-- 负面刺激法:你不XXX+绝对会后悔 (天大损失) +(紧迫感)
-利用人们厌恶损失和负面偏误的心理
-
-### 写作技巧
-1. 使用惊叹号、省略号等标点符号增强表达力，营造紧迫感和惊喜感。
-2. **使用emoji表情符号，来增加文字的活力**
-3. 采用具有挑战性和悬念的表述，引发读、“无敌者好奇心，例如“暴涨词汇量”了”、“拒绝焦虑”等
-4. 利用正面刺激和负面激，诱发读者的本能需求和动物基本驱动力，如“离离原上谱”、“你不知道的项目其实很赚”等
-5. 融入热点话题和实用工具，提高文章的实用性和时效性，如“2023年必知”、“chatGPT狂飙进行时”等
-6. 描述具体的成果和效果，强调标题中的关键词，使其更具吸引力，例如“英语底子再差，搞清这些语法你也能拿130+”
-7. 使用吸引人的标题：''',
-
-        'life_journal': '5. **生活向**: 记录个人生活感悟，情感化表达。',
-        'task_oriented': '6. **任务导向**: 强调任务、目标，适合工作和待办事项。',
-        'business': '7. **商业风格**: 适合商业报告、会议纪要，正式且精准。',
-        'meeting_minutes': '8. **会议纪要**: 适合商业报告、会议纪要，正式且精准。',
-        "tutorial":"9.**教程笔记**:尽可能详细的记录教程,特别是关键点和一些重要的结论步骤"
-    }
-    return style_map.get(style, '')
+# 场景描述的处理
+def get_scene_prompt(scene):
+    """场景片段：读者是谁、他拿这份笔记做什么、内容与措辞怎么定。"""
+    if not scene:
+        return ''
+    return SCENE_PROMPTS.get(scene, '')
 
 
-# 格式化输出内容
+# 详略描述的处理
+def get_detail_prompt(detail):
+    """详略片段：只定覆盖范围，不动内容与措辞。"""
+    if not detail:
+        return ''
+    return DETAIL_PROMPTS.get(detail, '')
+
+
 def get_toc_format():
     return '''
-    9. **目录**: 自动生成一个基于 `##` 级标题的目录。不需要插入原片跳转
+    **目录**: 自动生成一个基于 `##` 级标题的目录。不需要插入原片跳转
     '''
 
 
 def get_link_format():
     return '''
-    10. **原片跳转**: 为每个主要章节添加时间戳，使用格式 `*Content-[mm:ss]`。 
+    **原片跳转**: 为每个主要章节添加时间戳，使用格式 `*Content-[mm:ss]`。 
     重要：**始终**在章节标题前加上 `*Content` 前缀，例如：`AI 的发展史 *Content-[01:23]`。一定是标题在前 插入标记在后
     '''
 
 
 def get_screenshot_format():
     return '''
-11. **原片截图**:你收到的截图一般是一个网格，网格的每张图片就是一个时间点，左上角会包含时间mm:ss的格式，请你结合我发你的图片插入截图提示，请你帮助用户更好的理解视频内容，请你认真的分析每个图片和对应的转写文案，插入最合适的内容来备注用户理解，请一定按照这个格式 返回否则系统无法解析：
+**原片截图**:你收到的截图一般是一个网格，网格的每张图片就是一个时间点，左上角会包含时间mm:ss的格式，请你结合我发你的图片插入截图提示，请你帮助用户更好的理解视频内容，请你认真的分析每个图片和对应的转写文案，插入最合适的内容来备注用户理解，请一定按照这个格式 返回否则系统无法解析：
 - 格式：`*Screenshot-[mm:ss]`
 
     '''
@@ -153,12 +175,12 @@ def get_ocr_assist_screenshot_format(approved_shots):
 
     if not approved_shots:
         return '''
-11. **原片截图**: 本次没有任何画面通过价值判定，请不要插入任何截图标记。
+**原片截图**: 本次没有任何画面通过价值判定，请不要插入任何截图标记。
 '''
 
     table = render_shot_table(approved_shots)
     return f'''
-11. **原片截图**: 本次已由画面价值判定筛出下列 {len(approved_shots)} 个截图点。
+**原片截图**: 本次已由画面价值判定筛出下列 {len(approved_shots)} 个截图点。
 你必须在正文最合适的位置为**每一个**编号插入一次标记，格式严格为 `[[SHOT-n]]`：
 
 {table}
@@ -172,5 +194,5 @@ def get_ocr_assist_screenshot_format(approved_shots):
 
 def get_summary_format():
     return '''
-    12. **AI总结**: 在笔记末尾加入简短的AI生成总结,并且二级标题 就是 AI 总结 例如 ## AI 总结。
+    **AI总结**: 在笔记末尾加入简短的AI生成总结,并且二级标题 就是 AI 总结 例如 ## AI 总结。
     '''

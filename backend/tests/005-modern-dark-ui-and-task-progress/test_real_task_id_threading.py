@@ -104,16 +104,17 @@ def test_summarize_text_uses_real_task_id(tmp_path, monkeypatch):
 
     markdown_cache = tmp_path / "abc123_markdown.md"
     markdown = generator._summarize_text(
-        _audio_meta(),
-        _transcript(),
-        FakeGpt(),
-        markdown_cache,
-        True,
-        False,
-        ["link"],
-        None,
-        None,
-        [],
+        audio_meta=_audio_meta(),
+        transcript=_transcript(),
+        gpt=FakeGpt(),
+        markdown_cache_file=markdown_cache,
+        link=True,
+        screenshot=False,
+        formats=["link"],
+        scene=None,
+        detail=None,
+        extras=None,
+        video_img_urls=[],
         task_id="real-task-id",
     )
 
@@ -157,16 +158,17 @@ def test_summarize_failure_records_real_task_id(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError):
         generator._summarize_text(
-            _audio_meta(),
-            _transcript(),
-            BoomGpt(),
-            tmp_path / "abc123_markdown.md",
-            True,
-            False,
-            ["link"],
-            None,
-            None,
-            [],
+            audio_meta=_audio_meta(),
+            transcript=_transcript(),
+            gpt=BoomGpt(),
+            markdown_cache_file=tmp_path / "abc123_markdown.md",
+            link=True,
+            screenshot=False,
+            formats=["link"],
+            scene=None,
+            detail=None,
+            extras=None,
+            video_img_urls=[],
             task_id="real-task-id",
         )
 

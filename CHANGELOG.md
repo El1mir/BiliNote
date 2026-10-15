@@ -6,6 +6,10 @@
 
 ### Changed
 
+- **笔记风格预设改为「场景 × 详略」两个正交维度（spec 015，⚠️ 破坏性变更）**：原先把两个独立维度压平成 9 个互斥预设（`minimal` / `detailed` / `academic` / `xiaohongshu` / `life_journal` / `task_oriented` / `business` / `meeting_minutes` / `tutorial`），其中 `business` 与 `meeting_minutes` 除标号外逐字相同、`xiaohongshu` 一段就占了全部风格提示词体积的 12 倍、`tutorial` 的段号还与「目录」片段的编号撞号（都叫 `9.`）。现在请求字段 `style` 拆成 **`scene`**（`life` / `academic` / `professional`）与 **`detail`**（`brief` / `detailed`），两轴提示词可自由组合；提示词片段本身不再带编号。
+  - **破坏性变更**：`style` 被直接移除，**不做旧值映射** —— 存量历史 payload 里的 `style` 在重试或重启恢复时会静默拿不到场景与详略指令（笔记仍能生成，只是少了这两条约束）。前端与浏览器扩展的常量、表单、展示随之改造（spec 015 ticket 02 / 03）。
+  - **主提示词 `BASE_PROMPT` 一并重写（spec 015 ticket 04）**：原先它写死了「用户宁可笔记长一些，也不要漏掉内容」「**不要**以『精简』为由删掉知识点」—— 与新增的「篇幅：精简」**直接对立**，同一份提示词里两句话互相拉扯。现在改成「默认完整；任务里指定了篇幅就以任务为准」，并把「精简」明确定义为**压缩表达**（「不再逐段展开，不是删内容」），两条规则才可能共存。六条写作原则逐条重过：补上原本缺失的**标题层级约定**（`## ` / `### `，此前只有勾选目录或原片跳转时才被间接提到）、把 6 行编号转义说明压成 1 行、把两句重复的逃逸口改成一条明确的优先级规则。
+  - **所有「按勾选追加」的片段去掉行首编号**：format 四项、OCR 截图分支、以及历史 provider 用的 `LINK` / `SCREENSHOT`。这些片段一次只追加一条，编号**无法保证连续**（没勾目录时就会从 8. 直接跳到 9.），孤立数字只消耗注意力。编号此后只留给 `BASE_PROMPT` 里那六条恒定原则。
 - **后端任务状态与只读端点缓存优化（spec 014）**：三条高频路径不再重复做同步系统调用。端到端实测（N=200，`cd backend && .venv\Scripts\python.exe tests\014-backend-cache-optimization\baseline_measure.py --tasks 200 --repeat 5 --cache both`）：
 
   | 端点 | stat 前 → 后 | p50 前 → 后 |
@@ -33,6 +37,8 @@
 - 新增 `backend/pyrightconfig.json`：`pyright` 与 LSP 此前都无法发现 `backend/.venv`（会落到系统 Python 的 site-packages），导致任何 `import pytest` 的测试文件误报 `reportMissingImports`。
 - `GLOSSARY.md` 补两组概念：**权威 / 投影**（任务状态的两份来源地位不平等）与**缓存槽 / 陈旧窗口**（槽丢了只是慢一次，权威丢了才是丢数据）。
 - 全量后端回归 **777 passed**（历史基线 653，无退化）；pyright 与 ruff 对本次改动零新增问题。
+- 新增 `specs/015-note-preset-scene-and-detail/`（spec + 4 张实现工单）与 `backend/tests/015-note-preset-scene-and-detail/`（后端 40 用例，含一份把前端 / 扩展 / 后端三处词表钉在一起的同步测试，以及一份用 `string.Formatter` 钉住 `BASE_PROMPT` 占位符集合的契约测试；前端 `BillNote_frontend/tests/015-note-preset-scene-and-detail/` 另有一份词表测试）。全量后端回归 **817 passed**（历史基线 777）。
+- `GLOSSARY.md` 再补一组概念：**场景 / 详略**（笔记呈现方式的两个正交维度，组合数相乘而非相加）。
 
 ## [2.4.4] - 2026-06-23
 

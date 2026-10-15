@@ -9,8 +9,10 @@ import { asText } from '@/utils/text'
 
 interface NoteHeaderProps {
   modelName: string
-  style: string
-  noteStyles: { value: string; label: string }[]
+  scene: string
+  detail: string
+  noteScenes: { value: string; label: string }[]
+  noteDetails: { value: string; label: string }[]
   onCopy: () => void
   onDownload: () => void
   createAt?: string | Date
@@ -24,8 +26,10 @@ interface NoteHeaderProps {
 
 export function MarkdownHeader({
   modelName,
-  style,
-  noteStyles,
+  scene,
+  detail,
+  noteScenes,
+  noteDetails,
   onCopy,
   onDownload,
   createAt,
@@ -51,7 +55,9 @@ export function MarkdownHeader({
     setCopied(true)
   }
 
-  const styleName = asText(noteStyles.find(v => v.value === style)?.label || style, '未知风格')
+  // 老任务没有 scene / detail（spec 015 决策 4 不做旧值映射），此时为空串 → 不渲染徽标。
+  const sceneName = noteScenes.find(v => v.value === scene)?.label || scene
+  const detailName = noteDetails.find(v => v.value === detail)?.label || detail
 
   const formatDate = (date: string | Date | undefined) => {
     if (!date) return ''
@@ -75,9 +81,16 @@ export function MarkdownHeader({
         <Badge variant="secondary" className="bg-pink-100 text-pink-700 hover:bg-pink-200">
           {asText(modelName, '未知模型')}
         </Badge>
-        <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
-          {styleName}
-        </Badge>
+        {sceneName && (
+          <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
+            {sceneName}
+          </Badge>
+        )}
+        {detailName && (
+          <Badge variant="secondary" className="bg-violet-100 text-violet-700 hover:bg-violet-200">
+            {detailName}
+          </Badge>
+        )}
 
         {createAt && (
           <div className="text-muted-foreground text-sm">创建时间: {formatDate(createAt)}</div>

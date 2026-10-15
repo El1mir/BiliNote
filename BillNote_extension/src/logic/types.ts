@@ -38,7 +38,8 @@ export interface GenerateRequest {
   screenshot?: boolean
   link?: boolean
   format?: string[]
-  style?: string
+  scene?: string
+  detail?: string
   extras?: string
   video_understanding?: boolean
   video_interval?: number
@@ -83,25 +84,24 @@ export interface TaskRecord {
   title?: string
 }
 
-// 与 backend/app/gpt/prompt_builder.py note_styles 一一对齐
-export type NoteStyle =
-  | 'minimal' | 'detailed' | 'academic' | 'tutorial'
-  | 'xiaohongshu' | 'life_journal' | 'task_oriented'
-  | 'business' | 'meeting_minutes'
+// spec 015：与 backend/app/gpt/prompt_builder.py 的 SCENE_PROMPTS 一一对齐
+export type NoteScene = 'life' | 'academic' | 'professional'
+
+// spec 015：与 backend/app/gpt/prompt_builder.py 的 DETAIL_PROMPTS 一一对齐
+export type NoteDetail = 'brief' | 'detailed'
 
 // 与 backend/app/gpt/prompt_builder.py note_formats 一一对齐
 export type NoteFormat = 'toc' | 'link' | 'screenshot' | 'summary'
 
-export const NOTE_STYLES: Array<{ value: NoteStyle, label: string }> = [
-  { value: 'minimal', label: '精简' },
-  { value: 'detailed', label: '详细' },
-  { value: 'tutorial', label: '教程' },
+export const NOTE_SCENES: Array<{ value: NoteScene, label: string }> = [
+  { value: 'life', label: '生活' },
   { value: 'academic', label: '学术' },
-  { value: 'xiaohongshu', label: '小红书' },
-  { value: 'life_journal', label: '生活向' },
-  { value: 'task_oriented', label: '任务导向' },
-  { value: 'business', label: '商业风格' },
-  { value: 'meeting_minutes', label: '会议纪要' },
+  { value: 'professional', label: '专业' },
+]
+
+export const NOTE_DETAILS: Array<{ value: NoteDetail, label: string }> = [
+  { value: 'brief', label: '精简' },
+  { value: 'detailed', label: '详细' },
 ]
 
 export const NOTE_FORMATS: Array<{ value: NoteFormat, label: string }> = [
@@ -120,7 +120,8 @@ export interface Settings {
   formats: NoteFormat[]
   screenshot: boolean
   link: boolean
-  style: NoteStyle
+  scene: NoteScene
+  detail: NoteDetail
   extras: string
   // 多模态视频理解：抽帧拼图喂给视觉模型，提升画面相关问题的回答质量
   // 要求所选 model 是视觉模型（如 gpt-4o / gemini / claude-opus 系列），文字模型会忽略图片

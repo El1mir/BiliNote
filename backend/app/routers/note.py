@@ -81,7 +81,8 @@ class VideoRequest(BaseModel):
     link: Optional[bool] = False
     # pi-lens-ignore: python-mutable-class-attr
     format: Optional[list] = []
-    style: str = None
+    scene: Optional[str] = None
+    detail: Optional[str] = None
     extras: Optional[str] = None
     video_understanding: Optional[bool] = False
     video_interval: Optional[int] = 0
@@ -966,7 +967,8 @@ def _build_task_kwargs(
         "link": bool(getattr(data, "link", False)),
         "screenshot": bool(getattr(data, "screenshot", False)),
         "_format": getattr(data, "format", None) or [],
-        "style": getattr(data, "style", None),
+        "scene": getattr(data, "scene", None),
+        "detail": getattr(data, "detail", None),
         "extras": getattr(data, "extras", None),
         "video_understanding": bool(getattr(data, "video_understanding", False)),
         "video_interval": getattr(data, "video_interval", 0) or 0,
@@ -1027,7 +1029,8 @@ def run_note_task(
     model_name: str = None,
     provider_id: str = None,
     _format: list = None,
-    style: str = None,
+    scene: str = None,
+    detail: str = None,
     extras: str = None,
     video_understanding: bool = False,
     video_interval=0,
@@ -1073,7 +1076,8 @@ def run_note_task(
             provider_id=provider_id,
             link=link,
             _format=_format,
-            style=style,
+            scene=scene,
+            detail=detail,
             extras=extras,
             screenshot=screenshot,
             video_understanding=video_understanding,
@@ -1098,7 +1102,8 @@ def run_note_task(
         "link": link,
         "screenshot": screenshot,
         "_format": _format,
-        "style": style,
+        "scene": scene,
+        "detail": detail,
         "extras": extras,
         "video_understanding": video_understanding,
         "video_interval": video_interval,
@@ -1277,7 +1282,8 @@ class BatchGenerateRequest(BaseModel):
     provider_id: Optional[str] = None
     # pi-lens-ignore: python-mutable-class-attr
     format: Optional[list] = []
-    style: Optional[str] = None
+    scene: Optional[str] = None
+    detail: Optional[str] = None
     extras: Optional[str] = None
     screenshot: Optional[bool] = False
     link: Optional[bool] = False

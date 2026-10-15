@@ -14,16 +14,16 @@ export const noteFormats = [
   { label: 'AI总结', value: 'summary' },
 ] as const
 
-export const noteStyles = [
-  { label: '精简', value: 'minimal' },
-  { label: '详细', value: 'detailed' },
-  { label: '教程', value: 'tutorial' },
+/* spec 015：笔记预设是「场景 × 详略」两个正交维度，不再是九个互斥的风格。 */
+export const noteScenes = [
+  { label: '生活', value: 'life' },
   { label: '学术', value: 'academic' },
-  { label: '小红书', value: 'xiaohongshu' },
-  { label: '生活向', value: 'life_journal' },
-  { label: '任务导向', value: 'task_oriented' },
-  { label: '商业风格', value: 'business' },
-  { label: '会议纪要', value: 'meeting_minutes' },
+  { label: '专业', value: 'professional' },
+] as const
+
+export const noteDetails = [
+  { label: '精简', value: 'brief' },
+  { label: '详细', value: 'detailed' },
 ] as const
 
 export const videoPlatforms = [

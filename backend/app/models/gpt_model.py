@@ -11,7 +11,9 @@ class GPTSource:
     tags:str
     screenshot: Optional[bool] = False
     link: Optional[bool] = False
-    style: Optional[str] = None
+    # spec 015：场景与详略是两个正交维度，取值见 app/gpt/prompt_builder.py
+    scene: Optional[str] = None
+    detail: Optional[str] = None
     extras: Optional[str] = None
     _format: Optional[list] = None
     video_img_urls:  Optional[list] = None

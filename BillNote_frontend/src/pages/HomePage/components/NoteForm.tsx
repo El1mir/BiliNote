@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/select.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
-import { noteStyles, noteFormats, videoPlatforms } from '@/constant/note.ts'
+import { noteDetails, noteFormats, noteScenes, videoPlatforms } from '@/constant/note.ts'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
@@ -52,7 +52,8 @@ const formSchema = z
     screenshot: z.boolean().optional(),
     link: z.boolean().optional(),
     format: z.array(z.string()).default([]),
-    style: z.string().nonempty('请选择笔记生成风格'),
+    scene: z.string().nonempty('请选择笔记场景'),
+    detail: z.string().nonempty('请选择笔记详略'),
     extras: z.string().optional(),
     video_understanding: z.boolean().optional(),
     video_interval: z.coerce.number().min(1).max(30).default(6).optional(),
@@ -155,7 +156,8 @@ const NoteForm = () => {
     defaultValues: {
       platform: 'bilibili',
       quality: 'medium',
-      style: 'minimal',
+      scene: 'life',
+      detail: 'detailed',
       video_interval: 6,
       sampling_mode: 'interval',
       max_frames: 60,
@@ -190,7 +192,8 @@ const NoteForm = () => {
     form.reset({
       platform: formData.platform || 'bilibili',
       video_url: formData.video_url || '',
-      style: formData.style || 'minimal',
+      scene: formData.scene || 'life',
+      detail: formData.detail || 'detailed',
       quality: normalizeQuality(formData.quality),
       extras: formData.extras || '',
       screenshot: formData.screenshot ?? false,
@@ -323,7 +326,8 @@ const NoteForm = () => {
     return {
       quality: values.quality,
       format: values.format,
-      style: values.style,
+      scene: values.scene,
+      detail: values.detail,
       extras: values.extras,
       screenshot: values.screenshot,
       link: values.link,
@@ -480,20 +484,21 @@ const NoteForm = () => {
             )}
           />
           <div className="grid grid-cols-2 gap-2">
-            <FormItem>
+            {/* 模型选择器独占整行：它与两个下拉同挤一行时，按钮文字在窄面板下会被压掉 */}
+            <FormItem className="col-span-2">
               <SectionHeader title="当前模型" tip="模型在设置 → 通用设置中统一切换" />
               <Button type="button" variant="outline" onClick={() => navigate('/settings/general')}>
                 前往通用设置
               </Button>
             </FormItem>
 
-            {/* 笔记风格 */}
+            {/* 笔记场景 × 笔记详略（spec 015：两个正交维度，并排展示） */}
             <FormField
               control={form.control}
-              name="style"
+              name="scene"
               render={({ field }) => (
                 <FormItem>
-                  <SectionHeader title="笔记风格" tip="选择生成笔记的呈现风格" />
+                  <SectionHeader title="笔记场景" tip="写给谁看：生活回顾 / 学术引用 / 专业实操" />
                   <Select
                     value={field.value}
                     onValueChange={field.onChange}
@@ -505,7 +510,36 @@ const NoteForm = () => {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {noteStyles.map(({ label, value }) => (
+                      {noteScenes.map(({ label, value }) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="detail"
+              render={({ field }) => (
+                <FormItem>
+                  <SectionHeader title="笔记详略" tip="写多长：精简只留结论，详细保留推导与取舍" />
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full min-w-0 truncate">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {noteDetails.map(({ label, value }) => (
                         <SelectItem key={value} value={value}>
                           {label}
                         </SelectItem>

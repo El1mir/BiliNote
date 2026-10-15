@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue'
 import { getProviders, ping } from '~/logic/api'
 import { settings, settingsReady } from '~/logic/storage'
 import { getModelsByProvider } from '~/logic/api'
-import { NOTE_FORMATS, NOTE_STYLES, type Model, type NoteFormat, type Provider } from '~/logic/types'
+import { NOTE_DETAILS, NOTE_FORMATS, NOTE_SCENES, type Model, type NoteFormat, type Provider } from '~/logic/types'
 import { watch } from 'vue'
 
 function toggleFormat(value: NoteFormat, checked: boolean) {
@@ -124,7 +124,7 @@ onMounted(async () => {
 
     <section class="section-card">
       <h2 class="font-semibold">默认生成选项</h2>
-      <div class="grid grid-cols-2 gap-3 text-sm">
+      <div class="grid grid-cols-3 gap-3 text-sm">
         <label class="flex flex-col gap-1">
           <span class="text-gray-600">画质</span>
           <select v-model="settings.quality" class="input">
@@ -134,9 +134,15 @@ onMounted(async () => {
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记风格</span>
-          <select v-model="settings.style" class="input">
-            <option v-for="s in NOTE_STYLES" :key="s.value" :value="s.value">{{ s.label }}</option>
+          <span class="text-gray-600">笔记场景</span>
+          <select v-model="settings.scene" class="input">
+            <option v-for="s in NOTE_SCENES" :key="s.value" :value="s.value">{{ s.label }}</option>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-gray-600">笔记详略</span>
+          <select v-model="settings.detail" class="input">
+            <option v-for="d in NOTE_DETAILS" :key="d.value" :value="d.value">{{ d.label }}</option>
           </select>
         </label>
       </div>

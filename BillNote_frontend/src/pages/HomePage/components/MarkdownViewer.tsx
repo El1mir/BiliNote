@@ -19,7 +19,7 @@ import 'katex/dist/katex.min.css'
 import 'github-markdown-css/github-markdown-light.css'
 import { ScrollArea } from '@/components/ui/scroll-area.tsx'
 import { useTaskStore, readLatestMarkdown } from '@/store/taskStore'
-import { noteStyles } from '@/constant/note.ts'
+import { noteDetails, noteScenes } from '@/constant/note.ts'
 import { MarkdownHeader } from '@/pages/HomePage/components/MarkdownHeader.tsx'
 import TranscriptViewer from '@/pages/HomePage/components/transcriptViewer.tsx'
 import MarkmapEditor from '@/pages/HomePage/components/MarkmapComponent.tsx'
@@ -301,7 +301,8 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
   const [copied, setCopied] = useState(false)
   const [selectedContent, setSelectedContent] = useState<string>('')
   const [modelName, setModelName] = useState<string>('')
-  const [style, setStyle] = useState<string>('')
+  const [scene, setScene] = useState<string>('')
+  const [detail, setDetail] = useState<string>('')
   const [createTime, setCreateTime] = useState<string>('')
   // 确保baseURL没有尾部斜杠
   const baseURL = (
@@ -323,7 +324,8 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
     if (!currentTask) return
 
     setModelName(asText(currentTask.formData?.model_name, '未知模型'))
-    setStyle(asText(currentTask.formData?.style, '未知风格'))
+    setScene(asText(currentTask.formData?.scene, ''))
+    setDetail(asText(currentTask.formData?.detail, ''))
     setCreateTime(currentTask.createdAt)
     setSelectedContent(readLatestMarkdown(currentTask.markdown))
   }, [currentTask?.id, taskStatus])
@@ -426,8 +428,10 @@ const MarkdownViewer: FC<MarkdownViewerProps> = memo(({ status }) => {
     <div className="flex h-screen w-full flex-col overflow-hidden">
       <MarkdownHeader
         modelName={modelName}
-        style={style}
-        noteStyles={noteStyles}
+        scene={scene}
+        detail={detail}
+        noteScenes={noteScenes}
+        noteDetails={noteDetails}
         onCopy={handleCopy}
         onDownload={handleDownload}
         createAt={createTime}

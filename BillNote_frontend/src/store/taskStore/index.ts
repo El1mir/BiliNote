@@ -101,7 +101,7 @@ export interface Transcript {
 }
 /**
  * 提交给后端的表单快照。这里是「前端记下的表单原样」，只用于回显与重试，
- * 所以字段全部可选、并带索引签名容纳各平台的额外选项（style / format / 截图与
+ * 所以字段全部可选、并带索引签名容纳各平台的额外选项（scene / detail / format / 截图与
  * OCR 选项等）。之前实现层就是 `formData: any`，收窄成必填会打断 NoteForm 等
  * 消费方（它们提交的对象确实不含 link/screenshot）。
  */
@@ -115,7 +115,8 @@ export interface TaskFormData {
   provider_id?: string
   task_id?: string
   format?: string[]
-  style?: string
+  scene?: string
+  detail?: string
   extras?: string
   video_understanding?: boolean
   video_interval?: number

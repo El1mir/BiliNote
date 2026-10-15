@@ -115,7 +115,8 @@ class UniversalGPT(GPT):
             segment_text=self._build_segment_text(segments),
             tags=kwargs.get('tags'),
             _format=kwargs.get('_format'),
-            style=kwargs.get('style'),
+            scene=kwargs.get('scene'),
+            detail=kwargs.get('detail'),
             extras=kwargs.get('extras'),
             # spec 008 ticket 02：OCR 辅助模式下截图指令换成编号占位符版本
             ocr_assist=bool(kwargs.get('ocr_assist')),
@@ -421,7 +422,8 @@ class UniversalGPT(GPT):
             "title": source.title,
             "tags": source.tags,
             "format": source._format,
-            "style": source.style,
+            "scene": source.scene,
+            "detail": source.detail,
             "extras": source.extras,
             "video_img_urls": source.video_img_urls or [],
             # spec 008 ticket 02：OCR 辅助模式会改变提示词与截图契约，不进签名的话
@@ -617,7 +619,8 @@ class UniversalGPT(GPT):
                 title=source.title,
                 tags=source.tags,
                 _format=source._format,
-                style=source.style,
+                scene=source.scene,
+                detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
                 approved_shots=source.approved_shots
@@ -629,7 +632,8 @@ class UniversalGPT(GPT):
                 title=source.title,
                 tags=source.tags,
                 _format=source._format,
-                style=source.style,
+                scene=source.scene,
+                detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
                 approved_shots=source.approved_shots
@@ -651,7 +655,8 @@ class UniversalGPT(GPT):
                 tags=source.tags,
                 video_img_urls=chunk.image_urls,
                 _format=source._format,
-                style=source.style,
+                scene=source.scene,
+                detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
                 approved_shots=source.approved_shots

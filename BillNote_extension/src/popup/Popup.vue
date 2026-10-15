@@ -4,7 +4,7 @@ import { detectPlatform } from '~/logic/platform'
 import { settings, settingsReady, tasks, tasksReady, upsertTask } from '~/logic/storage'
 import { generateNote, getTaskStatus, resolveImageUrl } from '~/logic/api'
 import { fetchBilibiliSubtitle } from '~/logic/bilibili-subtitle'
-import { NOTE_FORMATS, NOTE_STYLES, type NoteFormat, type TaskRecord } from '~/logic/types'
+import { NOTE_DETAILS, NOTE_FORMATS, NOTE_SCENES, type NoteFormat, type TaskRecord } from '~/logic/types'
 import { getTaskDisplayTitle, normalizeVideoTitle } from '~/logic/task-display'
 
 const tabUrl = ref<string>('')
@@ -80,7 +80,8 @@ async function start() {
       format: [...formats],
       screenshot: formats.includes('screenshot'),
       link: formats.includes('link'),
-      style: settings.value.style || undefined,
+      scene: settings.value.scene || undefined,
+      detail: settings.value.detail || undefined,
       extras: settings.value.extras || undefined,
       video_understanding: settings.value.video_understanding || undefined,
       video_interval: settings.value.video_understanding ? settings.value.video_interval : undefined,
@@ -189,7 +190,7 @@ onUnmounted(() => {
     </div>
 
     <fieldset class="border rounded p-2 flex flex-col gap-2" :disabled="!supported || submitting">
-      <div class="grid grid-cols-2 gap-2 text-xs">
+      <div class="grid grid-cols-3 gap-2 text-xs">
         <label class="flex flex-col gap-1">
           <span class="text-gray-600">画质</span>
           <select v-model="settings.quality" class="border rounded px-1 py-0.5">
@@ -199,9 +200,15 @@ onUnmounted(() => {
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记风格</span>
-          <select v-model="settings.style" class="border rounded px-1 py-0.5">
-            <option v-for="s in NOTE_STYLES" :key="s.value" :value="s.value">{{ s.label }}</option>
+          <span class="text-gray-600">笔记场景</span>
+          <select v-model="settings.scene" class="border rounded px-1 py-0.5">
+            <option v-for="s in NOTE_SCENES" :key="s.value" :value="s.value">{{ s.label }}</option>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-gray-600">笔记详略</span>
+          <select v-model="settings.detail" class="border rounded px-1 py-0.5">
+            <option v-for="d in NOTE_DETAILS" :key="d.value" :value="d.value">{{ d.label }}</option>
           </select>
         </label>
       </div>

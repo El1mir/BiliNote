@@ -24,7 +24,8 @@ const BATCH_CONFIRM_THRESHOLD = 200
 export interface BatchDefaults {
   quality: string
   format?: string[]
-  style?: string
+  scene?: string
+  detail?: string
   extras?: string
   screenshot?: boolean
   link?: boolean
@@ -221,7 +222,8 @@ export default function BatchImportDialog({
       items,
       quality: defaults.quality,
       format: defaults.format,
-      style: defaults.style,
+      scene: defaults.scene,
+      detail: defaults.detail,
       extras: defaults.extras,
       screenshot: defaults.screenshot,
       link: defaults.link,

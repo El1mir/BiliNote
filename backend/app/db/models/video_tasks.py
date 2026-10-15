@@ -17,7 +17,7 @@ class VideoTask(Base):
     #
     # 为什么必须存：进程重启后要自动把中断的在途任务重新排队，而重新排队就得
     # 知道当初用的是什么参数 —— quality / model_name / provider_id / screenshot
-    # / link / format / style / extras 等。``<task_id>.status.json`` 里只有进度
+    # / link / format / scene / detail / extras 等。``<task_id>.status.json`` 里只有进度
     # 字段（status/stage/progress/...），一个生成参数都没有；光靠 video_tasks
     # 原有的四列也无从还原。没有这一列，恢复出来的任务只能用默认参数重跑，
     # 用户精心选的模型和画质会静默丢失。
