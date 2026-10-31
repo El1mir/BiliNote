@@ -332,3 +332,16 @@ ffmpg*/
 /artifacts/
 /backend/bili_note.db-shm
 /backend/bili_note.db-wal
+
+# Local agent / tooling scratch (不属于仓库内容)
+/.codegraph/
+/.dsh-ops/
+/.scratch/
+/.agent-memory/
+/tmp/
+*.bak-*
+/BillNote_frontend/gs.json
+/BillNote_frontend/gs2.json
+/BillNote_frontend/tc.json
+/gs2.json
+/backend/app/db/bili_note.db

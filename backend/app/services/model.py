@@ -1,30 +1,35 @@
-
-
-from app.db.model_dao import insert_model, get_all_models, get_model_by_provider_and_name, delete_model
-from app.db.provider_dao import get_enabled_providers
+from app.db.model_dao import (
+    delete_model,
+    get_all_models,
+    get_model_by_id,
+    get_model_by_provider_and_name,
+    insert_model,
+)
 from app.enmus.exception import ProviderErrorEnum
 from app.exceptions.provider import ProviderError
 from app.gpt.gpt_factory import GPTFactory
 from app.gpt.provider.OpenAI_compatible_provider import OpenAICompatibleProvider
 from app.models.model_config import ModelConfig
+from app.services.active_model import clear_active_model_if_matches
 from app.services.provider import ProviderService
 from app.utils.logger import get_logger
 
-logger=get_logger(__name__)
-class ModelService:
+logger = get_logger(__name__)
 
+
+class ModelService:
     @staticmethod
     def _build_model_config(provider: dict) -> ModelConfig:
         return ModelConfig(
             api_key=provider["api_key"],
             base_url=provider["base_url"],
             provider=provider["name"],
-            model_name='',
+            model_name="",
             name=provider["name"],
         )
 
     @staticmethod
-    def get_model_list(provider_id: int, verbose: bool = False):
+    def get_model_list(provider_id: int | str, verbose: bool = False):
         provider = ProviderService.get_provider_by_id(provider_id)
         if not provider:
             return []
@@ -50,6 +55,7 @@ class ModelService:
         except Exception as e:
             print(f"获取所有模型失败: {e}")
             return []
+
     @staticmethod
     def get_all_models_safe(verbose: bool = False):
         try:
@@ -60,6 +66,7 @@ class ModelService:
         except Exception as e:
             print(f"获取所有模型失败: {e}")
             return []
+
     @staticmethod
     def _format_models(raw_models: list) -> list:
         """
@@ -67,20 +74,26 @@ class ModelService:
         """
         formatted = []
         for model in raw_models:
-            formatted.append({
-                "id": model.get("id"),
-                "provider_id": model.get("provider_id"),
-                "model_name": model.get("model_name"),
-                "created_at": model.get("created_at", None),  # 如果有created_at字段
-            })
+            formatted.append(
+                {
+                    "id": model.get("id"),
+                    "provider_id": model.get("provider_id"),
+                    "model_name": model.get("model_name"),
+                    "created_at": model.get("created_at", None),  # 如果有created_at字段
+                }
+            )
         return formatted
+
     @staticmethod
-    def get_enabled_models_by_provider( provider_id: str|int,):
+    def get_enabled_models_by_provider(
+        provider_id: str | int,
+    ):
         from app.db.model_dao import get_models_by_provider
 
         all_models = get_models_by_provider(provider_id)
         enabled_models = all_models
         return enabled_models
+
     @staticmethod
     def get_all_models_by_id(provider_id: str, verbose: bool = False):
         """拉取某供应商的可选模型列表，用于设置页下拉。
@@ -97,11 +110,7 @@ class ModelService:
           3. 动态拿不到（失败或空）时退回内置已知清单，保证下拉非空；
           4. 仍然为空且确有报错时，把报错带回去（前端可提示，不再假装成功）。
         """
-        from app.services.model_fallback import (
-            builtin_fallback_models,
-            normalize_models,
-            as_model_dicts,
-        )
+        from app.services.model_fallback import normalize_models
 
         provider = ProviderService.get_provider_by_id(provider_id)
         if not provider:
@@ -118,21 +127,16 @@ class ModelService:
                 print(f"[{provider['name']}] 动态模型列表: {models}")
         except Exception as e:
             error = str(e)
-            logger.warning(f"[{provider['name']}] 动态获取模型失败，尝试回退内置清单: {e}")
+            logger.warning(f"[{provider['name']}] 动态获取模型失败: {e}")
 
-        if not models:
-            fallback = builtin_fallback_models(provider)
-            if fallback:
-                logger.info(f"[{provider['name']}] /models 为空，回退内置清单: {fallback}")
-                models = as_model_dicts(fallback, owned_by=provider.get("name", ""))
-
-        result = {"models": models}
+        result: dict[str, Any] = {"models": models}
         if not models and error:
-            # 既没动态结果也没兜底清单：把真实报错带回去，别再伪装成功
+            # 拿不到就是拿不到：把真实报错带回去，让设置页能显示原因
             result["error"] = error
         else:
             logger.info(f"[{provider['name']}] 获取模型成功，共 {len(models)} 个")
         return result
+
     @staticmethod
     def connect_test(id: str, model: str | None = None) -> bool:
         """连通性测试：发一条最小化 chat completion。
@@ -148,7 +152,7 @@ class ModelService:
                 code=ProviderErrorEnum.NOT_FOUND.code,
                 message=ProviderErrorEnum.NOT_FOUND.message,
             )
-        if not provider.get('api_key'):
+        if not provider.get("api_key"):
             raise ProviderError(
                 code=ProviderErrorEnum.NOT_FOUND.code,
                 message=ProviderErrorEnum.NOT_FOUND.message,
@@ -164,9 +168,9 @@ class ModelService:
             model = saved_models[0]["model_name"]
 
         ok = OpenAICompatibleProvider.test_connection(
-            api_key=provider.get('api_key'),
-            base_url=provider.get('base_url'),
-            model=model,
+            api_key=provider.get("api_key"),
+            base_url=provider.get("base_url"),
+            model=str(model or ""),
         )
         if ok:
             return True
@@ -175,40 +179,57 @@ class ModelService:
             message=ProviderErrorEnum.WRONG_PARAMETER.message,
         )
 
-
-
     @staticmethod
-    def delete_model_by_id( model_id: int) -> bool:
+    def delete_model_by_id(model_id: int) -> bool:
         try:
+            # 先记下要删的是哪个模型：删完就查不到了，而「删掉的正好是全局模型」时
+            # 必须顺手把指针清掉，否则它会在设置页继续冒充一个不存在的模型。
+            removed = get_model_by_id(model_id)
             delete_model(model_id)
+            if removed is not None:
+                clear_active_model_if_matches(
+                    removed["provider_id"], removed["model_name"]
+                )
             return True
         except Exception as e:
             print(f"[{model_id}] <UNK>: {e}")
             return False
+
     @staticmethod
-    def add_new_model(provider_id: str, model_name: str) -> bool:
+    def create_model_outcome(provider_id: str, model_name: str) -> str:
+        """添加模型的唯一判定点。
+
+        返回 ``created`` / ``exists`` / ``provider_missing`` / ``failed``，让路由能给出
+        结构化 reason（前端按 reason 判定，不匹配中文文案）。``add_new_model`` 只是把它
+        压成 bool，保持既有调用方不变。
+        """
         try:
             # 先查供应商是否存在
             provider = ProviderService.get_provider_by_id(str(provider_id))
             if not provider:
                 print(f"供应商ID {provider_id} 不存在，无法添加模型")
-                return False
+                return "provider_missing"
 
             # 查询是否已存在同名模型
             existing = get_model_by_provider_and_name(provider_id, model_name)
             if existing:
                 print(f"模型 {model_name} 已存在于供应商ID {provider_id} 下，跳过插入")
-                return False
+                return "exists"
 
             # 插入模型
             insert_model(provider_id=provider_id, model_name=model_name)
             print(f"模型 {model_name} 已成功添加到供应商ID {provider_id}")
-            return True
+            return "created"
         except Exception as e:
             print(f"添加模型失败: {e}")
-            return False
+            return "failed"
 
-if __name__ == '__main__':
+    @staticmethod
+    def add_new_model(provider_id: str, model_name: str) -> bool:
+        return ModelService.create_model_outcome(provider_id, model_name) == "created"
+
+
+if __name__ == "__main__":
     # 单个 Provider 测试
     print(ModelService.get_model_list(1, verbose=True))
 

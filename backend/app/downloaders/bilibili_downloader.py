@@ -125,8 +125,7 @@ class BilibiliDownloader(Downloader, ABC):
         self,
         video_url: str,
         output_dir: Union[str, None] = None,
-        # pi-lens-ignore: Pyright:reportArgumentType
-        quality: DownloadQuality = "fast",
+        quality: DownloadQuality = DownloadQuality.fast,
         need_video: Optional[bool] = False,
         skip_download: bool = False,
     ) -> AudioDownloadResult:
@@ -195,11 +194,17 @@ class BilibiliDownloader(Downloader, ABC):
             if cookiefile:
                 ydl_opts["cookiefile"] = cookiefile
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=not skip_download)
-                video_id = info.get("id") or video_id
-                title = info.get("title")
-                duration = info.get("duration", 0)
-                cover_url = info.get("thumbnail")
+                raw_info = ydl.extract_info(video_url, download=not skip_download)
+                if not isinstance(raw_info, dict):
+                    raise ValueError("Bilibili response missing metadata")
+                info: dict[str, object] = raw_info
+                video_id = str(info.get("id") or video_id or "")
+                if not video_id:
+                    raise ValueError("Bilibili response missing video id")
+                title = str(info.get("title") or video_id)
+                duration_value = info.get("duration")
+                duration = float(duration_value) if isinstance(duration_value, (int, float)) else 0.0
+                cover_url = str(info.get("thumbnail") or "")
                 if skip_download:
                     # skip_download 时 yt-dlp 返回 ext=None，默认值不会生效，避免拼出 "xxx.None"
                     ext = info.get("ext") or "m4a"
@@ -270,9 +275,14 @@ class BilibiliDownloader(Downloader, ABC):
             if cookiefile:
                 ydl_opts["cookiefile"] = cookiefile
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=True)
+                raw_info = ydl.extract_info(video_url, download=True)
+                if not isinstance(raw_info, dict):
+                    raise ValueError("Bilibili response missing video metadata")
+                info: dict[str, object] = raw_info
                 self._last_video_info = info
-                video_id = info.get("id")
+                video_id = str(info.get("id") or "")
+                if not video_id:
+                    raise ValueError("Bilibili response missing video id")
                 video_path = os.path.join(output_dir, f"{video_id}.mp4")
 
         if not os.path.exists(video_path):
@@ -346,12 +356,14 @@ class BilibiliDownloader(Downloader, ABC):
             logger.info(f"本地视频对应的音频已存在，直接复用：{audio_path}")
 
         info = self._last_video_info or {}
+        title = str(info.get("title") or video_id)
+        cover_url = str(info.get("thumbnail") or "")
         return AudioDownloadResult(
             file_path=audio_path,
             # pi-lens-ignore: Pyright:reportArgumentType
-            title=info.get("title"),
-            duration=info.get("duration", 0),
-            cover_url=info.get("thumbnail"),
+            title=title,
+            duration=info.get("duration") or 0,
+            cover_url=cover_url,
             platform="bilibili",
             video_id=video_id,
             raw_info=info,
@@ -377,8 +389,8 @@ class BilibiliDownloader(Downloader, ABC):
         # pi-lens-ignore: Pyright:reportArgumentType
         self,
         video_url: str,
-        output_dir: str = None,
-        langs: List[str] = None,
+        output_dir: str | None = None,
+        langs: List[str] | None = None,
     ) -> Optional[TranscriptResult]:
         """
         尝试获取B站视频字幕
@@ -425,10 +437,14 @@ class BilibiliDownloader(Downloader, ABC):
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=True)
+                raw_info = ydl.extract_info(video_url, download=True)
+                if not isinstance(raw_info, dict):
+                    raise ValueError("Bilibili response missing subtitle metadata")
+                info: dict[str, object] = raw_info
 
                 # 查找下载的字幕文件
-                subtitles = info.get("requested_subtitles") or {}
+                raw_subtitles = info.get("requested_subtitles")
+                subtitles = raw_subtitles if isinstance(raw_subtitles, dict) else {}
                 if not subtitles:
                     logger.info(f"B站视频 {video_id} 没有可用字幕")
                     return None
@@ -450,7 +466,7 @@ class BilibiliDownloader(Downloader, ABC):
                             sub_info = info_item
                             break
 
-                if not sub_info:
+                if not detected_lang or not isinstance(sub_info, dict):
                     logger.info(f"B站视频 {video_id} 没有可用字幕（排除弹幕）")
                     return None
 

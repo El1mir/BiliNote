@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BiliNote is an AI video note generation tool. It extracts content from video links (Bilibili, YouTube, Douyin, Kuaishou, local files) and generates structured Markdown notes using LLM models. Full-stack app with a FastAPI backend, React frontend, and optional Tauri desktop packaging.
+BiliNote is an AI video note generation tool. It extracts content from Bilibili video links (single video, multi-part, or a batch of URLs) and generates structured Markdown notes using LLM models. Full-stack app with a FastAPI backend, React frontend, and optional Tauri desktop packaging.
 
 ## Development Commands
 
@@ -63,15 +63,14 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 
 **Backend** (`backend/`) — FastAPI app, entry point `main.py`:
 
-- `app/routers/` — API routes: `note.py` (generation), `provider.py`, `model.py`, `config.py`, `chat.py` (RAG Q&A on generated notes)
+- `app/routers/` — API routes: `note.py` (generation), `note_group.py` (note groups), `provider.py`, `model.py`, `config.py`
 - `app/services/` — Business logic:
   - `note.py` — `NoteGenerator` orchestrates the full pipeline (download → transcribe → LLM → notes)
   - `task_serial_executor.py` — task queue
-  - `chat_service.py` + `chat_tools.py` + `vector_store.py` — RAG-based AI Q&A with Function Calling, indexing transcripts and video metadata
   - `cookie_manager.py` — per-platform cookie storage; injected into yt-dlp by downloaders (e.g. Bilibili)
   - `transcriber_config_manager.py` — persisted transcriber settings
-- `app/downloaders/` — Platform adapters (bilibili, youtube, douyin, kuaishou, local) with shared `base.py` interface
-- `app/transcriber/` — Speech-to-text engines (fast-whisper, groq, bcut, kuaishou, mlx-whisper) with factory in `transcriber_provider.py`. YouTube path prefers existing subtitles and skips audio download when available.
+- `app/downloaders/` — Platform adapters with a shared `base.py` interface; only the Bilibili adapter is registered for generation (`SUPPORT_PLATFORM_MAP` in `app/services/constant.py`), while source intake (`app/services/source_intake.py`) stays platform-neutral so more adapters can be added without touching the intake contract.
+- `app/transcriber/` — Speech-to-text engines with the factory in `transcriber_provider.py`: `fast-whisper` (local) and `openai-asr` (any openai-compatible online endpoint). The bcut / kuaishou / groq / mlx-whisper engines were removed — the first three are rate-limited or discontinued third-party free APIs, and the last is macOS-only; an openai-compatible endpoint covers all of them.
 - `app/gpt/` — LLM integration with factory pattern (`gpt_factory.py`), prompt templates (`prompt.py`, `prompt_builder.py`), and `request_chunker.py` for long transcripts
 - `app/db/` — SQLite + SQLAlchemy: DAO pattern (`provider_dao.py`, `model_dao.py`, `video_task_dao.py`), models in `models/`
 - `app/utils/` — `response.py` (ResponseWrapper for consistent JSON), `video_helper.py` (screenshots via FFmpeg), `export.py` (PDF/DOCX), `ppt_generator.py`, `minio_client.py`
@@ -80,27 +79,31 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 - `backend/events/` — Blinker signal system for post-processing (e.g., temp file cleanup after transcription); registered in `lifespan` startup
 - `backend/ffmpeg_helper.py` — `ensure_ffmpeg_or_raise` is called at startup; respects `FFMPEG_BIN_PATH`
 
-**Frontend** (`BillNote_frontend/src/`) — React 19 + Vite + Tailwind + shadcn/ui:
+**Frontend** (`BillNote_frontend/src/`) — React 19 + Vite + Tailwind 4, Ember Studio design system:
 
-- `pages/HomePage/` — Main note generation UI: `NoteForm.tsx` (input), `MarkdownViewer.tsx` (preview), `MarkmapComponent.tsx` (mind map)
-- `pages/SettingPage/` — LLM provider management, system monitoring, transcriber config
-- `store/` — Zustand stores: `taskStore`, `modelStore`, `configStore`, `providerStore`. Persists to IndexedDB.
-- `services/` — Axios API clients matching backend routes
-- `hooks/useTaskPolling.ts` — Polls task status every 3 seconds
-- `components/ui/` — shadcn/ui (Radix-based) components
-- `i18n/` — `react-i18next` setup with locale JSON in `i18n/locales/`; toggled via `components/LanguageSwitcher.tsx`
-- Path alias: `@` → `./src`
+- `ember/` — the entire presentation layer (the pre-rewrite `pages/`, `components/`, `layouts/`, `App.tsx` were deleted):
+  - `ember/tokens.css` + `ember/motion.css` — design tokens (terracotta `#c2410c`, warm neutrals, Playfair Display / Source Sans 3 / Fira Code) and the shared motion vocabulary; `src/index.css` is just those two imports.
+  - `ember/ui/` — primitives: Button, Card, Input, Textarea, Field, Chip, Badge, Progress, Skeleton, EmptyState, Tabs, Dialog, Drawer, Switch, Checkbox, Select, Tooltip, Spinner.
+  - `ember/shell/AppShell.tsx` — 256px sidebar at >=1280px, 76px icon rail at 768–1279px, top bar + Drawer below 768px; content does not remount across breakpoints.
+  - `ember/pages/` — `WorkspacePage`, `SettingsPage` (+ `sections/`), `OnboardingPage`, `OnboardingGuard`, `NotFoundPage`; `ember/EmberApp.tsx` owns routing (`BrowserRouter` on web, `HashRouter` under Tauri).
+  - `ember/features/` — `workspace/` (IntakeForm, BatchImportPanel, TaskList, GroupPanel, TaskProgressCard, `useNoteGroups`, `archive`) and `reader/` (NotePanel with note + transcript tabs, MarkdownNote, TranscriptView, outline).
+  - `ember/i18n/` — `strings.ts` (zh-CN / en-US dictionaries, `MessageKey`) + `context.ts` (`useI18n`) + `locale.ts` (`translate` for non-React modules).
+- `store/taskStore/` — the only Zustand store left; tasks carry `revision` and stale status updates are rejected.
+- `services/` — Axios clients matching backend routes (`note`, `noteGroup`, `model`, `provider`, `transcriber`, `config`, `system`, …). The response interceptor unwraps the `ResponseWrapper` envelope, so call sites receive `data` directly.
+- `hooks/useTaskPolling.ts` — 3 s polling, but it subscribes to `GET /api/v1/task-groups/events` (SSE) while tasks are active and skips polling while the stream is connected.
+- `utils/request.ts` — shared Axios instance, `REASON_KEYS` and `localizedError()` map structured backend `data.reason` values to i18n keys.
+- Path alias: `@` → `./src`.
 
-**Core Workflow**: User submits URL → task queued → download video → extract audio (FFmpeg) → transcribe (Whisper/Groq/etc) → generate notes (LLM) → frontend polls for completion → display Markdown + mind map.
+**Core Workflow**: User submits a Bilibili URL (single, multi-part, or batch) → source intake normalises it → task queued → download video → extract audio (FFmpeg) → transcribe (fast-whisper or an openai-compatible ASR endpoint) → generate notes (LLM) → frontend follows progress over SSE → display Markdown + transcript, with inline screenshots that zoom on click.
 
 **Browser Extension** (`BillNote_extension/`) — Vue 3 + Vite + UnoCSS + webextension-polyfill, MV3:
 
 - `src/popup/Popup.vue` — main entry: detects platform from active tab URL, drives generate flow, shows progress + markdown
-- `src/options/Options.vue` — settings: backend URL, default provider/model (loaded from `/get_all_providers` + `/get_models_by_provider/{id}`), quality, screenshot/link toggles, style
+- `src/options/` — settings pages: backend URL, providers/models (loaded from `/get_all_providers` + `/model_enable/{provider_id}`), transcriber (fast-whisper / openai-compatible ASR), downloader cookies, monitor, quality and screenshot/link toggles
 - `src/logic/api.ts` — backend API client (uses `settings.backendUrl`, unwraps `ResponseWrapper`, absolutizes `/static/screenshots/...` image paths)
 - `src/logic/storage.ts` — `chrome.storage.local`-backed Pinia-like state via `useWebExtensionStorage` for settings + last 30 tasks
 - `src/logic/platform.ts` — URL → platform detection mirroring `backend/app/validators/video_url_validator.py`
-- `src/sidepanel/`, `src/contentScripts/` — placeholders for P2/P3 (floating button, side panel mind map, RAG chat); not wired into MVP UX
+- `src/sidepanel/Sidepanel.vue` — side panel that follows one task and renders its Markdown (copy / download); the mind map and RAG-chat views were removed together with their backend
 - `src/manifest.ts` — MV3 manifest, popup is default action; `host_permissions: *://*/*`
 - Polling lives client-side in popup (3 s interval while open); MV3 service worker is intentionally thin in P1
 
@@ -108,7 +111,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 
 - **Ports**: Backend 8483, Frontend dev 3015, Docker maps 3015→80
 - **Environment**: Root `.env` (copy from `.env.example`). LLM API keys are configured through the UI, not env vars.
-- **Database**: SQLite at `backend/app/db/bili_note.db`, auto-initialized on first run
+- **Database**: SQLite at `backend/bili_note.db` (`app/db/engine.py` uses the relative `sqlite:///bili_note.db`, so it lands in the backend working directory), auto-initialized on first run
 - **FFmpeg**: Required system dependency for video/audio processing
 - **Vite proxy**: Dev server proxies `/api` and `/static` to backend (configured in `vite.config.ts`, reads env from parent dir; falls back to current dir when `DOCKER_BUILD` is set)
 - **CORS**: `backend/main.py` uses a regex (`CORS_ORIGIN_REGEX`) that allows localhost, `tauri.localhost`, and `chrome-extension://` / `moz-extension://` origins — required for the desktop app and the browser extension.

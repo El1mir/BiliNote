@@ -1,52 +1,9 @@
-import json
 import os
-import sys
 from app.db.models.providers import Provider
 from app.utils.logger import get_logger
 from app.db.engine import get_engine, Base, get_db
 
 logger = get_logger(__name__)
-
-
-def get_builtin_providers_path():
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(__file__)
-    return os.path.join(base_path, 'builtin_providers.json')
-
-
-def seed_default_providers():
-    db = next(get_db())
-    try:
-        if db.query(Provider).count() > 0:
-            logger.info("Providers already exist, skipping seed.")
-            return
-
-        json_path = get_builtin_providers_path()
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                providers = json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to read builtin_providers.json: {e}")
-            return
-
-        for p in providers:
-            db.add(Provider(
-                id=p['id'],
-                name=p['name'],
-                api_key=p['api_key'],
-                base_url=p['base_url'],
-                logo=p['logo'],
-                type=p['type'],
-                enabled=p.get('enabled', 1)
-            ))
-        db.commit()
-        logger.info("Default providers seeded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to seed default providers: {e}")
-    finally:
-        db.close()
 
 
 def insert_provider(id: str, name: str, api_key: str, base_url: str, logo: str, type_: str, enabled: int = 1):

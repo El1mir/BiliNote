@@ -29,6 +29,18 @@ DOWNLOADERS = ROOT / "app" / "downloaders"
 DOWNLOADER_SOURCES = ["youtube_downloader.py", "bilibili_downloader.py"]
 
 
+class _DownloadQuality:
+    """``app.enmus.note_enums.DownloadQuality`` 的替身。
+
+    真实枚举是 str 混入（``class DownloadQuality(str, enum.Enum)``），而下载器签名用
+    ``DownloadQuality.fast`` 当默认值——只给一个裸 ``str`` 已经不足以让模块加载成功
+    （会抛 ``type object 'str' has no attribute 'fast'``）。
+    """
+
+    fast = "fast"
+    medium = "medium"
+    slow = "slow"
+
 def _load_base():
     """Load app/downloaders/base.py with its app-level imports stubbed out.
 
@@ -41,7 +53,7 @@ def _load_base():
         "app": {},
         "app.enmus": {},
         "app.models": {},
-        "app.enmus.note_enums": {"DownloadQuality": str},
+        "app.enmus.note_enums": {"DownloadQuality": _DownloadQuality},
         "app.models.notes_model": {"AudioDownloadResult": object},
         "app.models.transcriber_model": {
             "TranscriptResult": object,

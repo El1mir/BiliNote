@@ -17,7 +17,8 @@ describe('normalizeMathDelimiters', () => {
   })
 
   it('已经是 $...$ 的内容原样返回', () => {
-    const md = '公式：$x^2$ 和 $$y = x$$'
+    // $$ 围栏的规范化在 spec 020 单独覆盖：这里只钉行内公式不被改动。
+    const md = '公式：$x^2$ 与 $\\alpha$'
     expect(normalizeMathDelimiters(md)).toBe(md)
   })
 

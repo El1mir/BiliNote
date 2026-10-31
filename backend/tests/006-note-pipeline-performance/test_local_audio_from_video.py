@@ -67,6 +67,18 @@ class _AudioDownloadResult:
         self.__dict__.update(kwargs)
 
 
+class _DownloadQuality:
+    """``app.enmus.note_enums.DownloadQuality`` 的替身。
+
+    真实枚举是 str 混入（``class DownloadQuality(str, enum.Enum)``），而下载器签名用
+    ``DownloadQuality.fast`` 当默认值——只给一个裸 ``str`` 已经不足以让模块加载成功
+    （会抛 ``type object 'str' has no attribute 'fast'``）。
+    """
+
+    fast = "fast"
+    medium = "medium"
+    slow = "slow"
+
 def _load_bilibili_downloader():
     saved = {name: sys.modules.get(name) for name in _STUB_NAMES}
     _stub("app")
@@ -78,7 +90,7 @@ def _load_bilibili_downloader():
     _stub(
         "app.downloaders.base",
         Downloader=_Downloader,
-        DownloadQuality=str,
+        DownloadQuality=_DownloadQuality,
         QUALITY_MAP={"fast": "32", "medium": "64", "slow": "128"},
         YDL_RETRY_OPTS={"retries": 3, "fragment_retries": 3, "socket_timeout": 30},
     )
@@ -99,9 +111,14 @@ def _load_bilibili_downloader():
     if spec is None or spec.loader is None:
         raise ImportError("bilibili_downloader module spec not found")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        # 必须无条件还原：加载失败时若留着这些桩，同一进程里其后任何真正的
+        # ``import app.services.xxx`` 都会报 "'app.services' is not a package"，
+        # 一个 import 错误会连累几十个无关用例。
+        _restore_stubs(saved)
     module.__dict__["_ymdl"] = module.yt_dlp.YoutubeDL
-    _restore_stubs(saved)
     return module
 
 

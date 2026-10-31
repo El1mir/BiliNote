@@ -46,13 +46,11 @@ rm backend/.env
 
 
 # 重命名主执行文件以包含目标平台信息
-mv \
- ./BillNote_frontend/src-tauri/bin/BiliNoteBackend/BiliNoteBackend\
- ./BillNote_frontend/src-tauri/bin/BiliNoteBackend/BiliNoteBackend-$TARGET_TRIPLE
+mv ./BillNote_frontend/src-tauri/bin/BiliNoteBackend/BiliNoteBackend \
+  ./BillNote_frontend/src-tauri/bin/BiliNoteBackend/BiliNoteBackend-$TARGET_TRIPLE
 
 echo "PyInstaller 打包完成。"
 echo "打包后的目录内容："
 ls -l ./BillNote_frontend/src-tauri/bin/BiliNoteBackend
 
 echo "请检查 src-tauri/bin/BiliNoteBackend 目录，确认其中包含了名为 .env 的【文件】。"
-

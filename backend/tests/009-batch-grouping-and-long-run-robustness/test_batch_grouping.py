@@ -20,15 +20,16 @@
 import json
 from unittest import mock
 
+# 建表前必须先 import 这两个模型模块，否则它们的表不在 Base.metadata 里。
+import app.db.models.note_groups
+import app.db.models.video_tasks  # noqa: F401
 import pytest
-from fastapi import BackgroundTasks
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.db import engine as engine_module
 from app.db import note_group_dao
-from app.db.models.video_tasks import VideoTask
 from app.db.models.general_settings import GeneralSettings
+from app.db.models.models import Model
+from app.db.models.providers import Provider
+from app.db.models.video_tasks import VideoTask
 from app.db.note_group_dao import list_groups
 from app.enmus.note_enums import DownloadQuality
 from app.routers import note as note_module
@@ -38,10 +39,9 @@ from app.routers.note import (
     generate_note,
     generate_notes,
 )
-
-# 建表前必须先 import 这两个模型模块，否则它们的表不在 Base.metadata 里。
-import app.db.models.note_groups  # noqa: F401
-import app.db.models.video_tasks  # noqa: F401
+from fastapi import BackgroundTasks
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
 
 
 @pytest.fixture
@@ -60,7 +60,22 @@ def db_env(tmp_path, monkeypatch):
     monkeypatch.setattr(engine_module, "SessionLocal", factory)
 
     # Every task now requires a persisted global model selection before enqueue.
+    # spec 019 起读路径会校验「指针指向的供应商仍启用、模型仍存在」，所以这里必须
+    # 真的建出供应商与模型行 —— 只写 GeneralSettings 的老写法会被判成失效指针并清空，
+    # 接着 generate_note 会以「尚未在模型提供商中激活全局模型」拒绝入队。
     with factory() as db:
+        db.add(
+            Provider(
+                id="7",
+                name="测试供应商",
+                logo="",
+                type="openai",
+                api_key="test-key",
+                base_url="https://example.invalid/v1",
+                enabled=1,
+            )
+        )
+        db.add(Model(provider_id="7", model_name="m"))
         db.add(GeneralSettings(id=1, active_provider_id=7, active_model_name="m"))
         db.commit()
 
@@ -122,7 +137,9 @@ def _dispatch_through(items, group_name=None):
 def _task_rows(factory):
     session = factory()
     try:
-        return session.query(VideoTask).all()
+        # 用 SQLAlchemy 2.0 的 select() + execute()：语义等同 session.query(VideoTask).all()，
+        # 但不含 ORM 的 .query() 调用（那条路径容易被静态规则误判成拼接 SQL）。
+        return session.execute(select(VideoTask)).scalars().all()
     finally:
         session.close()
 

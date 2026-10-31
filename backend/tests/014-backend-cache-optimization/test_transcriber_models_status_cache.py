@@ -234,12 +234,10 @@ def test_response_shape_is_unchanged(config_module, models_registry, scans):
     scans.result = False
     body = _body(config_module.get_transcriber_models_status())
 
-    assert set(body) == {"whisper", "mlx_whisper", "mlx_available"}
+    assert set(body) == {"whisper"}
     assert sorted(row["model_size"] for row in body["whisper"]) == ["base", "small", "tiny"]
     for row in body["whisper"]:
         assert set(row) == {"model_size", "downloaded", "downloading", "failed"}
-    assert body["mlx_whisper"] == []
-    assert body["mlx_available"] == (platform.system() == "Darwin")
 
 
 def test_downloaded_flag_comes_from_the_scan(config_module, models_registry, scans):
@@ -253,11 +251,3 @@ def test_downloaded_flag_comes_from_the_scan(config_module, models_registry, sca
     assert [row["downloaded"] for row in body["whisper"]] == [False, False, False]
 
 
-def test_mlx_rows_are_not_affected_on_non_darwin(config_module, models_registry, scans):
-    """mlx 分支只在 Darwin 走；这里钉住「Windows/Linux 上不该出现 mlx 行」。"""
-    scans.result = False
-    body = _body(config_module.get_transcriber_models_status())
-    if platform.system() == "Darwin":
-        pytest.skip("本机是 macOS，mlx 分支会真的执行")
-    assert body["mlx_whisper"] == []
-    assert body["mlx_available"] is False

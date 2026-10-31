@@ -74,6 +74,11 @@ _PAYLOAD_KEYS = (
     "frame_limit_mode",
     "ocr_assist",
     "group_id",
+    # spec 018：合并任务的恢复载荷。缺了这三项，重启后合并任务会退化成
+    # 「只生成第一条视频」的普通任务，用户拿到的是一篇缺章节的笔记。
+    "merge_items",
+    "merge_title",
+    "merge_polish",
 )
 
 
@@ -91,7 +96,7 @@ def _read_status(task_id: str) -> "str | None":
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f).get("status")
     except Exception as exc:
         logger.debug("读取任务状态文件失败（%s）：%s", task_id, exc)
@@ -184,12 +189,12 @@ def recover_interrupted_tasks() -> dict:
     # 延迟导入：路由层 import 服务层的东西很多，模块级 import 容易成环；
     # 而且这些模块（含 NoteGenerator 链）会让启动变慢，没必要在 import 期拉起。
     from app.db.video_task_dao import list_recoverable_tasks
+    from app.enmus.task_status_enums import TaskStatus
     from app.routers.note import (
         _dispatch_note_task,
         _get_circuit_breaker,
     )
     from app.services.note import NoteGenerator
-    from app.enmus.task_status_enums import TaskStatus
 
     rows = list_recoverable_tasks()
     stats["scanned"] = len(rows)

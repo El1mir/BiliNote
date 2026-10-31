@@ -1,28 +1,34 @@
 import base64
+import contextlib
+import hashlib
 import json
 import os
 import re
 import threading
 import time
 import uuid
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 from dataclasses import asdict, is_dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional, Tuple, Union, Any
+from typing import Any
 
-from pydantic import HttpUrl
-from dotenv import load_dotenv
 
-from app.downloaders.base import Downloader
+def _jsonable_dataclass(value: Any) -> Any:
+    return (
+        asdict(value) if is_dataclass(value) and not isinstance(value, type) else value
+    )
+
+
+from app.db.note_group_dao import assign_task_to_group
 from app.db.video_task_dao import (
     delete_task_by_video,
     get_video_task,
     insert_video_task,
 )
-from app.db.note_group_dao import assign_task_to_group
+from app.downloaders.base import Downloader
 from app.enmus.exception import NoteErrorEnum, ProviderErrorEnum
+from app.enmus.note_enums import DownloadQuality
 from app.enmus.task_status_enums import (
     TaskStage,
     TaskStatus,
@@ -31,7 +37,6 @@ from app.enmus.task_status_enums import (
     stage_for_status,
     stage_label,
 )
-from app.enmus.note_enums import DownloadQuality
 from app.exceptions.note import NoteError
 from app.exceptions.provider import ProviderError
 from app.gpt.base import GPT
@@ -40,18 +45,28 @@ from app.models.audio_model import AudioDownloadResult
 from app.models.gpt_model import GPTSource
 from app.models.model_config import ModelConfig
 from app.models.notes_model import AudioDownloadResult, NoteResult
-from app.models.transcriber_model import TranscriptResult, TranscriptSegment
+from app.models.transcriber_model import TranscriptResult
+from app.services import runtime_limits
 from app.services.constant import SUPPORT_PLATFORM_MAP
+from app.services.note_cache import (
+    read_audio_cache,
+    read_transcript_cache,
+    shared_transcript_path,
+    write_audio_cache,
+    write_transcript_cache,
+)
 from app.services.provider import ProviderService
 from app.transcriber.base import Transcriber
-from app.transcriber.transcriber_provider import get_transcriber, _transcribers
-from app.utils.note_helper import replace_content_markers, prepend_source_link
+from app.transcriber.transcriber_provider import _transcribers, get_transcriber
 from app.utils.llm_rate_limit import is_rate_limit_error
 from app.utils.logger import get_logger
+from app.utils.note_helper import prepend_source_link, replace_content_markers
 from app.utils.screenshot_marker import extract_screenshot_timestamps
 from app.utils.transcript_helper import densify_segments
 from app.utils.video_helper import generate_screenshot
 from app.utils.video_reader import VideoReader
+from dotenv import load_dotenv
+from pydantic import HttpUrl
 
 # ------------------ 环境变量与全局配置 ------------------
 
@@ -77,7 +92,6 @@ logger = get_logger(__name__)
 # spec 008 ticket 02：OCR 辅助模式的插图占位符与文本比对工具
 
 
-
 def _safe_float(value, default: float = 0.0) -> float:
     """把任意值转成 float；转不了就返回 default，绝不抛异常。"""
     try:
@@ -92,6 +106,13 @@ def _safe_int(value, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+# OCR 阶段的并发度。识别是一次网络往返，串行会让总耗时随截图张数线性增长；
+# 截图生成仍然串行，避免多个 ffmpeg 同时抢同一块磁盘。
+#: OCR 阶段并发数（**历史常量，仅作兜底**）。2026-10-17 起真正生效的值来自
+#: 「设置 → 通用 → OCR 阶段并发」，见 :func:`app.services.runtime_limits.ocr_stage_concurrency`。
+OCR_STAGE_CONCURRENCY = max(1, _safe_int(os.getenv("OCR_STAGE_CONCURRENCY", "4"), 4))
 
 
 def _match_candidate_frames(picked, candidates, tolerance: float | None = None) -> list:
@@ -139,6 +160,9 @@ def _shot_marker_pattern(index: int) -> re.Pattern:
     )
 
 
+# 任意编号的占位符：用于「插图没跑成」时的兜底清扫，编号不参与匹配。
+_SHOT_MARKER_ANY = re.compile(r"\[\[\s*SHOT\s*-?\s*\d+\s*\]\]", re.IGNORECASE)
+
 
 def _serialize_ocr_result(result: Any) -> Any:
     """把 OcrResult 展开成可 JSON 化的纯 dict；非 dataclass 原样返回。
@@ -173,6 +197,7 @@ def _deserialize_ocr_result(value: Any) -> Any:
         )
     except Exception:
         return None
+
 
 def _normalize_for_compare(text: str) -> str:
     """只留文字、去掉空白与标点，用于判断 OCR 内容是否已经出现在正文里。"""
@@ -213,10 +238,10 @@ class NoteGenerator:
 
         config_manager = TranscriberConfigManager()
         self.model_size: str = config_manager.get_whisper_model_size()
-        self.device: Optional[str] = None
+        self.device: str | None = None
         self.transcriber_type: str = config_manager.get_transcriber_type()
         self.transcriber: Transcriber = self._init_transcriber()
-        self.video_path: Optional[Path] = None
+        self.video_path: Path | None = None
         self.video_img_urls = []
         # spec 008 ticket 02：OCR 辅助模式的状态。
         # 三者的语义是「None = 还没算过，可以复用上一轮的结果」——重试时不清空，
@@ -226,22 +251,27 @@ class NoteGenerator:
         # 否则没有任何东西能保证「只有被判为值得的画面才插图」。
         # 它与 ocr_assist 是两件事——判定不需要部署 OCR 服务，OCR 才需要。
         self.ocr_judgement_enabled: bool = False
-        self.ocr_cache_url: Optional[str] = None  # 上面这些结果属于哪个 video_url
+        self.ocr_cache_url: str | None = None  # 上面这些结果属于哪个 video_url
         # 磁盘上的缓存是不是「OCR 关闭时」跑出来的：那种缓存只有判定结果、
         # 没有图上文字，这次开了 OCR 就不能直接复用。
         self.ocr_cache_used_ocr: bool = False
-        self.frame_candidates: Optional[List[float]] = None  # 抽帧实际产出的时间点
-        self.picked_frames: Optional[List[float]] = None  # 挑选层挑中的时间点
-        self.approved_shots: Optional[list] = None  # 判定通过、必须编入笔记的截图点
+        self.frame_candidates: list[float] | None = None  # 抽帧实际产出的时间点
+        self.picked_frames: list[float] | None = None  # 挑选层挑中的时间点
+        self.approved_shots: list | None = None  # 判定通过、必须编入笔记的截图点
         # 判定通过的每张图各自 OCR 出来的完整内容（m04445：无论 OCR 返回什么，
         # 都作为参考喂给总结模型）。键是时间点秒数，值是结构化参考 dict。
-        self.ocr_texts: Optional[dict] = None
+        self.ocr_texts: dict | None = None
         # OCR 失败的张数。失败不致命（q4_ocr_failure=A：跳过该张、图照插），
         # 但必须计数并进日志，否则「参考内容静默缺失」永远看不出来。
         self.ocr_failures: int = 0
         # 判定通过的每张图的单独截图 data URL，顺序与 approved_shots 一致。
         # 送进总结模型的是**这一批单帧**，不再是网格图（q10/q11）。
-        self.shot_image_urls: Optional[list] = None
+        self.shot_image_urls: list | None = None
+        # 同一批单帧截图的本地路径（顺序同上）。总结阶段把图送进模型、后处理阶段把
+        # 同一批图写进 markdown，两处共用这一份，不再各自渲染一遍 ffmpeg。
+        self.shot_image_paths: list | None = None
+        # (序号, 秒数, mm:ss 标签, 本地路径) 四元组清单，供上面两个阶段共用。
+        self.shot_frames: list | None = None
         # 鉴权/参数等错误不应触发任务级重试，否则会重复下载和切片。
         self.last_error_non_retryable = False
         # 429 是**另一条路**（spec 012）：不是「不能重试」，而是「还没轮到」——
@@ -254,29 +284,31 @@ class NoteGenerator:
 
     def generate(
         self,
-        video_url: Union[str, HttpUrl],
+        video_url: str | HttpUrl,
         platform: str,
         quality: DownloadQuality = DownloadQuality.medium,
-        task_id: Optional[str] = None,
-        model_name: Optional[str] = None,
-        provider_id: Optional[str] = None,
+        task_id: str | None = None,
+        model_name: str | None = None,
+        provider_id: str | None = None,
         link: bool = False,
         screenshot: bool = False,
-        _format: Optional[List[str]] = None,
-        scene: Optional[str] = None,
-        detail: Optional[str] = None,
-        extras: Optional[str] = None,
-        output_path: Optional[str] = None,
+        _format: list[str] | None = None,
+        scene: str | None = None,
+        detail: str | None = None,
+        extras: str | None = None,
+        output_path: str | None = None,
         video_understanding: bool = False,
         video_interval: int = 0,
-        grid_size: Optional[List[int]] = None,
+        grid_size: list[int] | None = None,
         sampling_mode: str = "interval",
         max_frames: int = 60,
         frames_per_second: int = 2,
         frame_limit_mode: str = "total",
-        ocr_assist: Optional[bool] = None,
+        ocr_assist: bool | None = None,
         # spec 007：任务所属分组。批量任务整批归入同一个组；单条任务为 None。
-        group_id: Optional[str] = None,
+        group_id: str | None = None,
+        # spec 018：合并任务的子生成不写任务行 —— 用户只该看到一条合并任务。
+        persist_metadata: bool = True,
     ) -> NoteResult | None:
         """
         主流程：按步骤依次下载、转写、GPT 总结、截图/链接处理、存库、返回 NoteResult。
@@ -304,6 +336,9 @@ class NoteGenerator:
         :param ocr_assist: 按任务覆盖 OCR 辅助开关；None=沿用全局设置（spec 008 ticket 02）
         :return: NoteResult 对象，包含 markdown 文本、转写结果和音频元信息
         """
+        if task_id is None:
+            raise ValueError("task_id is required for note generation")
+        assert task_id is not None
         if grid_size is None:
             grid_size = []
 
@@ -361,19 +396,11 @@ class NoteGenerator:
             # 尝试读取缓存
             if transcript_cache_file.exists():
                 logger.info(f"检测到转写缓存 ({transcript_cache_file})，尝试读取")
-                try:
-                    data = json.loads(transcript_cache_file.read_text(encoding="utf-8"))
-                    segments = [
-                        TranscriptSegment(**seg) for seg in data.get("segments", [])
-                    ]
-                    transcript = TranscriptResult(
-                        language=data.get("language"),
-                        full_text=data["full_text"],
-                        segments=segments,
+                transcript = read_transcript_cache(transcript_cache_file)
+                if transcript is not None:
+                    logger.info(
+                        f"已从缓存加载转写结果，共 {len(transcript.segments)} 段"
                     )
-                    logger.info(f"已从缓存加载转写结果，共 {len(segments)} 段")
-                except Exception as e:
-                    logger.warning(f"加载转写缓存失败: {e}")
 
             # 缓存没有，尝试获取平台字幕
             if transcript is None:
@@ -385,23 +412,31 @@ class NoteGenerator:
                 )
                 logger.info("尝试获取平台字幕（优先于音频下载）...")
                 try:
-                    transcript = downloader.download_subtitles(video_url)
+                    transcript = downloader.download_subtitles(str(video_url))
                     if transcript and transcript.segments:
                         logger.info(
                             f"成功获取平台字幕，共 {len(transcript.segments)} 段"
                         )
-                        transcript_cache_file.write_text(
-                            json.dumps(
-                                asdict(transcript), ensure_ascii=False, indent=2
-                            ),
-                            encoding="utf-8",
-                        )
+                        write_transcript_cache(transcript_cache_file, transcript)
                     else:
                         transcript = None
                         logger.info("平台无可用字幕，将下载音频后转写")
                 except Exception as e:
                     logger.warning(f"获取平台字幕失败: {e}，将下载音频后转写")
                     transcript = None
+
+            # 1.5 跨任务共享转写缓存（spec 017 ticket 004 §3.1）
+            # 放在下载之前：命中就意味着这个视频 + 这个转写引擎已经转过了，
+            # 直接跳过音频下载与 ASR —— 这两步才是整条链路里最贵的部分。
+            # 键里带了引擎身份，换引擎/换模型不会误命中。
+            if transcript is None:
+                shared_file = self._shared_transcript_file(str(video_url))
+                shared = read_transcript_cache(shared_file)
+                if shared is not None:
+                    logger.info(f"命中共享转写缓存 ({shared_file})，跳过音频下载与转写")
+                    transcript = shared
+                    # 回填任务级缓存：后续阶段（含重试）仍按原路径读它。
+                    write_transcript_cache(transcript_cache_file, shared)
 
             # 2. 下载音频/视频
             # 有字幕时只提取元信息，不下载音视频文件（除非需要截图/视频理解）
@@ -428,15 +463,23 @@ class NoteGenerator:
 
             # 3. 如果前面没拿到字幕，走转写流程
             if transcript is None:
+                if not audio_meta or not audio_meta.file_path:
+                    raise NoteError(
+                        code=NoteErrorEnum.PLATFORM_NOT_SUPPORTED.code,
+                        message="音频文件不可用，无法进行转写",
+                    )
+                assert audio_meta is not None and audio_meta.file_path
                 transcript = self._get_transcript(
                     downloader=downloader,
-                    video_url=video_url,
+                    video_url=str(video_url),
                     audio_file=audio_meta.file_path,
                     transcript_cache_file=transcript_cache_file,
                     status_phase=TaskStatus.TRANSCRIBING,
                     task_id=task_id,
                     # 上面已经探测过一次平台字幕，这里不再重复请求。
                     subtitle_attempted=True,
+                    # 上面也刚读过同一份转写缓存（未命中），阶段入口不必再读一遍。
+                    cache_checked=True,
                 )
 
             # spec 002：smart / hybrid 采样需要字幕，因此在转写完成后抽帧拼图
@@ -576,10 +619,14 @@ class NoteGenerator:
             # 显式收窄，缺了它宁可跳过 OCR 层也不要把 None 漏进 generate_screenshot。
             if self.ocr_judgement_enabled and self.approved_shots and self.video_path:
                 if self.ocr_texts is None:
-                    self._run_ocr_stage(
-                        video_path=self.video_path, task_id=task_id
-                    )
+                    self._run_ocr_stage(video_path=self.video_path, task_id=task_id)
                 else:
+                    # OCR 文本复用了上一轮，但图片**不在缓存里**（data URL 太占地方）。
+                    # 不在这里补渲染的话，总结模型会收到 0 张图却仍被要求写
+                    # [[SHOT-n]]，后处理再因为拿不到路径而放弃替换 —— 正文里就留下
+                    # 一排占位符，正是「有插图位置却没有图片」。
+                    if not self.shot_image_urls:
+                        self._render_shot_frames(self.video_path, task_id=task_id)
                     logger.info(
                         "复用上一轮 OCR 结果：图片=%d 张，跳过 OCR task_id=%s",
                         len(self.ocr_texts),
@@ -607,6 +654,11 @@ class NoteGenerator:
             prompt_img_urls = shot_urls or list(self.video_img_urls or [])
 
             # 3. GPT 总结
+            if audio_meta is None or transcript is None:
+                raise NoteError(
+                    code=NoteErrorEnum.PLATFORM_NOT_SUPPORTED.code,
+                    message="生成笔记所需的媒体或转写结果不可用",
+                )
             markdown = self._summarize_text(
                 audio_meta=audio_meta,
                 transcript=transcript,
@@ -626,6 +678,7 @@ class NoteGenerator:
             )
 
             # 4. 截图 & 链接替换
+            markdown = markdown or ""
             if _format:
                 self._update_status(
                     task_id,
@@ -645,6 +698,12 @@ class NoteGenerator:
                 )
 
             markdown = prepend_source_link(markdown, str(video_url))
+            # 把**最终**正文写回 markdown 缓存：以前留在盘上的是插图之前的原始
+            # markdown，排查「为什么没有图片」时看到的是一份与笔记不一致的文件。
+            try:
+                markdown_cache_file.write_text(markdown, encoding="utf-8")
+            except OSError as exc:
+                logger.warning("写回 markdown 缓存失败（忽略）：%s", exc)
 
             # 5. 保存记录到数据库
             self._update_status(
@@ -655,18 +714,19 @@ class NoteGenerator:
                 stage_progress=10,
                 detail={"step": "save_metadata"},
             )
-            self._save_metadata(
-                video_id=audio_meta.video_id,
-                platform=platform,
-                task_id=task_id,
-                group_id=self.group_id,
-            )
+            if persist_metadata:
+                self._save_metadata(
+                    video_id=audio_meta.video_id,
+                    platform=platform,
+                    task_id=task_id,
+                    group_id=self.group_id or "",
+                )
 
             # 6. 完成
             self._update_status(task_id, TaskStatus.SUCCESS)
             logger.info(f"笔记生成成功 (task_id={task_id})")
             return NoteResult(
-                markdown=markdown, transcript=transcript, audio_meta=audio_meta
+                markdown=markdown or "", transcript=transcript, audio_meta=audio_meta
             )
 
         except Exception as exc:
@@ -681,7 +741,7 @@ class NoteGenerator:
             return None
 
     @staticmethod
-    def delete_note(video_id: str, platform: str) -> int:
+    def delete_note(video_id: str, platform: str) -> int | None:
         """
         删除数据库中对应 video_id 与 platform 的任务记录
 
@@ -705,6 +765,34 @@ class NoteGenerator:
         """
         key = hashlib.sha256(str(video_url).encode("utf-8")).hexdigest()[:16]
         return NOTE_OUTPUT_DIR / f"ocr_frames_{key}.json"
+
+    def _transcriber_key(self) -> str:
+        """转写引擎身份，用于共享转写缓存的键。
+
+        同一段音频在不同引擎/模型下会得出不同文本，所以「谁转的」必须进键；
+        只按视频 ID 复用等于把上一次的答案冒充这一次的结果。
+        """
+        parts = [str(self.transcriber_type or "unknown")]
+        model_size = getattr(self, "model_size", None)
+        if model_size:
+            parts.append(str(model_size))
+        if self.transcriber_type == "openai-asr":
+            try:
+                from app.services.transcriber_config_manager import (
+                    TranscriberConfigManager,
+                )
+
+                endpoint = TranscriberConfigManager().get_active_openai_asr() or {}
+                parts.append(str(endpoint.get("id") or "unconfigured"))
+            except Exception:
+                parts.append("unconfigured")
+        return "|".join(parts)
+
+    def _shared_transcript_file(self, video_url: str) -> Path:
+        """本视频的跨任务转写缓存路径（同一视频 + 同一引擎只转一次）。"""
+        return shared_transcript_path(
+            NOTE_OUTPUT_DIR, video_url, self._transcriber_key()
+        )
 
     def _load_ocr_cache(self, video_url: str, need_ocr: bool = False) -> bool:
         """从磁盘读取上一轮的抽帧/挑选/判定结果；读到就填进实例并返回 True。
@@ -783,8 +871,7 @@ class NoteGenerator:
                 "frame_candidates": list(self.frame_candidates or []),
                 "picked_frames": list(self.picked_frames or []),
                 "approved_shots": [
-                    asdict(s) if is_dataclass(s) else s
-                    for s in (self.approved_shots or [])
+                    _jsonable_dataclass(s) for s in (self.approved_shots or [])
                 ],
                 # q5_cache=A：OCR 文本一并落盘，重试时不必再调一次 OCR。
                 # 键是时间点，转成字符串再写（JSON 的键只能是字符串）。
@@ -797,7 +884,7 @@ class NoteGenerator:
                 "ocr_failures": int(self.ocr_failures or 0),
                 # 这个标记决定这份缓存能不能被「本次要跑 OCR」的调用复用。
                 "ocr_enabled": bool(self.ocr_assist),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
             temp_file = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
             with temp_file.open("w", encoding="utf-8") as f:
@@ -831,13 +918,13 @@ class NoteGenerator:
             )
             logger.info(f"综合采样：LLM 选中 {len(picks)} 个截图时间点")
             return picks
-        except Exception as exc:  # noqa: BLE001 - 选帧失败不应让整个任务失败
+        except Exception as exc:
             logger.warning(f"LLM 选帧失败，退回高价值 + 均匀采样：{exc}", exc_info=True)
             return []
 
     # ---------------- OCR 辅助模式（spec 008 ticket 02） ----------------
 
-    def _resolve_ocr_assist(self, override: Optional[bool] = None) -> bool:
+    def _resolve_ocr_assist(self, override: bool | None = None) -> bool:
         """OCR 辅助是否已启用且可用。
 
         - 未启用 → False，整条流程与改动前完全一致（spec 008 §5.5）；
@@ -877,7 +964,7 @@ class NoteGenerator:
         )
         return True
 
-    def _pick_note_frames(self, gpt, transcript, task_id: Optional[str] = None) -> list:
+    def _pick_note_frames(self, gpt, transcript, task_id: str | None = None) -> list:
         """第一次调用：从字幕里挑出「值得看一眼画面」的时间点（spec 008 ticket 02）。
 
         这是 m02642 `q1_call_shape=B` 定下的**两次调用**里的第一次。它与
@@ -915,12 +1002,12 @@ class NoteGenerator:
         duration = self._probe_duration()
         started = time.perf_counter()
         try:
-            from app.services.ocr_assist import MAX_JUDGE_CANDIDATES
+            from app.services.ocr_assist import max_judge_candidates
 
             picks = gpt.plan_frame_timestamps(
                 transcript.segments if transcript else [],
                 duration=duration,
-                max_items=MAX_JUDGE_CANDIDATES,
+                max_items=max_judge_candidates(),
             )
         except Exception as exc:
             logger.error("画面挑选失败：%s", exc)
@@ -963,8 +1050,8 @@ class NoteGenerator:
         self,
         gpt,
         transcript,
-        task_id: Optional[str] = None,
-        candidates: Optional[list] = None,
+        task_id: str | None = None,
+        candidates: list | None = None,
     ) -> list:
         """第二次调用：让 LLM 看网格图，判定哪些候选帧值得编入笔记。
 
@@ -1022,7 +1109,7 @@ class NoteGenerator:
             logger.warning("画面价值判定：没有任何候选帧被判为值得编入笔记")
         return approved
 
-    def _cleanup_previous_screenshots(self, approved: List[Any]) -> None:
+    def _cleanup_previous_screenshots(self, approved: list[Any]) -> None:
         """删掉本轮要重新生成的截图文件，避免重试时留下没人引用的残骸。
 
         只按**本轮判定通过的时间点**删除，不扫目录、不按任务前缀批量清空：
@@ -1049,8 +1136,140 @@ class NoteGenerator:
                 "重试前清理上一轮截图 %d 张 task_id 无关（按时间点覆盖）", removed
             )
 
+    def _adopt_video_path(
+        self,
+        audio: AudioDownloadResult,
+        *,
+        downloader: Downloader | None = None,
+        video_url: str | None = None,
+        output_dir: str | None = None,
+        task_id: str | None = None,
+    ) -> None:
+        """缓存命中时把本地视频路径找回来。
+
+        音频缓存只承诺「音频在哪」，video_path 往往是 None（只提元信息那一轮写下的
+        缓存就没有它）。而 _post_process_markdown 的插图分支以 self.video_path 为
+        开关，于是「第二次生成」这条最常用的路径永远插不进图，日志里却一切正常 ——
+        用户看到的是正文里一排没被替换的占位符。
+
+        查找顺序：缓存里记的路径 → 下载器的落盘约定 <output_dir>/<video_id>.mp4 →
+        真去下一遍（download_video 命中已存在的文件会直接返回，不重复下载）。
+        """
+        if self.video_path and Path(self.video_path).is_file():
+            return
+
+        base_dir = output_dir or os.getenv("DATA_DIR", "data")
+        candidates: list = []
+        if audio.video_path:
+            candidates.append(Path(audio.video_path))
+        if audio.video_id:
+            candidates.append(Path(base_dir) / f"{audio.video_id}.mp4")
+        for candidate in candidates:
+            try:
+                if candidate.is_file():
+                    self.video_path = candidate
+                    logger.info("音频缓存命中，已恢复视频路径：%s", candidate)
+                    return
+            except OSError:
+                continue
+
+        if downloader is None or video_url is None:
+            logger.warning(
+                "音频缓存命中但找不到本地视频，本轮无法生成截图（笔记将没有配图）task_id=%s",
+                task_id,
+            )
+            return
+        try:
+            video_path_str = downloader.download_video(
+                video_url=str(video_url), output_dir=base_dir
+            )
+        except Exception as exc:
+            logger.warning(
+                "音频缓存命中，重新获取视频失败，本轮无法生成截图：%s task_id=%s",
+                exc,
+                task_id,
+            )
+            return
+        if video_path_str and Path(video_path_str).is_file():
+            self.video_path = Path(video_path_str)
+            logger.info("音频缓存命中，已重新获取视频：%s", self.video_path)
+
+    def _render_shot_frames(
+        self, video_path: str | Path, task_id: str | None = None
+    ) -> list:
+        """为判定通过的每张图生成单帧截图，并记下路径与 data URL（幂等）。
+
+        这批单帧有两个消费者：总结模型（看图写笔记）与后处理（把图插进 markdown）。
+        两处各自渲染一遍会白跑一遍 ffmpeg、在磁盘上留下没人引用的副本；更要紧的是
+        「复用 OCR 磁盘缓存」的那一轮以前根本不渲染，于是模型在**一张图都没看到**的
+        情况下被要求写 [[SHOT-n]]，占位符最后也没人替换。
+        """
+        from app.services.ocr_assist import format_mmss
+
+        approved = list(self.approved_shots or [])
+        if not approved:
+            self.shot_frames = []
+            self.shot_image_paths = []
+            self.shot_image_urls = []
+            return []
+
+        if self.shot_frames and len(self.shot_frames) == len(approved):
+            existing = [item[3] for item in self.shot_frames]
+            if all(Path(path).is_file() for path in existing if path):
+                return self.shot_frames
+
+        video_path = str(video_path)
+        frames: list = []
+        paths: list = []
+        urls: list = []
+        for index, decision in enumerate(approved, 1):
+            raw_seconds = getattr(decision, "time", None)
+            seconds = float(raw_seconds or 0)
+            label = format_mmss(seconds) if raw_seconds is not None else "?"
+
+            img_path = None
+            try:
+                # 与 _insert_approved_screenshots 用同一套落盘口径：
+                # generate_screenshot(video_path, output_dir, timestamp, index)。
+                ts = int(round(seconds))
+                img_path = generate_screenshot(
+                    video_path, str(IMAGE_OUTPUT_DIR), ts, index
+                )
+            except Exception as exc:
+                logger.warning(
+                    "截图生成失败（该图仍会插入笔记，但可能缺图）：%s @ %s：%s",
+                    label,
+                    seconds,
+                    exc,
+                )
+
+            if img_path:
+                try:
+                    from app.services.media_resource_service import register_resource
+
+                    register_resource(
+                        "screenshot", str(img_path), task_id=task_id, source="generated"
+                    )
+                except Exception:
+                    logger.exception("无法登记生成的截图 task_id=%s", task_id)
+                paths.append(str(img_path))
+                urls.append(self._image_to_data_url(str(img_path)))
+
+            frames.append((index, seconds, label, img_path))
+
+        self.shot_frames = frames
+        self.shot_image_paths = paths
+        self.shot_image_urls = urls
+        logger.info(
+            "截图单帧渲染完成：判定通过=%d 实际出图=%d task_id=%s",
+            len(frames),
+            len(paths),
+            task_id,
+        )
+        return frames
+
     def _run_ocr_stage(
-        self, video_path: Union[str, Path], task_id: Optional[str] = None
+        self, video_path: str | Path, task_id: str | None = None
     ) -> None:
         """OCR 阶段：为判定通过的每张图生成单独截图并识别（m04445 pivot）。
 
@@ -1069,8 +1288,7 @@ class NoteGenerator:
         恒等式（q8_invariant=A）：判定通过 ＝ 实际插图。OCR 成功与否都不再改变插图
         集合，这里只决定「能不能额外给模型一份文字参考」。
         """
-        from app.services.ocr_assist import classify_ocr_result, format_mmss
-        from app.utils.video_helper import generate_screenshot
+        from app.services.ocr_assist import classify_ocr_result
 
         approved: list = list(self.approved_shots or [])
         if not approved:
@@ -1090,7 +1308,7 @@ class NoteGenerator:
             detail={"current": 0, "total": total, "unit": "screenshots"},
         )
 
-        ocr_client: Optional[Any] = None
+        ocr_client: Any | None = None
         if self.ocr_assist:
             try:
                 from app.services.ocr_client import build_ocr_client
@@ -1103,54 +1321,50 @@ class NoteGenerator:
 
         started = time.perf_counter()
         ocr_texts: dict = {}
-        shot_urls: list = []
         failures = 0
 
-        for index, decision in enumerate(approved, 1):
-            raw_seconds = getattr(decision, "time", None)
-            seconds = float(raw_seconds or 0)
-            label = format_mmss(seconds) if raw_seconds is not None else "?"
+        # 截图与 OCR 分两段：截图是本地 ffmpeg 寻帧（串行更稳），OCR 是网络往返
+        # （串行会让总耗时随张数线性增长）。staged 保存这一轮的全部输入，
+        # 识别完再按原索引顺序回填，输出与串行版本逐字一致。
+        # 渲染收进 _render_shot_frames：后处理阶段要插的是同一批文件，不再重渲一遍。
+        staged = self._render_shot_frames(video_path, task_id=task_id)
+        shot_urls = list(self.shot_image_urls or [])
 
-            img_path = None
+        def _recognize(item: tuple) -> tuple:
+            """识别单张；单张失败只影响这一张，异常留在返回值里由调用方记账。"""
+            _index, _seconds, _label, _img_path = item
+            if not _img_path or ocr_client is None:
+                return item, None, None, None
             try:
-                # 与 _insert_approved_screenshots 用同一套落盘口径：
-                # generate_screenshot(video_path, output_dir, timestamp, index)
-                # 文件名是 shot_<index>.jpg，后处理阶段按同一编号回填占位符。
-                ts = int(round(seconds))
-                img_path = generate_screenshot(
-                    video_path, str(IMAGE_OUTPUT_DIR), ts, index
-                )
+                result = ocr_client.recognize_image(_img_path)
+                return item, result, classify_ocr_result(result), None
             except Exception as exc:
+                return item, None, None, exc
+
+        if ocr_client is not None:
+            with ThreadPoolExecutor(
+                # 每帧一次 ffmpeg 抽图 + 一次视觉模型调用：并发太高会同时压垮 CPU
+                # 与上游配额，所以并发数由用户在设置页控制（默认 4）。
+                max_workers=max(
+                    1, min(runtime_limits.ocr_stage_concurrency(), len(staged))
+                )
+            ) as pool:
+                # map 保序：回填顺序与串行版本一致，日志里的编号仍然对得上。
+                recognized = list(pool.map(_recognize, staged))
+        else:
+            recognized = [_recognize(item) for item in staged]
+
+        for item, ocr_result, reading, ocr_error in recognized:
+            index, seconds, label, _img_path = item
+
+            if ocr_error is not None:
+                failures += 1
                 logger.warning(
-                    "OCR 辅助截图失败（该图仍会插入笔记，但可能缺图）：%s @ %s：%s",
+                    "OCR 辅助识别失败，跳过该张的参考内容（图照插）：%s @ %s：%s",
                     label,
                     seconds,
-                    exc,
+                    ocr_error,
                 )
-
-            if img_path:
-                try:
-                    from app.services.media_resource_service import register_resource
-
-                    register_resource("screenshot", str(img_path), task_id=task_id)
-                except Exception:
-                    logger.exception("无法登记生成的截图 task_id=%s", task_id)
-                shot_urls.append(self._image_to_data_url(str(img_path)))
-
-            reading = None
-            ocr_result = None
-            if img_path and ocr_client is not None:
-                try:
-                    ocr_result = ocr_client.recognize_image(img_path)
-                    reading = classify_ocr_result(ocr_result)
-                except Exception as exc:
-                    failures += 1
-                    logger.warning(
-                        "OCR 辅助识别失败，跳过该张的参考内容（图照插）：%s @ %s：%s",
-                        label,
-                        seconds,
-                        exc,
-                    )
 
             if ocr_result is not None:
                 # 存 **OcrResult** 而不是 OcrReading：q1_ocr_payload=A 要的是
@@ -1207,8 +1421,8 @@ class NoteGenerator:
         self,
         markdown: str,
         video_path: Path,
-        approved: List[Any],
-        task_id: Optional[str] = None,
+        approved: list[Any],
+        task_id: str | None = None,
         ocr_enabled: bool = True,
     ) -> str:
         """把判定通过的截图回填进 `[[SHOT-n]]` 占位符；OCR 已在更早的一层跑完。
@@ -1271,19 +1485,30 @@ class NoteGenerator:
             nonlocal completed
             idx, decision = item
             ts = _safe_int(round(_safe_float(getattr(decision, "time", 0) or 0), 0))
-            img_path = generate_screenshot(
-                str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx + 1
-            )
-            if not img_path:
-                raise RuntimeError(f"生成截图失败：第 {idx + 1} 张（{ts}s）")
-            try:
-                from app.services.media_resource_service import register_resource
-
-                register_resource(
-                    "screenshot", img_path, task_id=task_id, source="generated"
+            # 这一批单帧在前面（总结之前）已经渲好了 —— 送模型的图与插进笔记的图
+            # 必须是同一批文件。这里直接复用，既不白跑 ffmpeg，也不会在磁盘上留下
+            # 一份没人引用的副本；只有找不到时才补渲一次。
+            pre_rendered = None
+            if self.shot_frames and idx < len(self.shot_frames):
+                candidate = self.shot_frames[idx][3]
+                if candidate and Path(candidate).is_file():
+                    pre_rendered = candidate
+            if pre_rendered:
+                img_path = pre_rendered
+            else:
+                img_path = generate_screenshot(
+                    str(video_path), str(IMAGE_OUTPUT_DIR), ts, idx + 1
                 )
-            except Exception:
-                logger.exception("无法登记生成的截图 task_id=%s", task_id)
+                if not img_path:
+                    raise RuntimeError(f"生成截图失败：第 {idx + 1} 张（{ts}s）")
+                try:
+                    from app.services.media_resource_service import register_resource
+
+                    register_resource(
+                        "screenshot", img_path, task_id=task_id, source="generated"
+                    )
+                except Exception:
+                    logger.exception("无法登记生成的截图 task_id=%s", task_id)
 
             # OCR 已经不在这一步做了（m04445 pivot + q6_ocr_stage）：识别搬到
             # _run_ocr_stage，跑在总结之前，结果进提示词当参考。这里只负责把
@@ -1365,7 +1590,7 @@ class NoteGenerator:
                 len(missing),
             )
             appendix = ["", "---", "", "## 补充截图", ""]
-            for idx, decision, block in missing:
+            for _idx, decision, block in missing:
                 reason = (getattr(decision, "reason", "") or "").strip()
                 heading = format_mmss(getattr(decision, "time", 0) or 0)
                 appendix.append(f"### {heading}" + (f" · {reason}" if reason else ""))
@@ -1425,8 +1650,9 @@ class NoteGenerator:
             transcriber_options = endpoint
 
         from app.services.transcriber_config_manager import TranscriberConfigManager
+
         cm = TranscriberConfigManager()
-        return get_transcriber(
+        transcriber = get_transcriber(
             transcriber_type=self.transcriber_type,
             model_size=self.model_size,
             transcriber_options=transcriber_options,
@@ -1435,14 +1661,22 @@ class NoteGenerator:
             cpu_threads=cm.get_whisper_cpu_threads(),
             num_workers=cm.get_whisper_num_workers(),
         )
+        if transcriber is None:
+            raise RuntimeError(f"无法初始化转写器：{self.transcriber_type}")
+        return transcriber
 
-    def _get_gpt(self, model_name: Optional[str], provider_id: Optional[str]) -> GPT:
+    def _get_gpt(self, model_name: str | None, provider_id: str | None) -> GPT:
         """
         根据 provider_id 获取对应的 GPT 实例
         :param model_name: GPT 模型名称
         :param provider_id: 供应商 ID
         :return: GPT 实例
         """
+        if not provider_id:
+            raise ProviderError(
+                code=ProviderErrorEnum.NOT_FOUND,
+                message=ProviderErrorEnum.NOT_FOUND.message,
+            )
         provider = ProviderService.get_provider_by_id(provider_id)
         if not provider:
             logger.error(f"[get_gpt] 未找到模型供应商: provider_id={provider_id}")
@@ -1454,7 +1688,7 @@ class NoteGenerator:
         config = ModelConfig(
             api_key=provider["api_key"],
             base_url=provider["base_url"],
-            model_name=model_name,
+            model_name=model_name or "",
             provider=provider["type"],
             name=provider["name"],
             # spec 007：供应商级限流。provider dict 里缺这两个键（老库）时给
@@ -1472,33 +1706,27 @@ class NoteGenerator:
         :param platform: 平台标识，需在 SUPPORT_PLATFORM_MAP 中
         :return: 对应的 Downloader 子类实例
         """
-        downloader_cls = SUPPORT_PLATFORM_MAP.get(platform)
         logger.debug(f"实例化下载器 -  {platform}")
-        instance = None
-        if not downloader_cls:
+        if platform != "bilibili":
             logger.error(f"不支持的平台：{platform}")
             raise NoteError(
                 code=NoteErrorEnum.PLATFORM_NOT_SUPPORTED.code,
                 message=NoteErrorEnum.PLATFORM_NOT_SUPPORTED.message,
             )
-        try:
-            instance = downloader_cls
-        except Exception as e:
-            logger.error(f"实例化下载器失败：{e}")
-
-        logger.info(f"使用下载器：{downloader_cls.__class__}")
-        return instance
+        downloader = SUPPORT_PLATFORM_MAP["bilibili"]
+        logger.info(f"使用下载器：{downloader.__class__}")
+        return downloader
 
     def _update_status(
         self,
-        task_id: Optional[str],
-        status: Union[str, TaskStatus],
-        message: Optional[str] = None,
+        task_id: str | None,
+        status: str | TaskStatus,
+        message: str | None = None,
         *,
-        stage: Optional[TaskStage | str] = None,
-        progress: Optional[float] = None,
-        stage_progress: Optional[float] = None,
-        detail: Optional[dict] = None,
+        stage: TaskStage | str | None = None,
+        progress: float | None = None,
+        stage_progress: float | None = None,
+        detail: dict | None = None,
     ):
         """Write a backward-compatible task status with optional stage metadata."""
         if not task_id:
@@ -1528,7 +1756,7 @@ class NoteGenerator:
             "stage_progress": normalized_stage_progress,
             "message": message or "",
             "detail": detail or {},
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
 
         try:
@@ -1569,7 +1797,9 @@ class NoteGenerator:
             # 「不写」的代价是投影短暂偏旧，「乱写」的代价是读者拿到垃圾 —— 后者更糟。
             #
             # 保留临时文件不删，方便排查（它带 uuid 后缀，不会与后续写入冲突）。
-            logger.error(f"写入状态文件失败 (task_id={task_id})：{e}（保持上一次完整投影，不做原地覆盖）")
+            logger.error(
+                f"写入状态文件失败 (task_id={task_id})：{e}（保持上一次完整投影，不做原地覆盖）"
+            )
 
     def _handle_exception(self, task_id, exc):
         logger.error(f"任务异常 (task_id={task_id})", exc_info=True)
@@ -1577,7 +1807,7 @@ class NoteGenerator:
         if isinstance(error_message, dict):
             try:
                 error_message = json.dumps(error_message, ensure_ascii=False)
-            except:
+            except Exception:
                 error_message = str(error_message)
         self._update_status(task_id, TaskStatus.FAILED, message=error_message)
 
@@ -1619,24 +1849,64 @@ class NoteGenerator:
 
         return report
 
+    def _remember_audio(
+        self,
+        audio_cache_file: Path,
+        audio: AudioDownloadResult,
+        task_id: str | None,
+    ) -> AudioDownloadResult:
+        """缓存音频元信息并登记媒体资源 —— 全流程唯一一处写音频缓存的地方。
+
+        「只取元信息」和「真实下载」是两条不同的分支，但缓存格式与登记口径必须一致：
+        分开写两份，任何一处改了字段或忘了登记，任务就会在恢复时拿到半截元数据。
+        """
+        write_audio_cache(audio_cache_file, audio)
+        try:
+            from app.services.media_resource_service import register_resource
+
+            if Path(audio.file_path).is_file():
+                register_resource(
+                    "audio",
+                    audio.file_path,
+                    task_id=task_id,
+                    video_id=audio.video_id,
+                )
+            if audio.video_path and Path(audio.video_path).is_file():
+                register_resource(
+                    "video",
+                    audio.video_path,
+                    task_id=task_id,
+                    video_id=audio.video_id,
+                )
+            if self.video_path and self.video_path.is_file():
+                register_resource(
+                    "video",
+                    str(self.video_path),
+                    task_id=task_id,
+                    video_id=audio.video_id,
+                )
+        except Exception:
+            logger.exception("无法登记任务媒体资源 task_id=%s", task_id)
+        return audio
+
     def _download_media(
         self,
         downloader: Downloader,
-        video_url: Union[str, HttpUrl],
+        video_url: str | HttpUrl,
         quality: DownloadQuality,
         audio_cache_file: Path,
         status_phase: TaskStatus,
         platform: str,
-        output_path: Optional[str],
+        output_path: str | None,
         screenshot: bool,
         video_understanding: bool,
         video_interval: int,
-        grid_size: List[int],
+        grid_size: list[int],
         skip_download: bool = False,
         sampling_mode: str = "interval",
         frames_per_second: int = 2,
         frame_limit_mode: str = "total",
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> AudioDownloadResult | None:
         """
         1. 检查音频缓存；若不存在，则根据需要下载音频或视频（若需截图/可视化）。
@@ -1664,40 +1934,40 @@ class NoteGenerator:
             message="准备下载音频",
         )
 
+        # 是否要本地视频文件（截图与视频理解都要）。必须在缓存分支之前算出来：
+        # 缓存命中时同样要把视频路径找回来，否则插图那一步会被静默跳过。
+        need_video = screenshot or video_understanding
+
         # 已有缓存，尝试加载
         if audio_cache_file.exists():
             logger.info(f"检测到音频缓存 ({audio_cache_file})，直接读取")
-            try:
-                data = json.loads(audio_cache_file.read_text(encoding="utf-8"))
-                cached = AudioDownloadResult(**data)
-                # 缓存里存的是绝对路径，但那个文件会被媒体清理（容量维度/过期维度）
-                # 删掉。只认缓存不认文件，任务就会拿着一个已经不存在的路径去转写，
-                # 报出来的是「No such file or directory」甚至误导性的 asdict 错误。
-                if cached.file_path and Path(cached.file_path).is_file():
-                    return cached
-                logger.warning(
-                    "音频缓存已失效（文件不存在：%s），将重新下载", cached.file_path
-                )
-            except Exception as e:
-                logger.warning(f"读取音频缓存失败，将重新下载：{e}")
+            # 缓存里存的是绝对路径，而那个文件会被媒体清理（容量/过期维度）删掉；
+            # read_audio_cache 默认校验文件仍在，失效就按未命中处理。
+            cached = read_audio_cache(audio_cache_file)
+            if cached is not None:
+                if need_video:
+                    self._adopt_video_path(
+                        cached,
+                        downloader=downloader,
+                        video_url=str(video_url) if video_url is not None else None,
+                        output_dir=output_path,
+                        task_id=task_id,
+                    )
+                return cached
 
         # 有字幕且不需要截图/视频理解时，只提取元信息不下载文件
         if skip_download:
             logger.info("已有字幕，仅提取视频元信息（不下载音视频）")
             try:
                 audio = downloader.download(
-                    video_url=video_url,
+                    video_url=str(video_url),
                     quality=quality,
-                    output_dir=output_path,
+                    output_dir=output_path or os.getenv("DATA_DIR", "data"),
                     need_video=False,
                     skip_download=True,
                 )
-                audio_cache_file.write_text(
-                    json.dumps(asdict(audio), ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
                 logger.info(f"元信息提取完成 ({audio_cache_file})")
-                return audio
+                return self._remember_audio(audio_cache_file, audio, task_id)
             except Exception as exc:
                 logger.warning(f"元信息提取失败，将尝试完整下载: {exc}")
 
@@ -1716,7 +1986,10 @@ class NoteGenerator:
                     message="正在下载视频",
                 )
                 logger.info("开始下载视频")
-                video_path_str = downloader.download_video(video_url)
+                video_path_str = downloader.download_video(
+                    video_url=str(video_url),
+                    output_dir=output_path or os.getenv("DATA_DIR", "data"),
+                )
                 self.video_path = Path(video_path_str)
                 logger.info(f"视频下载完成：{self.video_path}")
 
@@ -1730,6 +2003,7 @@ class NoteGenerator:
                         message="正在抽取视频画面并拼接网格图",
                         stage=TaskStage.EXTRACTING_FRAMES,
                     )
+                    assert task_id is not None
                     reader = VideoReader(
                         video_path=str(self.video_path),
                         grid_size=tuple(grid_size),
@@ -1770,41 +2044,12 @@ class NoteGenerator:
             )
             logger.info("开始下载音频")
             audio = downloader.download(
-                video_url=video_url,
+                video_url=str(video_url),
                 quality=quality,
-                output_dir=output_path,
+                output_dir=output_path or os.getenv("DATA_DIR", "data"),
                 need_video=need_video,
             )
-            audio_cache_file.write_text(
-                json.dumps(asdict(audio), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            try:
-                from app.services.media_resource_service import register_resource
-
-                if Path(audio.file_path).is_file():
-                    register_resource(
-                        "audio",
-                        audio.file_path,
-                        task_id=task_id,
-                        video_id=audio.video_id,
-                    )
-                if audio.video_path and Path(audio.video_path).is_file():
-                    register_resource(
-                        "video",
-                        audio.video_path,
-                        task_id=task_id,
-                        video_id=audio.video_id,
-                    )
-                if self.video_path and self.video_path.is_file():
-                    register_resource(
-                        "video",
-                        self.video_path,
-                        task_id=task_id,
-                        video_id=audio.video_id,
-                    )
-            except Exception:
-                logger.exception("无法登记任务媒体资源 task_id=%s", task_id)
+            self._remember_audio(audio_cache_file, audio, task_id)
             logger.info(f"音频下载并缓存成功 ({audio_cache_file})")
             return audio
         except Exception as exc:
@@ -1819,8 +2064,9 @@ class NoteGenerator:
         audio_file: str,
         transcript_cache_file: Path,
         status_phase: TaskStatus,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
         subtitle_attempted: bool = False,
+        cache_checked: bool = False,
     ) -> TranscriptResult | None:
         """
         优先获取平台字幕，没有则 fallback 到音频转写
@@ -1832,25 +2078,19 @@ class NoteGenerator:
         :param status_phase: 状态枚举
         :param task_id: 任务 ID
         :param subtitle_attempted: 调用方是否已经探测过平台字幕（避免重复网络请求）
+        :param cache_checked: 调用方刚读过同一份缓存（且已确认未命中），跳过这次重复读盘
         :return: TranscriptResult 对象
         """
         self._update_status(task_id, status_phase)
 
-        # 已有缓存，直接返回
-        if transcript_cache_file.exists():
+        # 已有缓存，直接返回。调用方已经读过同一份文件时（cache_checked），
+        # 再读一遍只会多一次磁盘 IO 和一次 JSON 解析，结果不可能不同。
+        if not cache_checked and transcript_cache_file.exists():
             logger.info(f"检测到转写缓存 ({transcript_cache_file})，尝试读取")
-            try:
-                data = json.loads(transcript_cache_file.read_text(encoding="utf-8"))
-                segments = [
-                    TranscriptSegment(**seg) for seg in data.get("segments", [])
-                ]
-                return TranscriptResult(
-                    language=data.get("language"),
-                    full_text=data["full_text"],
-                    segments=segments,
-                )
-            except Exception as e:
-                logger.warning(f"加载转写缓存失败，将重新获取：{e}")
+            cached = read_transcript_cache(transcript_cache_file)
+            if cached is not None:
+                return cached
+            logger.warning("转写缓存不可用，将重新获取")
 
         # 1. 先尝试获取平台字幕（调用方已试过时跳过，避免重复请求）
         if subtitle_attempted:
@@ -1862,10 +2102,7 @@ class NoteGenerator:
                 if transcript and transcript.segments:
                     logger.info(f"成功获取平台字幕，共 {len(transcript.segments)} 段")
                     # 缓存结果
-                    transcript_cache_file.write_text(
-                        json.dumps(asdict(transcript), ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
+                    write_transcript_cache(transcript_cache_file, transcript)
                     return transcript
                 else:
                     logger.info("平台无可用字幕，将使用音频转写")
@@ -1884,6 +2121,8 @@ class NoteGenerator:
             transcript_cache_file=transcript_cache_file,
             status_phase=status_phase,
             task_id=task_id,
+            cache_checked=True,
+            video_url=video_url,
         )
 
     def _transcribe_audio(
@@ -1891,7 +2130,9 @@ class NoteGenerator:
         audio_file: str,
         transcript_cache_file: Path,
         status_phase: TaskStatus,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
+        cache_checked: bool = False,
+        video_url: str | None = None,
     ) -> TranscriptResult | None:
         """
         1. 检查转写缓存；若存在则尝试加载，否则调用转写器生成并缓存。
@@ -1901,25 +2142,39 @@ class NoteGenerator:
         :param transcript_cache_file: 转写结果缓存路径
         :param status_phase: 对应的状态枚举，如 TaskStatus.TRANSCRIBING
         :param task_id: 任务 ID（由调用方传入，不再从文件名反推）
+        :param cache_checked: 调用方刚读过同一份缓存（且已确认未命中），跳过这次重复读盘
+        :param video_url: 视频链接；给了才启用跨任务共享转写缓存
         :return: TranscriptResult 对象
         """
         self._update_status(task_id, status_phase)
 
-        # 已有缓存，尝试加载
-        if transcript_cache_file.exists():
+        # 已有缓存，尝试加载（cache_checked 由调用方在阶段入口读过缓存时置位）
+        if not cache_checked and transcript_cache_file.exists():
             logger.info(f"检测到转写缓存 ({transcript_cache_file})，尝试读取")
-            try:
-                data = json.loads(transcript_cache_file.read_text(encoding="utf-8"))
-                segments = [
-                    TranscriptSegment(**seg) for seg in data.get("segments", [])
-                ]
-                return TranscriptResult(
-                    language=data["language"],
-                    full_text=data["full_text"],
-                    segments=segments,
-                )
-            except Exception as e:
-                logger.warning(f"加载转写缓存失败，将重新转写：{e}")
+            cached = read_transcript_cache(transcript_cache_file)
+            if cached is not None:
+                return cached
+            logger.warning("转写缓存不可用，将重新转写")
+
+        # 跨任务共享缓存：同一个视频 + 同一个转写引擎，转写结果逐字相同，
+        # 没必要为第二次生成再跑一遍几十分钟的 ASR。键里带了引擎身份，
+        # 换引擎/换模型自然落到另一个文件，不会把上次的答案冒充本次结果。
+        shared_file = self._shared_transcript_file(video_url) if video_url else None
+        if shared_file is not None:
+            shared = read_transcript_cache(shared_file)
+            if shared is not None:
+                logger.info(f"命中共享转写缓存 ({shared_file})，跳过音频转写")
+                # 回填任务级缓存：本次任务后续的读盘仍走它，行为与正常路径一致。
+                write_transcript_cache(transcript_cache_file, shared)
+                return shared
+
+        # ASR 输入上限（设置 → 通用）：体积与时长是两道独立闸门。放在缓存检查**之后**
+        # ——命中缓存时根本不会调用 ASR，也就无所谓「音频太大」。越界时在本地直接
+        # 拒绝，而不是把几十小时的音频整段丢给上游再收到一个语焉不详的 413。
+        violation = runtime_limits.asr_input_violation(audio_file)
+        if violation:
+            logger.warning("ASR 输入超出限制：%s", violation)
+            raise ValueError(violation)
 
         # 调用转写器
         try:
@@ -1928,21 +2183,18 @@ class NoteGenerator:
             # 否则进度回调要么收不到、要么把上一个任务的 task_id 带到下一个任务。
             had_callback = hasattr(self.transcriber, "progress_callback")
             previous_callback = getattr(self.transcriber, "progress_callback", None)
-            setattr(
-                self.transcriber,
-                "progress_callback",
-                self._transcriber_progress_callback(task_id),
+            assert task_id is not None
+            self.transcriber.progress_callback = self._transcriber_progress_callback(  # pyright: ignore[reportAttributeAccessIssue]
+                str(task_id)
             )
             try:
                 transcript = self.transcriber.transcript(file_path=audio_file)
             finally:
                 if had_callback:
-                    setattr(self.transcriber, "progress_callback", previous_callback)
+                    self.transcriber.progress_callback = previous_callback  # pyright: ignore[reportAttributeAccessIssue]
                 else:
-                    try:
+                    with contextlib.suppress(AttributeError):
                         delattr(self.transcriber, "progress_callback")
-                    except AttributeError:
-                        pass
 
             if transcript is None:
                 # 走到这里说明转写器自己吞掉了异常（历史行为）。直接点名真实原因，
@@ -1951,10 +2203,9 @@ class NoteGenerator:
                     f"转写器没有返回结果（音频文件：{audio_file}），请确认该文件是否存在"
                 )
 
-            transcript_cache_file.write_text(
-                json.dumps(asdict(transcript), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            write_transcript_cache(transcript_cache_file, transcript)
+            if shared_file is not None:
+                write_transcript_cache(shared_file, transcript)
             logger.info(f"转写并缓存成功 ({transcript_cache_file})")
             return transcript
         except Exception as exc:
@@ -1970,15 +2221,15 @@ class NoteGenerator:
         markdown_cache_file: Path,
         link: bool,
         screenshot: bool,
-        formats: List[str],
-        scene: Optional[str],
-        detail: Optional[str],
-        extras: Optional[str],
-        video_img_urls: List[str],
+        formats: list[str],
+        scene: str | None,
+        detail: str | None,
+        extras: str | None,
+        video_img_urls: list[str],
         ocr_assist: bool = False,
-        approved_shots: Optional[List] = None,
-        ocr_reference: Optional[str] = None,
-        task_id: Optional[str] = None,
+        approved_shots: list | None = None,
+        ocr_reference: str | None = None,
+        task_id: str | None = None,
     ) -> str | None:
         """
         调用 GPT 对转写结果进行总结，生成 Markdown 文本并缓存。
@@ -2067,11 +2318,11 @@ class NoteGenerator:
     def _post_process_markdown(
         self,
         markdown: str,
-        video_path: Optional[Path],
-        formats: List[str],
+        video_path: Path | None,
+        formats: list[str],
         audio_meta: AudioDownloadResult,
         platform: str,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> str:
         """
         对生成的 Markdown 做后期处理：插入截图和/或插入链接。
@@ -2084,6 +2335,13 @@ class NoteGenerator:
         :param task_id: 任务 ID（用于阶段进度回报）
         :return: 处理后的 Markdown 字符串
         """
+        if "screenshot" in formats and not video_path:
+            # 以前这里是静默的：拿不到视频路径就整步跳过，正文里留下一排没被替换的
+            # 占位符，日志里却看不出任何异常。至少让它留下痕迹。
+            logger.warning(
+                "需要插图但拿不到本地视频路径，本轮跳过插图 task_id=%s", task_id
+            )
+
         if "screenshot" in formats and video_path:
             if self.ocr_judgement_enabled:
                 # 判定路径：只有判定通过的候选帧才会变成图片。这里故意不套
@@ -2092,7 +2350,7 @@ class NoteGenerator:
                 markdown = self._insert_approved_screenshots(
                     markdown,
                     video_path,
-                    self.approved_shots,
+                    self.approved_shots or [],
                     task_id=task_id,
                     # 开关只控制 OCR 层：判定照跑，插图集合不变，图上文字不回填。
                     ocr_enabled=self.ocr_assist,
@@ -2115,6 +2373,16 @@ class NoteGenerator:
             except Exception as e:
                 logger.warning(f"链接插入失败，跳过该步骤：{e}")
 
+        # 兜底：正文里不该留下任何 [[SHOT-n]] 占位符。插图没跑成（拿不到视频、
+        # ffmpeg 失败、模型多写了几个编号）时它们会原样出现在笔记里 —— 用户看到的
+        # 是「这里本该有图」的空壳，比没有图更糟，而且日志里曾经一点痕迹都没有。
+        leftover = len(_SHOT_MARKER_ANY.findall(markdown))
+        if leftover:
+            logger.warning(
+                "正文残留 %d 个未替换的截图占位符，已移除 task_id=%s", leftover, task_id
+            )
+            markdown = _SHOT_MARKER_ANY.sub("", markdown)
+
         self._update_status(
             task_id,
             TaskStatus.FORMATTING,
@@ -2128,7 +2396,7 @@ class NoteGenerator:
         self,
         markdown: str,
         video_path: Path,
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> str | None | Any:
         """
         扫描 Markdown 文本中所有 Screenshot 标记，并替换为实际生成的截图链接。
@@ -2141,7 +2409,7 @@ class NoteGenerator:
         :param task_id: 任务 ID（用于阶段进度回报）
         :return: 替换后的 Markdown 字符串
         """
-        matches: List[Tuple[str, int]] = extract_screenshot_timestamps(markdown)
+        matches: list[tuple[str, int]] = extract_screenshot_timestamps(markdown)
         if not matches:
             return markdown
 
@@ -2158,7 +2426,7 @@ class NoteGenerator:
         counter_lock = threading.Lock()
         completed = 0
 
-        def _render(item: Tuple[int, Tuple[str, int]]) -> Tuple[str, str]:
+        def _render(item: tuple[int, tuple[str, int]]) -> tuple[str, str]:
             nonlocal completed
             idx, (marker, ts) = item
             img_path = generate_screenshot(
@@ -2207,7 +2475,7 @@ class NoteGenerator:
         return markdown
 
     @staticmethod
-    def _extract_screenshot_timestamps(markdown: str) -> List[Tuple[str, int]]:
+    def _extract_screenshot_timestamps(markdown: str) -> list[tuple[str, int]]:
         """
         从 Markdown 文本中提取所有 '*Screenshot-mm:ss' 或 'Screenshot-[mm:ss]' 标记，
         返回 [(原始标记文本, 时间戳秒数), ...] 列表。
@@ -2218,7 +2486,7 @@ class NoteGenerator:
         return extract_screenshot_timestamps(markdown)
 
     def _save_metadata(
-        self, video_id: str, platform: str, task_id: str, group_id: str = None
+        self, video_id: str, platform: str, task_id: str, group_id: str | None = None
     ) -> None:
         """
         将生成的笔记任务记录插入数据库（已存在则只更新归属）

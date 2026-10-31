@@ -10,7 +10,6 @@ if spec is None or spec.loader is None:
 model_fallback = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(model_fallback)
 
-builtin_fallback_models = model_fallback.builtin_fallback_models
 normalize_models = model_fallback.normalize_models
 as_model_dicts = model_fallback.as_model_dicts
 
@@ -33,22 +32,6 @@ class FakeSyncPage:
         self.data = data
 
 
-class TestBuiltinFallbackModels(unittest.TestCase):
-    def test_deepseek_by_id_has_fallback(self):
-        # issue #417：DeepSeek /models 不稳定，必须有兜底清单
-        models = builtin_fallback_models({"id": "deepseek", "name": "DeepSeek"})
-        self.assertIn("deepseek-chat", models)
-        self.assertIn("deepseek-reasoner", models)
-
-    def test_match_by_name_case_insensitive(self):
-        models = builtin_fallback_models({"id": "whatever-uuid", "name": "deepseek"})
-        self.assertIn("deepseek-chat", models)
-
-    def test_unknown_provider_returns_empty(self):
-        self.assertEqual(builtin_fallback_models({"id": "nope", "name": "nope"}), [])
-
-    def test_none_provider_returns_empty(self):
-        self.assertEqual(builtin_fallback_models(None), [])
 
 
 class TestNormalizeModels(unittest.TestCase):

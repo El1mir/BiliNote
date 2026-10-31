@@ -6,7 +6,11 @@ from app.db.models.providers import Provider
 def get_model_by_provider_and_name(provider_id: int | str, model_name: str):
     db = next(get_db())
     try:
-        model = db.query(Model).filter_by(provider_id=str(provider_id), model_name=model_name).first()
+        model = (
+            db.query(Model)
+            .filter_by(provider_id=str(provider_id), model_name=model_name)
+            .first()
+        )
         if model:
             return {
                 "id": model.id,
@@ -45,6 +49,21 @@ def get_models_by_provider(provider_id: int | str):
         db.close()
 
 
+def get_model_by_id(model_id: int):
+    db = next(get_db())
+    try:
+        model = db.query(Model).filter_by(id=model_id).first()
+        if model is None:
+            return None
+        return {
+            "id": model.id,
+            "provider_id": model.provider_id,
+            "model_name": model.model_name,
+        }
+    finally:
+        db.close()
+
+
 def delete_model(model_id: int):
     db = next(get_db())
     try:
@@ -60,7 +79,12 @@ def get_all_models():
     db = next(get_db())
     try:
         # 只查询启用状态供应商的模型
-        models = db.query(Model).join(Provider, Model.provider_id == Provider.id).filter(Provider.enabled == 1).all()
+        models = (
+            db.query(Model)
+            .join(Provider, Model.provider_id == Provider.id)
+            .filter(Provider.enabled == 1)
+            .all()
+        )
         return [
             {"id": m.id, "provider_id": m.provider_id, "model_name": m.model_name}
             for m in models

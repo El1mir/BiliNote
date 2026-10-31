@@ -1,46 +1,27 @@
 import os
-import platform
 import threading
 from enum import Enum
 
-from app.transcriber.groq import GroqTranscriber
 from app.transcriber.openai_asr import OpenAIASRTranscriber
 from app.transcriber.whisper import WhisperTranscriber
-from app.transcriber.bcut import BcutTranscriber
-from app.transcriber.kuaishou import KuaishouTranscriber
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 class TranscriberType(str, Enum):
     FAST_WHISPER = "fast-whisper"
-    MLX_WHISPER = "mlx-whisper"
-    BCUT = "bcut"
-    KUAISHOU = "kuaishou"
-    GROQ = "groq"
     OPENAI_ASR = "openai-asr"
 
-# 在 Apple 平台尝试导入 MLX Whisper（不再依赖环境变量，支持前端动态切换）
-MLX_WHISPER_AVAILABLE = False
-if platform.system() == "Darwin":
-    try:
-        from app.transcriber.mlx_whisper_transcriber import MLXWhisperTranscriber
-        MLX_WHISPER_AVAILABLE = True
-        logger.info("MLX Whisper 可用，已导入")
-    except ImportError:
-        logger.warning("MLX Whisper 导入失败，可能未安装 mlx_whisper")
+#: 引擎清单只剩两条路：本地 faster-whisper，或任何 openai 兼容的在线 ASR。
+#: 必剪 / 快手 / Groq / MLX 已连同各自的实现一起移除 —— 前三个是随时会限流或
+#: 关停的第三方免费接口，MLX 只在 macOS 上存在，而 openai 兼容端点已经能覆盖
+#: 它们全部（用户填自己的 base_url 即可）。
+AVAILABLE_TYPES = (TranscriberType.FAST_WHISPER, TranscriberType.OPENAI_ASR)
 
 logger.info('初始化转录服务提供器')
 
 # 转录器单例缓存
-_transcribers = {
-    TranscriberType.FAST_WHISPER: None,
-    TranscriberType.MLX_WHISPER: None,
-    TranscriberType.BCUT: None,
-    TranscriberType.KUAISHOU: None,
-    TranscriberType.GROQ: None,
-    TranscriberType.OPENAI_ASR: None,
-}
+_transcribers = {key: None for key in AVAILABLE_TYPES}
 
 # Cache instances together with their constructor configuration. The
 # transcriber choice and Whisper model size can be changed from the frontend,
@@ -67,9 +48,6 @@ def _init_transcriber(key: TranscriberType, cls, *args, **kwargs):
         return _transcribers[key]
 
 # 各类型获取方法
-def get_groq_transcriber():
-    return _init_transcriber(TranscriberType.GROQ, GroqTranscriber)
-
 def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
                                timeout=600, chunk_size_mb=18, name: str = "",
                                api_style: str = "transcriptions",
@@ -77,7 +55,7 @@ def get_openai_asr_transcriber(base_url: str, api_key: str, model: str,
                                min_silence_seconds: float = 0.5, max_rpm: float = 30,
                                chunk_concurrency: int | None = None,
                                silence_split: bool | None = None):
-    """OpenAI 兼容 ASR。所有参数都是标量，保证 _init_transcriber 的配置缓存能正确失效。
+    """openai 兼容 ASR。所有参数都是标量，保证 _init_transcriber 的配置缓存能正确失效。
 
     api_style: transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
     """
@@ -111,18 +89,6 @@ def get_whisper_transcriber(model_size="base", device="auto", compute_type=None,
         num_workers=num_workers,
     )
 
-def get_bcut_transcriber():
-    return _init_transcriber(TranscriberType.BCUT, BcutTranscriber)
-
-def get_kuaishou_transcriber():
-    return _init_transcriber(TranscriberType.KUAISHOU, KuaishouTranscriber)
-
-def get_mlx_whisper_transcriber(model_size="base"):
-    if not MLX_WHISPER_AVAILABLE:
-        logger.warning("MLX Whisper 不可用，请确保在 Apple 平台且已安装 mlx_whisper")
-        raise ImportError("MLX Whisper 不可用")
-    return _init_transcriber(TranscriberType.MLX_WHISPER, MLXWhisperTranscriber, model_size=model_size)
-
 # 通用入口
 def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="auto",
                     transcriber_options=None, compute_type=None, cpu_threads=0,
@@ -131,8 +97,8 @@ def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="au
     获取指定类型的转录器实例
 
     参数:
-        transcriber_type: 支持 "fast-whisper", "mlx-whisper", "bcut", "kuaishou", "groq", "openai-asr"
-        model_size: 模型大小，适用于 whisper 类；未提供时才读取环境变量默认值
+        transcriber_type: 支持 "fast-whisper", "openai-asr"
+        model_size: 模型大小，适用于 whisper；未提供时才读取环境变量默认值
         device: 设备类型（auto / cpu / cuda），仅 whisper 使用
         transcriber_options: openai-asr 的端点配置 dict（base_url/api_key/model/timeout/chunk_size_mb/name/api_style）
         compute_type: 计算类型（auto/float16/int8/...），仅 fast-whisper
@@ -160,41 +126,19 @@ def get_transcriber(transcriber_type="fast-whisper", model_size=None, device="au
                                        cpu_threads=cpu_threads,
                                        num_workers=num_workers)
 
-    elif transcriber_enum == TranscriberType.MLX_WHISPER:
-        if not MLX_WHISPER_AVAILABLE:
-            raise RuntimeError(
-                "MLX Whisper 不可用：需要 macOS 平台并安装 mlx_whisper 包 (pip install mlx_whisper)。"
-                "请在「音频转写配置」页面切换到其他转写引擎。"
-            )
-        return get_mlx_whisper_transcriber(whisper_model_size)
-
-    elif transcriber_enum == TranscriberType.BCUT:
-        return get_bcut_transcriber()
-
-    elif transcriber_enum == TranscriberType.KUAISHOU:
-        return get_kuaishou_transcriber()
-
-    elif transcriber_enum == TranscriberType.GROQ:
-        return get_groq_transcriber()
-
-    elif transcriber_enum == TranscriberType.OPENAI_ASR:
-        options = transcriber_options or {}
-        return get_openai_asr_transcriber(
-            base_url=options.get("base_url", ""),
-            api_key=options.get("api_key", ""),
-            model=options.get("model", ""),
-            timeout=options.get("timeout", 600),
-            chunk_size_mb=options.get("chunk_size_mb", 18),
-            name=options.get("name", ""),
-            api_style=options.get("api_style", "transcriptions"),
-            max_speech_chunks=options.get("max_speech_chunks", 120),
-            silence_noise_db=options.get("silence_noise_db", -30.0),
-            min_silence_seconds=options.get("min_silence_seconds", 0.5),
-            max_rpm=options.get("max_rpm", 30),
-            chunk_concurrency=options.get("chunk_concurrency"),
-            silence_split=options.get("silence_split"),
-        )
-
-    # fallback
-    logger.warning(f'未识别转录器类型 "{transcriber_type}"，使用 fast-whisper 作为默认')
-    return get_whisper_transcriber(whisper_model_size, device=device)
+    options = transcriber_options or {}
+    return get_openai_asr_transcriber(
+        base_url=options.get("base_url", ""),
+        api_key=options.get("api_key", ""),
+        model=options.get("model", ""),
+        timeout=options.get("timeout", 600),
+        chunk_size_mb=options.get("chunk_size_mb", 18),
+        name=options.get("name", ""),
+        api_style=options.get("api_style", "transcriptions"),
+        max_speech_chunks=options.get("max_speech_chunks", 120),
+        silence_noise_db=options.get("silence_noise_db", -30.0),
+        min_silence_seconds=options.get("min_silence_seconds", 0.5),
+        max_rpm=options.get("max_rpm", 30),
+        chunk_concurrency=options.get("chunk_concurrency"),
+        silence_split=options.get("silence_split"),
+    )

@@ -29,22 +29,30 @@ export interface OpenAIASREndpoint {
    * 关掉可省去「完整解码音频 + silencedetect」这一整轮耗时，改走按字节等长切片。
    */
   silence_split: boolean
+  /**
+   * 用户显式设过的静音字段（silence_split / silence_noise_db / min_silence_seconds）。
+   * 不在列表里 = 该字段跟随「设置 → 通用」的全局值，改全局会立刻影响这个端点。
+   */
+  explicit_fields?: string[]
 }
 
 export interface OpenAIASREndpointInput {
   name: string
   base_url: string
-  api_key: string
+  /** 编辑时可省略或留空：后端把带 * 的掩码值当成「不修改」 */
+  api_key?: string
   model: string
   timeout?: number
   chunk_size_mb?: number
   api_style?: OpenAIASRStyle
   max_speech_chunks?: number
-  silence_noise_db?: number
-  min_silence_seconds?: number
+  /** 传 null = 撤销端点级覆盖，重新跟随「设置 → 通用」的全局值 */
+  silence_noise_db?: number | null
+  min_silence_seconds?: number | null
   max_rpm?: number
   chunk_concurrency?: number
-  silence_split?: boolean
+  /** 传 null = 撤销端点级覆盖，重新跟随全局开关 */
+  silence_split?: boolean | null
 }
 
 export interface TranscriberConfig {
@@ -72,7 +80,6 @@ export interface TranscriberConfig {
   whisper_builtin_models?: Record<string, string>
   /** 用户自定义模型映射：名称 → HF repo_id 或本地路径 */
   whisper_custom_models?: Record<string, string>
-  mlx_whisper_available: boolean
   /** OpenAI 兼容 ASR：当前使用的那条 */
   openai_asr_id?: string | null
   /** OpenAI 兼容 ASR：全部端点（api_key 已打码） */
@@ -90,9 +97,8 @@ export interface ModelStatus {
 }
 
 export interface ModelsStatusResponse {
+  /** 只剩本地 faster-whisper 有「下载」概念；在线 ASR 端点无需下载 */
   whisper: ModelStatus[]
-  mlx_whisper: ModelStatus[]
-  mlx_available: boolean
 }
 
 export const getTranscriberConfig = async (): Promise<TranscriberConfig> => {

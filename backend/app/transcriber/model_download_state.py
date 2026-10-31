@@ -1,7 +1,7 @@
-"""whisper / mlx 模型后台下载状态跟踪（含失败原因）。
+"""whisper 模型后台下载状态跟踪（含失败原因）。
 
 routers.config 的「触发下载」与「查询状态」共享这份进程内内存态：
-  - key：fast-whisper 直接用 model_size；mlx 用 "mlx-{size}" 前缀（与历史一致）
+  - key：fast-whisper 直接用 model_size；需要区分来源时用任意前缀（如 "alt-{size}"）
   - 状态：downloading / done / failed；failed 时另存最近一次错误原因
 
 为什么抽成独立的轻量模块（仅依赖 logger）：
@@ -57,7 +57,7 @@ def get_error(key: str) -> Optional[str]:
 def status_row(name: str, downloaded: bool, key: Optional[str] = None) -> dict:
     """构造单个模型给前端的状态行：downloaded / downloading / failed (+error)。
 
-    key 默认用 name；mlx 传 "mlx-{size}"。已下载成功（downloaded=True）的模型
+    key 默认用 name；需要区分来源时可传带前缀的 key。已下载成功（downloaded=True）的模型
     一律不回传 failed/error——避免「先失败后又下好」时残留旧的错误状态。
     """
     k = key if key is not None else name

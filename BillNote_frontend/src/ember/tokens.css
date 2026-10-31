@@ -1,0 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap');
+@import 'tailwindcss';
+
+/* ==========================================================================
+   Ember Studio — design tokens
+   Single source of truth for colour, type, space, radius, elevation, motion.
+   ========================================================================== */
+
+@theme {
+  /* Type families */
+  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Source Sans 3', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale (design spec: Display 64 / Headline 48 / Section 28 / Subhead 20
+     / Body 16 / Small 14 / Caption 12 / Overline 11) */
+  --text-display: 4rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
+  --text-headline: 3rem;
+  --text-headline--line-height: 1.1;
+  --text-headline--letter-spacing: -0.02em;
+  --text-section: 1.75rem;
+  --text-section--line-height: 1.25;
+  --text-section--letter-spacing: -0.02em;
+  --text-subhead: 1.25rem;
+  --text-subhead--line-height: 1.4;
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.5;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-overline: 0.6875rem;
+  --text-overline--line-height: 1.2;
+  --text-overline--letter-spacing: 0.08em;
+
+  /* Palette */
+  --color-ember: #c2410c;
+  --color-ember-hover: #9a3412;
+  --color-ember-soft: #fdf0e9;
+  --color-ember-ring: rgba(194, 65, 12, 0.12);
+  --color-accent: #f59e0b;
+  --color-canvas: #fafaf9;
+  --color-surface: #f5f5f4;
+  --color-raised: #e7e5e4;
+  --color-ink: #1c1917;
+  --color-ink-soft: #57534e;
+  --color-ink-mute: #78716c;
+  --color-line: #d6d3d1;
+  --color-ok: #16a34a;
+  --color-warn: #d97706;
+  --color-danger: #dc2626;
+
+  /* Radius */
+  --radius-inline: 4px;
+  --radius-control: 8px;
+  --radius-surface: 12px;
+
+  /* Elevation */
+  --shadow-raise: 0 4px 16px rgba(28, 25, 23, 0.06);
+  --shadow-float: 0 24px 48px rgba(28, 25, 23, 0.12);
+  --shadow-ember: 0 4px 12px rgba(194, 65, 12, 0.25);
+
+  /* Motion */
+  --ease-ember: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-ember-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Semantic aliases used by hand-written CSS below */
+:root {
+  --ember: #c2410c;
+  --ember-hover: #9a3412;
+  --ember-soft: #fdf0e9;
+  --accent: #f59e0b;
+  --canvas: #fafaf9;
+  --surface: #f5f5f4;
+  --raised: #e7e5e4;
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+  --ink-mute: #78716c;
+  --line: #d6d3d1;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --nav-width: 256px;
+  --shell-max: 1200px;
+  color-scheme: light;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  code,
+  pre,
+  kbd {
+    font-family: var(--font-mono);
+    font-feature-settings: 'liga' 1, 'calt' 1;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ember);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: rgba(194, 65, 12, 0.16);
+  }
+
+  /* Warm scrollbars — never cool grey */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-mute);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  /* Overline — 11px uppercase tracking-wide */
+  .ember-overline {
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--ink-mute);
+  }
+
+  /* Terracotta left accent bar for active navigation / selected cards */
+  .ember-accent-bar::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 3px;
+    border-radius: 0 9999px 9999px 0;
+    background: var(--ember);
+  }
+
+  .ember-scroll-fade {
+    mask-image: linear-gradient(to bottom, transparent, black 12px, black calc(100% - 12px), transparent);
+  }
+
+  /* Horizontal counterpart, for scrollable tab strips: the fading edge is what
+     tells a touch user the row continues past the viewport. */
+  .ember-scroll-fade-x {
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  }
+
+  .ember-grain {
+    background-image: radial-gradient(rgba(28, 25, 23, 0.035) 1px, transparent 0);
+    background-size: 18px 18px;
+  }
+}

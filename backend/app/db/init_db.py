@@ -119,6 +119,44 @@ def init_db():
                 connection.execute(
                     text("ALTER TABLE general_settings ADD COLUMN active_model_name VARCHAR")
                 )
+            # 2026-10-17：ASR 输入上限 / 静音拆分 / LLM 请求体预算 / OCR 阶段参数。
+            # 老库里的 general_settings 只有 4 个可调列，这里逐列补。常量默认值与
+            # app/db/models/general_settings.py 里的 DEFAULT_* 必须一致 —— 两处不一致
+            # 会让「新库」和「迁移过来的老库」行为不同。
+            settings_columns = _columns(connection, "general_settings")
+            _settings_additions = (
+                ("asr_max_file_mb", "INTEGER DEFAULT 0"),
+                ("asr_max_duration_minutes", "INTEGER DEFAULT 0"),
+                ("asr_silence_split", "INTEGER DEFAULT 1"),
+                ("asr_silence_noise_db", "FLOAT DEFAULT -30.0"),
+                ("asr_min_silence_seconds", "FLOAT DEFAULT 0.5"),
+                ("llm_max_request_bytes", "INTEGER DEFAULT 9437184"),
+                ("llm_judge_image_budget_bytes", "INTEGER DEFAULT 3145728"),
+                ("llm_retry_attempts", "INTEGER DEFAULT 3"),
+                ("llm_retry_backoff_seconds", "FLOAT DEFAULT 1.5"),
+                ("ocr_stage_concurrency", "INTEGER DEFAULT 4"),
+                ("note_max_images", "INTEGER DEFAULT 30"),
+                # 第二轮：失败预算（任务重试 / 429 冷却 / 下载重试）。
+                ("note_max_retries", "INTEGER DEFAULT 3"),
+                ("note_retry_backoff_seconds", "FLOAT DEFAULT 5.0"),
+                ("llm_rate_limit_cooldown_seconds", "FLOAT DEFAULT 300.0"),
+                ("llm_rate_limit_max_wait_seconds", "FLOAT DEFAULT 3600.0"),
+                ("llm_rate_limit_resume_interval_seconds", "FLOAT DEFAULT 300.0"),
+                ("download_retries", "INTEGER DEFAULT 3"),
+                ("download_socket_timeout_seconds", "INTEGER DEFAULT 30"),
+                # 第三轮：截图编码与 ffmpeg 超时（决定单图字节数 = 一次请求能带几张图）。
+                ("screenshot_max_width", "INTEGER DEFAULT 0"),
+                ("screenshot_quality", "INTEGER DEFAULT 2"),
+                ("ffmpeg_timeout_seconds", "INTEGER DEFAULT 60"),
+                ("ocr_max_judge_candidates", "INTEGER DEFAULT 200"),
+            )
+            for _column, _ddl in _settings_additions:
+                if _column in settings_columns:
+                    continue
+                # pi-lens-ignore: python-sql-injection
+                connection.execute(
+                    text(f"ALTER TABLE general_settings ADD COLUMN {_column} {_ddl}")
+                )
             # spec 007：供应商级并发量与每分钟请求数。
             provider_columns = _columns(connection, "providers")
             if "max_concurrency" not in provider_columns:

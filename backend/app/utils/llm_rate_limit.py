@@ -316,10 +316,22 @@ def note_rate_limit_hit(
     返回 True 时调用方应当**交还队列**（把任务放回 PENDING 并登记到停放区），
     而不是继续占着 worker 线程等 —— 配额恢复可能需要远不止一小时。
     """
-    return _RATE_LIMIT_COOLDOWN.hit(
-        RATE_LIMIT_COOLDOWN_SECONDS if cooldown_seconds is None else cooldown_seconds,
-        RATE_LIMIT_MAX_WAIT_SECONDS if max_wait_seconds is None else max_wait_seconds,
-    )
+    # 未显式传参时读运行时配置（设置 → 通用），常量只是兜底。
+    # 延迟 import：runtime_limits 会反向读 DB，放在函数体里避免导入期建库。
+    if cooldown_seconds is None or max_wait_seconds is None:
+        try:
+            from app.services import runtime_limits
+
+            if cooldown_seconds is None:
+                cooldown_seconds = runtime_limits.llm_rate_limit_cooldown_seconds()
+            if max_wait_seconds is None:
+                max_wait_seconds = runtime_limits.llm_rate_limit_max_wait_seconds()
+        except Exception:  # noqa: BLE001 - 读不到配置就用常量，绝不因此中断
+            if cooldown_seconds is None:
+                cooldown_seconds = RATE_LIMIT_COOLDOWN_SECONDS
+            if max_wait_seconds is None:
+                max_wait_seconds = RATE_LIMIT_MAX_WAIT_SECONDS
+    return _RATE_LIMIT_COOLDOWN.hit(cooldown_seconds, max_wait_seconds)
 
 
 def rate_limit_remaining() -> float:

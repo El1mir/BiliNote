@@ -62,15 +62,44 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
-#: 单篇笔记的插图上限。
+#: 单篇笔记的插图上限（**历史常量，仅作兜底**）。
 #:
 #: spec 008 §5.6d 实测既有笔记单篇插图 2~173 张（``aa5a2774``=173、``273e7b06``=66、
 #: ``62858ab8``=63），反转后如果判定过松会把整篇笔记淹没在图片里，
 #: 所以除了提示词里限制条数，这里再加一道硬闸门。
+#:
+#: 2026-10-17 起真正生效的值来自「设置 → 通用 → 单篇插图上限」（见
+#: :func:`max_note_images`）：常量只在读不到设置时兜底。
 MAX_NOTE_IMAGES = _env_int("NOTE_MAX_IMAGES", 30)
 
 #: 判定时喂给模型的候选帧上限（字幕行数与候选点数都要截断，避免超出上下文）。
+#: 同上：运行时的值由 :func:`max_judge_candidates` 从环境变量/常量解析。
 MAX_JUDGE_CANDIDATES = _env_int("OCR_MAX_JUDGE_CANDIDATES", 200)
+
+
+def max_note_images() -> int:
+    """当前生效的单篇插图上限（设置页 > 环境变量 > 常量）。"""
+    from app.services import runtime_limits
+
+    return runtime_limits.note_max_images()
+
+
+def max_judge_candidates() -> int:
+    """当前生效的候选帧上限。
+
+    2026-10-17：改为读运行时配置（设置页「通用 → 截图与 OCR」），环境变量
+    OCR_MAX_JUDGE_CANDIDATES 仍然优先。候选越多，判定提示词越长，和图片抢的是
+    同一份请求预算，所以它和 llm_max_request_bytes 是同一个旋钮的两端。
+    """
+    fallback = max(1, _env_int("OCR_MAX_JUDGE_CANDIDATES", MAX_JUDGE_CANDIDATES))
+    try:
+        from app.services import runtime_limits
+    except Exception:  # noqa: BLE001 - 读不到就按历史值走
+        return fallback
+    try:
+        return int(runtime_limits.ocr_max_judge_candidates())
+    except Exception:  # noqa: BLE001
+        return fallback
 
 
 WORTH_JUDGE_PROMPT = """你是一个笔记插图审核员。下面会给你一段视频的字幕，以及系统已经从视频里抽出来的候选画面时间点（可能还附带这些时间点对应的画面截图）。
@@ -248,7 +277,7 @@ def build_candidate_index(candidates: Iterable[Any]) -> Dict[int, float]:
 def build_candidates_text(candidates: Sequence[Any]) -> str:
     """渲染候选清单，作为提示词里模型必须照抄的对照表。"""
     lines = []
-    for raw in list(candidates or [])[:MAX_JUDGE_CANDIDATES]:
+    for raw in list(candidates or [])[:max_judge_candidates()]:
         seconds = _as_seconds(raw)
         if seconds is None:
             continue
@@ -256,7 +285,9 @@ def build_candidates_text(candidates: Sequence[Any]) -> str:
     return "\n".join(lines) if lines else "- （没有候选画面）"
 
 
-def build_judge_system_prompt(candidates: Sequence[Any], duration: float = 0.0, max_items: int = MAX_NOTE_IMAGES) -> str:
+def build_judge_system_prompt(
+    candidates: Sequence[Any], duration: float = 0.0, max_items: int | None = None
+) -> str:
     """拼出判定用的 system prompt。
 
     用 ``replace`` 而不是 ``format``：模板里有 JSON 示例的花括号。
@@ -266,7 +297,7 @@ def build_judge_system_prompt(candidates: Sequence[Any], duration: float = 0.0, 
         WORTH_JUDGE_PROMPT.replace("{TOTAL}", str(len(usable)))
         .replace("{DURATION}", str(_safe_int(duration)))
         .replace("{CANDIDATES}", build_candidates_text(usable))
-        .replace("{MAX_ITEMS}", str(max(1, _safe_int(max_items, 1))))
+        .replace("{MAX_ITEMS}", str(max(1, _safe_int(max_items if max_items is not None else max_note_images(), 1))))
     )
 
 
@@ -321,7 +352,7 @@ def extract_judgement_items(text: str) -> List[Any]:
 def parse_worth_judgement(
     text: str,
     candidates: Iterable[Any],
-    max_images: int = MAX_NOTE_IMAGES,
+    max_images: int | None = None,
 ) -> JudgementOutcome:
     """解析判定结果并把它对齐到候选清单。
 
@@ -390,7 +421,7 @@ def parse_worth_judgement(
 
     outcome.approved.sort(key=lambda decision: decision.time)
 
-    limit = max(0, _safe_int(max_images))
+    limit = max(0, _safe_int(max_images if max_images is not None else max_note_images()))
     if len(outcome.approved) > limit:
         outcome.dropped_by_cap = len(outcome.approved) - limit
         outcome.approved = outcome.approved[:limit]

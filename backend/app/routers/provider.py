@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.exceptions.provider import ProviderError
+from app.exceptions.provider import ProviderError, ProviderNameExistsError
 from app.models.model_config import ModelConfig
 from app.services.model import ModelService
 from app.utils.response import ResponseWrapper as R
@@ -50,6 +50,9 @@ def add_provider(data: ProviderRequest):
             max_rpm=data.max_rpm,
         )
         return R.success(msg='添加模型供应商成功',data=res)
+    except ProviderNameExistsError as e:
+        # 结构化 reason：前端按 reason 判定重名，不再去匹配中文文案。
+        return R.error(msg=str(e), code=400, data={'reason': 'provider_name_exists'})
     except Exception as e:
         return R.error(msg=e)
 

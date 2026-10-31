@@ -66,6 +66,7 @@ export interface TaskProgress {
   message?: string | null
   detail?: string | null
   updatedAt?: string | null
+  revision?: number
 }
 
 export interface AudioMeta {
@@ -143,6 +144,7 @@ export interface Task {
   message?: string | null
   detail?: string | null
   updatedAt?: string | null
+  revision?: number
   platform: string
   /** 所属笔记分组；null = 未分组。与后端 `group_id` 对应，列表重载时以服务端为准。 */
   groupId: string | null
@@ -362,6 +364,12 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
         // 已是终态就不再被迟到的进度帧覆盖回「进行中」。
         if (task.status === 'SUCCESS' && data.status !== 'SUCCESS') return task
         if (task.status === 'FAILED' && data.status === undefined) return task
+        if (
+          data.revision !== undefined &&
+          task.revision !== undefined &&
+          data.revision <= task.revision
+        )
+          return task
         return { ...task, ...data }
       }),
     })),

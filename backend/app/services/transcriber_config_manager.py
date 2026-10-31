@@ -15,12 +15,29 @@ DEFAULT_ASR_CHUNK_CONCURRENCY = 4  # 切片转写的并发请求数（1-32，1 �
 ASR_CHUNK_CONCURRENCY_MAX = 32
 DEFAULT_ASR_SILENCE_SPLIT = True   # chat 风格是否按静音边界切片（关掉改等长切割）
 
+def _global_limits():
+    """延迟 import 运行时限额门面。
+
+    本模块是纯配置读写（不 import 任何 app.* 包），而 runtime_limits 会间接触发
+    数据库初始化；把它拖进函数体，既避免导入环，也让「只读配置文件」的场景
+    （比如命令行工具）不必建库。
+    """
+    from app.services import runtime_limits
+
+    return runtime_limits
+
+
 # 允许通过 update_openai_asr 修改的字段
 _ASR_EDITABLE_FIELDS = (
     "name", "base_url", "api_key", "model", "timeout", "chunk_size_mb", "api_style",
     "max_speech_chunks", "silence_noise_db", "min_silence_seconds", "max_rpm",
     "chunk_concurrency", "silence_split",
 )
+
+# 这三个字段支持「跟随通用设置」：没被显式指定时**不落盘**，读取时实时回落到
+# 「设置 → 通用」里的全局静音参数。以前它们会在保存时被默认值填满并持久化，
+# 于是第一次保存就把当时的全局值冻结成端点值，之后改全局永远不生效。
+_SILENCE_FIELDS = ("silence_split", "silence_noise_db", "min_silence_seconds")
 
 # 接口风格：transcriptions=Whisper 风格 /audio/transcriptions；chat=chat/completions + input_audio
 ASR_API_STYLES = ("transcriptions", "chat")
@@ -100,6 +117,11 @@ class TranscriberConfigManager:
         `_validate_endpoint` 报错，不能悄悄被 `or` 吞成默认值。
         """
         raw = raw or {}
+        explicit = {
+            str(name)
+            for name in (raw.get("explicit_fields") or [])
+            if str(name) in _SILENCE_FIELDS
+        }
         timeout = raw.get("timeout")
         if timeout is None or timeout == "":
             timeout = DEFAULT_ASR_TIMEOUT
@@ -119,11 +141,15 @@ class TranscriberConfigManager:
             "max_speech_chunks": _as_int(
                 raw.get("max_speech_chunks"), DEFAULT_SPEECH_MAX_CHUNKS
             ),
+            # 端点没显式配置时回落到「设置 → 通用」里的全局静音参数：用户在通用页
+            # 调一次，所有未单独覆盖的端点一起生效（端点级配置永远优先）。
             "silence_noise_db": _as_float(
-                raw.get("silence_noise_db"), DEFAULT_SILENCE_NOISE_DB
+                raw.get("silence_noise_db") if "silence_noise_db" in explicit else None,
+                _global_limits().asr_silence_noise_db(),
             ),
             "min_silence_seconds": _as_float(
-                raw.get("min_silence_seconds"), DEFAULT_MIN_SILENCE_SECONDS
+                raw.get("min_silence_seconds") if "min_silence_seconds" in explicit else None,
+                _global_limits().asr_min_silence_seconds(),
             ),
             "max_rpm": _as_int(raw.get("max_rpm"), DEFAULT_ASR_MAX_RPM),
             # 并发数按范围收敛，避免旧配置/手改配置把并发开到荒谬的值
@@ -137,9 +163,27 @@ class TranscriberConfigManager:
             # chat 风格（MiMo）默认按静音边界切片；关掉后走「按字节等长切片」，
             # 省掉整个音频解码 + silencedetect 的耗时。
             "silence_split": _as_bool(
-                raw.get("silence_split"), DEFAULT_ASR_SILENCE_SPLIT
+                raw.get("silence_split") if "silence_split" in explicit else None,
+                _global_limits().asr_silence_split(),
             ),
+            # 哪些静音字段是用户显式设过的（前端据此显示「跟随通用设置」状态）
+            "explicit_fields": sorted(explicit),
         }
+
+    @staticmethod
+    def _persistable(endpoint: Dict[str, Any]) -> Dict[str, Any]:
+        """写入磁盘前的形态：未显式指定的静音字段不落盘。
+
+        「跟随全局」必须在文件里表现为「键不存在」——存了就会在下次读取时被
+        当成端点显式值，全局改动从此不再生效。
+        """
+        explicit = set(endpoint.get("explicit_fields") or []) & set(_SILENCE_FIELDS)
+        clean = {k: v for k, v in endpoint.items() if k not in _SILENCE_FIELDS}
+        clean["explicit_fields"] = sorted(explicit)
+        for name in _SILENCE_FIELDS:
+            if name in explicit:
+                clean[name] = endpoint[name]
+        return clean
 
     def _endpoints(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         raw = data.get("openai_asr_endpoints") or []
@@ -220,13 +264,14 @@ class TranscriberConfigManager:
         chunk_size_mb: float = DEFAULT_ASR_CHUNK_MB,
         api_style: str = "transcriptions",
         max_speech_chunks: int = DEFAULT_SPEECH_MAX_CHUNKS,
-        silence_noise_db: float = DEFAULT_SILENCE_NOISE_DB,
-        min_silence_seconds: float = DEFAULT_MIN_SILENCE_SECONDS,
+        silence_noise_db: Optional[float] = None,
+        min_silence_seconds: Optional[float] = None,
         max_rpm: int = DEFAULT_ASR_MAX_RPM,
         chunk_concurrency: int = DEFAULT_ASR_CHUNK_CONCURRENCY,
-        silence_split: bool = DEFAULT_ASR_SILENCE_SPLIT,
+        silence_split: Optional[bool] = None,
     ) -> str:
-        endpoint = self._normalize_endpoint({
+        # 静音三兄弟默认 None = 「跟随通用设置」：不传就不落盘，读取时回落全局值
+        payload: Dict[str, Any] = {
             "id": uuid.uuid4().hex,
             "name": name,
             "base_url": base_url,
@@ -236,18 +281,27 @@ class TranscriberConfigManager:
             "chunk_size_mb": chunk_size_mb,
             "api_style": api_style,
             "max_speech_chunks": max_speech_chunks,
-            "silence_noise_db": silence_noise_db,
-            "min_silence_seconds": min_silence_seconds,
             "max_rpm": max_rpm,
             "chunk_concurrency": chunk_concurrency,
-            "silence_split": silence_split,
-        })
+        }
+        explicit: List[str] = []
+        if silence_noise_db is not None:
+            payload["silence_noise_db"] = silence_noise_db
+            explicit.append("silence_noise_db")
+        if min_silence_seconds is not None:
+            payload["min_silence_seconds"] = min_silence_seconds
+            explicit.append("min_silence_seconds")
+        if silence_split is not None:
+            payload["silence_split"] = silence_split
+            explicit.append("silence_split")
+        payload["explicit_fields"] = explicit
+        endpoint = self._normalize_endpoint(payload)
         self._validate_endpoint(endpoint)
 
         data = self._read()
         endpoints = self._endpoints(data)
         endpoints.append(endpoint)
-        data["openai_asr_endpoints"] = endpoints
+        data["openai_asr_endpoints"] = [self._persistable(e) for e in endpoints]
         # 第一条自动成为当前使用，省得用户还要再点一次「使用」
         if not data.get("openai_asr_id"):
             data["openai_asr_id"] = endpoint["id"]
@@ -272,11 +326,25 @@ class TranscriberConfigManager:
                 continue
             target[key] = value
 
+        # 静音三兄弟：传 null 表示「回到跟随通用设置」（从文件里摘掉），
+        # 传值表示端点级显式覆盖。其余字段传 null 仍然等于「未改动」。
+        explicit = set(target.get("explicit_fields") or [])
+        for name in _SILENCE_FIELDS:
+            if name not in fields:
+                continue
+            if fields[name] is None:
+                explicit.discard(name)
+                target.pop(name, None)
+            else:
+                explicit.add(name)
+        target["explicit_fields"] = sorted(explicit)
+
         target = self._normalize_endpoint(target)
         self._validate_endpoint(target)
 
         data["openai_asr_endpoints"] = [
-            target if e["id"] == endpoint_id else e for e in endpoints
+            self._persistable(target if e["id"] == endpoint_id else e)
+            for e in endpoints
         ]
         self._write(data)
         return target
@@ -287,7 +355,7 @@ class TranscriberConfigManager:
         remaining = [e for e in endpoints if e["id"] != endpoint_id]
         if len(remaining) == len(endpoints):
             return False
-        data["openai_asr_endpoints"] = remaining
+        data["openai_asr_endpoints"] = [self._persistable(e) for e in remaining]
         # 删掉的正好是当前使用的 → 清空选择，让用户重新选
         if data.get("openai_asr_id") == endpoint_id:
             data.pop("openai_asr_id", None)
@@ -400,10 +468,8 @@ class TranscriberConfigManager:
         """当前转写器是否就绪可用。
 
         返回 {ready, transcriber_type, model_size, downloading, reason}：
-          - 在线引擎 (groq/bcut/kuaishou)：永远 ready（不需要本地模型）
           - openai-asr：需要至少配置并选中一条端点
           - fast-whisper：检查 whisper-{size}/model.bin 落盘
-          - mlx-whisper：检查 {repo_id}/config.json 落盘
         给 /generate_note 入口做「开始视频前先确认模型下载好」的门禁用。
         """
         cfg = self.get_config()
@@ -426,14 +492,13 @@ class TranscriberConfigManager:
                 result["reason"] = "尚未选择要使用的 OpenAI 兼容 ASR，请在「设置 → 音频转写配置」选择"
             return result
 
-        if ttype not in ("fast-whisper", "mlx-whisper"):
-            return result  # 其他在线引擎无需本地模型
+        if ttype != "fast-whisper":
+            return result  # 在线端点无需本地模型
 
         # 延迟 import 避免与 routers.config 的循环依赖；只取纯函数，不触发路由副作用
         try:
             from app.routers.config import (
                 _check_whisper_model_exists,
-                _check_mlx_whisper_model_exists,
                 _downloading,
             )
         except Exception as e:
@@ -444,9 +509,6 @@ class TranscriberConfigManager:
         if ttype == "fast-whisper":
             downloaded = _check_whisper_model_exists(size, "whisper")
             downloading = _downloading.get(size) == "downloading"
-        else:  # mlx-whisper
-            downloaded = _check_mlx_whisper_model_exists(size)
-            downloading = _downloading.get(f"mlx-{size}") == "downloading"
 
         result["downloading"] = downloading
         if downloaded:

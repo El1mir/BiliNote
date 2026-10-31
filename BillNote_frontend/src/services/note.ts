@@ -1,5 +1,54 @@
 import request from '@/utils/request'
 import toast from 'react-hot-toast'
+import { translate } from '@/ember/i18n/locale'
+
+export type IntakeItemState =
+  | 'ready'
+  | 'duplicate'
+  | 'invalid'
+  | 'unsupported'
+  | 'unavailable'
+  | 'limit_exceeded'
+
+export interface IntakeItem {
+  itemId: string
+  clientIndex: number
+  rawUrl: string
+  canonicalUrl: string | null
+  source: 'bilibili' | 'unknown'
+  kind: 'video' | 'part' | 'collection' | 'series' | 'unsupported' | 'invalid'
+  sourceId: string | null
+  parentItemId: string | null
+  part: number | null
+  state: IntakeItemState
+  error: { code: string; messageKey: string; params: Record<string, unknown> } | null
+  duplicateOf: string | null
+}
+
+export interface IntakeResolveEnvelope {
+  schemaVersion: number
+  source: string
+  summary: {
+    inputCount: number
+    readyCount: number
+    invalidCount: number
+    duplicateCount: number
+    expandedCount: number
+    limits: Record<string, number>
+  }
+  items: IntakeItem[]
+}
+
+export const resolveIntake = async (
+  mode: 'single' | 'batch',
+  urls: string[]
+): Promise<IntakeResolveEnvelope> => {
+  return await request.post(
+    '/v1/intake/resolve',
+    { mode, urls, contractVersion: 1 },
+    { suppressToast: true }
+  )
+}
 
 const API_BASE = String(import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 
@@ -68,7 +117,14 @@ export const downloadNoteArchives = async (taskIds: string[]): Promise<Blob> => 
   return response.blob()
 }
 
-export const generateNote = async (data: {
+/**
+ * `POST /generate_note` request body.
+ *
+ * Named so callers can annotate the object they build against the real contract
+ * instead of letting an object literal widen (`grid_size` used to collapse to
+ * `number[]` on the way to the store).
+ */
+export type GenerateNotePayload = {
   video_url: string
   platform: string
   quality: string
@@ -80,23 +136,27 @@ export const generateNote = async (data: {
   video_understanding?: boolean
   video_interval?: number
   grid_size?: Array<number>
-  sampling_mode?: string
+  sampling_mode?: 'interval' | 'smart' | 'hybrid'
   max_frames?: number
   frames_per_second?: number
-  frame_limit_mode?: string
+  frame_limit_mode?: 'total' | 'per_second'
   // spec 008 ticket 02：本次任务是否使用 OCR 辅助。
   // 不传 / null = 沿用「设置 → OCR 辅助」的全局开关。
   ocr_assist?: boolean | null
-}): Promise<{ task_id: string } | null> => {
+}
+
+export const generateNote = async (
+  data: GenerateNotePayload,
+): Promise<{ task_id: string } | null> => {
   try {
     console.log('generateNote', data)
     const response = await request.post('/generate_note', data)
 
     if (!response) {
-      toast.error('笔记生成请求没有返回数据')
+      toast.error(translate('note.noData'))
       return null
     }
-    toast.success('笔记生成任务已提交！')
+    toast.success(translate('note.submitted'))
 
     console.log('res', response)
     // 成功提示
@@ -225,6 +285,8 @@ export interface BatchGenerateItem {
   p: number
   video_id: string
   url: string
+  /** 合并任务用它做小节标题（spec 018）；普通批量不需要。 */
+  title?: string
 }
 
 export interface BatchGenerateResult {
@@ -258,10 +320,19 @@ export interface BatchGeneratePayload {
   ocr_assist?: boolean | null
   /**
    * 批量生成时的分组名：后端会整批新建一个同名笔记组。
-   * 必填 —— 组名为空整批会落进「未分组」（spec 009 决策 1），
-   * 调用方（BatchImportDialog）已保证非空，这里用必填类型把约束固定下来。
+   * 非合并模式下必填 —— 组名为空整批会落进「未分组」（spec 009 决策 1），
+   * 调用方（BatchImportPanel）已保证非空；合并模式下忽略。
    */
-  group_name: string
+  group_name?: string
+  /**
+   * spec 018：合并任务 —— 不建组，只产生**一条**任务，把所选视频的笔记合成一篇。
+   * 与普通批量的差别见 spec §4 决策 3/6。
+   */
+  merge?: boolean
+  /** 合并笔记标题（merge=true 时生效）；为空时后端回落到 group_name，再回落到「合并笔记」。 */
+  merge_title?: string
+  /** spec 018 决策 5：合并后再让模型润色一次（默认关）。 */
+  merge_polish?: boolean
 }
 
 /** 展开合集 / 多P 链接，返回可勾选的视频+分P 列表。 */
@@ -278,7 +349,12 @@ export const expandUrl = async (url: string): Promise<ExpandResult> => {
  */
 export const generateNotes = async (
   payload: BatchGeneratePayload
-): Promise<{ results: BatchGenerateResult[]; group_id?: string | null }> => {
+): Promise<{
+  results: BatchGenerateResult[]
+  group_id?: string | null
+  /** 合并任务（spec 018）：后端只建一条任务，group_id 恒为 null。 */
+  merged?: boolean
+}> => {
   return await request.post('/generate_notes', payload)
 }
 
@@ -300,6 +376,7 @@ export interface TaskStatusLite {
   detail?: string | null
   updated_at?: string | null
   updatedAt?: string | null
+  revision?: number
 }
 
 /**
@@ -331,6 +408,67 @@ export const readTaskStatusMap = (
  */
 export const getTaskStatusBatch = async (taskIds: string[]): Promise<TaskStatusBatchPayload> => {
   return await request.post('/task_status/batch', { task_ids: taskIds }, { suppressToast: true })
+}
+
+export type TaskReadStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface TaskView {
+  taskId: string
+  status: TaskReadStatus
+  phase: string | null
+  progress: number | null
+  message: string | null
+  detail: string | null
+  updatedAt: string | null
+  revision: number
+  error: { code: string; messageKey: string; retryable: boolean } | null
+  actions: {
+    retry: boolean
+    cancel: boolean
+    openNote: boolean
+    openTranscript: boolean
+    chat: boolean
+    export: boolean
+  }
+}
+
+export interface TaskReadModelSnapshot {
+  schemaVersion: number
+  snapshotRevision: number
+  source: 'snapshot' | 'sse' | 'polling' | string
+  tasks: TaskView[]
+  groups: unknown[]
+}
+
+/** Versioned task snapshot adapter; legacy polling remains available during migration. */
+export const getTaskReadModelSnapshot = async (
+  taskIds: string[]
+): Promise<TaskReadModelSnapshot> => {
+  const query = taskIds.map(taskId => `task_ids=${encodeURIComponent(taskId)}`).join('&')
+  return await request.get(`/v1/task-groups/snapshot${query ? `?${query}` : ''}`, {
+    suppressToast: true,
+  })
+}
+
+export const subscribeTaskReadModel = (
+  taskIds: string[],
+  onSnapshot: (snapshot: TaskReadModelSnapshot) => void,
+  onError?: (event: Event) => void,
+  onOpen?: () => void,
+  since = 0,
+): (() => void) => {
+  const query = taskIds.map(taskId => `task_ids=${encodeURIComponent(taskId)}`).join("&")
+  const source = new EventSource(`/api/v1/task-groups/events?${query}&since=${since}`)
+  source.onopen = () => onOpen?.()
+  source.onmessage = event => {
+    try {
+      onSnapshot({ ...JSON.parse(event.data), source: "sse" })
+    } catch (error) {
+      console.error("Invalid task event", error)
+    }
+  }
+  source.onerror = event => onError?.(event)
+  return () => source.close()
 }
 
 /** `POST /api/retry_failed_tasks` 的响应体（spec 011）。 */

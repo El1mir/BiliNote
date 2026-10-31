@@ -1,4 +1,5 @@
 # app/routers/note.py
+import asyncio
 import json
 import os
 import re
@@ -6,27 +7,35 @@ import shutil
 import tempfile
 import threading
 import time
-import zipfile
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
-
-from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
-from pydantic import BaseModel, field_validator, model_validator
 from dataclasses import asdict
-
-import orjson
-
-from app.db.video_task_dao import get_task_by_video
-from app.enmus.exception import NoteErrorEnum
-from app.enmus.note_enums import DownloadQuality
-from app.exceptions.note import NoteError
-from app.services.note import NoteGenerator
-from app.services.task_serial_executor import task_serial_executor
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
 from zipfile import ZipFile
 
+import httpx
+import orjson
+from app.db.video_task_dao import get_task_by_video
+from app.downloaders.bilibili_expand import (
+    build_video_id,
+    build_video_url,
+    fetch_collection,
+    fetch_video_parts,
+)
+from app.enmus.exception import NoteErrorEnum
+from app.enmus.note_enums import DownloadQuality
+from app.enmus.task_status_enums import TaskStatus
+from app.exceptions.note import NoteError
+from app.services import runtime_limits
+from app.services.active_model import resolve_active_model
+from app.services.note import NoteGenerator
+from app.services.source_intake import resolve_bilibili_inputs
+from app.services.task_cleanup import TaskInFlightError
+from app.services.task_read_model import TaskReadModel  # pyright: ignore[reportMissingImports]
+from app.services.task_serial_executor import task_serial_executor
 from app.utils.llm_rate_limit import (
     RATE_LIMIT_RESUME_INTERVAL_SECONDS,
     clear_rate_limit,
@@ -36,25 +45,28 @@ from app.utils.llm_rate_limit import (
     wait_for_rate_limit,
 )
 from app.utils.logger import get_logger
-from app.services.active_model import resolve_active_model
+from app.utils.note_archive import NoteArchiveError
 from app.utils.response import ResponseWrapper as R
-from app.downloaders.bilibili_expand import (
-    build_video_id,
-    build_video_url,
-    fetch_collection,
-    fetch_video_parts,
-)
 from app.utils.url_parser import (
+    extract_bilibili_p_number,
     extract_video_id,
     normalize_video_url,
     parse_bilibili_collection_url,
 )
 from app.validators.video_url_validator import is_supported_video_url
-from fastapi import Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.background import BackgroundTask
-import httpx
-from app.enmus.task_status_enums import TaskStatus
+from starlette.concurrency import run_in_threadpool
 
 # from app.services.downloader import download_raw_audio
 # from app.services.whisperer import transcribe_audio
@@ -63,6 +75,22 @@ router = APIRouter()
 
 # 统一日志：之前直接复用 app.services.note 的 logger，导致路由层日志都挂在上游模块名下。
 logger = get_logger(__name__)
+
+
+class IntakeResolveRequest(BaseModel):
+    mode: str = "single"
+    urls: list[str] = Field(default_factory=list)
+    options: dict[str, Any] = Field(default_factory=dict)
+    contractVersion: int = 1
+
+
+@router.post("/v1/intake/resolve")
+def resolve_intake(data: IntakeResolveRequest):
+    if data.mode not in {"single", "batch"}:
+        return R.error("mode must be single or batch", code=400)
+    if data.mode == "single" and len(data.urls) > 1:
+        return R.error("single mode accepts one URL", code=400)
+    return R.success(resolve_bilibili_inputs(data.urls))
 
 
 class RecordRequest(BaseModel):
@@ -75,33 +103,33 @@ class VideoRequest(BaseModel):
     platform: str
     quality: DownloadQuality
     # Legacy request fields are accepted for client compatibility but are never stored or used.
-    model_name: Optional[str] = None
-    provider_id: Optional[str] = None
-    screenshot: Optional[bool] = False
-    link: Optional[bool] = False
+    model_name: str | None = None
+    provider_id: str | None = None
+    screenshot: bool | None = False
+    link: bool | None = False
     # pi-lens-ignore: python-mutable-class-attr
-    format: Optional[list] = []
-    scene: Optional[str] = None
-    detail: Optional[str] = None
-    extras: Optional[str] = None
-    video_understanding: Optional[bool] = False
-    video_interval: Optional[int] = 0
+    format: list | None = []
+    scene: str | None = None
+    detail: str | None = None
+    extras: str | None = None
+    video_understanding: bool | None = False
+    video_interval: int | None = 0
     # pi-lens-ignore: python-mutable-class-attr
-    grid_size: Optional[list] = []
+    grid_size: list | None = []
     # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
-    sampling_mode: Optional[str] = "interval"
-    max_frames: Optional[int] = 60
+    sampling_mode: str | None = "interval"
+    max_frames: int | None = 60
     # smart 采样限制方式二选一：total=只用 max_frames；per_second=只用 frames_per_second
-    frames_per_second: Optional[int] = 2
-    frame_limit_mode: Optional[str] = "total"
+    frames_per_second: int | None = 2
+    frame_limit_mode: str | None = "total"
     # spec 008 ticket 02：按任务覆盖「设置 → OCR 辅助」的启用状态。
     # None（前端不传）= 沿用全局设置；True/False = 这一次任务强制开/关。
     # 设置页管「配没配好」，这里管「这次用不用」，两者刻意分开。
-    ocr_assist: Optional[bool] = None
+    ocr_assist: bool | None = None
     # 客户端（如浏览器插件）已经在用户浏览器里抓到字幕，直接传给后端复用，
     # 跳过 download_subtitles 和音频转写。形如：
     #   {"language": "zh", "full_text": "...", "segments": [{"start","end","text"}, ...]}
-    prefetched_transcript: Optional[dict] = None
+    prefetched_transcript: dict | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -142,9 +170,12 @@ MAX_BATCH_ARCHIVE_TASKS = 500
 
 UPLOAD_DIR = "uploads"
 
-# 任务级自动重试：首次 + NOTE_MAX_RETRIES 次重试（spec §7）
-NOTE_MAX_RETRIES = int(os.getenv("NOTE_MAX_RETRIES", "3"))
-NOTE_RETRY_BACKOFF = [5, 15, 45]  # 秒，指数退避
+# 任务级自动重试：首次 + N 次重试（spec §7）。
+#
+# 次数与退避基数现在都是「设置 → 通用」里的可配置项，走 runtime_limits 门面，
+# 改完立刻生效（不必重启后端）。下面两个常量只是兜底与文档，实际不再直接使用。
+NOTE_MAX_RETRIES = 3
+NOTE_RETRY_BACKOFF_BASE_SECONDS = 5.0  # 第 n 次重试等待 base * 3^n 秒：5 / 15 / 45
 
 
 # 「最大笔记并行任务数」闸门（设置 → 通用设置）。
@@ -193,7 +224,7 @@ class _ParallelGate:
         with self._condition:
             return self._active
 
-    def acquire(self, timeout: Optional[float] = None) -> bool:
+    def acquire(self, timeout: float | None = None) -> bool:
         """拿一个名额；超时返回 False。默认阻塞直到拿到。"""
         with self._condition:
             if timeout is None:
@@ -436,12 +467,14 @@ def _resume_parked_tasks() -> int:
 
 
 def _rate_limit_resume_loop() -> None:
-    interval = max(1.0, RATE_LIMIT_RESUME_INTERVAL_SECONDS)
+    # 每次重进循环都重读一次：用户把探测间隔调小之后，正在睡的这轮也能在
+    # 下一轮生效（常量来自 RATE_LIMIT_RESUME_INTERVAL_SECONDS 环境变量）。
     while True:
+        interval = max(1.0, RATE_LIMIT_RESUME_INTERVAL_SECONDS)
         time.sleep(interval)
         try:
             _resume_parked_tasks()
-        except Exception as exc:  # noqa: BLE001 - 后台循环不能被单次异常打死
+        except Exception as exc:
             logger.error(f"限流恢复循环异常：{exc}", exc_info=True)
 
 
@@ -550,7 +583,7 @@ def _human_bytes(num: int) -> str:
     return f"{value:.1f} TB"
 
 
-def _check_disk_space() -> Optional[str]:
+def _check_disk_space() -> str | None:
     """磁盘门禁：剩余空间不足时返回给用户看的提示，充足/读不到设置时返回 None。
 
     为什么 fail-open：``min_free_disk_bytes`` 读不出来（数据库抖动、老库缺列）时
@@ -609,13 +642,16 @@ def _get_task_record(video_id: str, platform: str):
     except Exception:
         logger.warning(f"查询去重记录失败 video_id={video_id}", exc_info=True)
         return None, None
-    if not task_id:
+    if task_id is None:
         return None, None
+    if not _valid_task_id(str(task_id)):
+        logger.warning("任务记录包含无效 task_id，跳过文件读取")
+        return task_id, None
     status_path = os.path.join(NOTE_OUTPUT_DIR, f"{task_id}.status.json")
     if not os.path.exists(status_path):
         return task_id, None
     try:
-        with open(status_path, "r", encoding="utf-8") as f:
+        with open(status_path, encoding="utf-8") as f:
             return task_id, json.load(f).get("status")
     except Exception:
         return task_id, None
@@ -631,6 +667,31 @@ def _is_task_in_flight(video_id: str, platform: str) -> bool:
     """是否有同一视频的任务正在跑（spec 001 §12：进行中也跳过，避免并发互踩）。"""
     _, status = _get_task_record(video_id, platform)
     return status in _IN_FLIGHT_STATUSES
+
+
+def _resolve_single_video_id(video_id: str, video_url: str, platform: str) -> str:
+    """单集提交的规范 video_id（spec 018 决策 8）。
+
+    多P 视频必须与 `/expand` 用同一套 id（`BV…_pN`），否则两个缺陷会一直在：
+
+    * `already_generated` 标记按 `BV…_pN` 查库，而单集写进去的是裸 `BV…` ——
+      展开面板永远显示「未生成」；
+    * 同一个视频不同分P 共用一把在途锁：P1 在跑时 P2 会被判「该视频正在生成中」。
+
+    分P 数探测失败（网络抖动 / 需要 Cookie）时回退成裸 `BV…`：宁可让去重不精确，
+    也不能因为一次探测失败就拒绝生成。
+    """
+    if platform != "bilibili" or not str(video_id or "").startswith("BV"):
+        return video_id
+    try:
+        parts = fetch_video_parts(video_id)
+    except Exception as exc:
+        logger.warning(f"探测分P失败，回退裸 video_id（bvid={video_id}）：{exc}")
+        return video_id
+    if not parts:
+        return video_id
+    p = extract_bilibili_p_number(str(video_url or "")) or 1
+    return build_video_id(video_id, p, len(parts))
 
 
 def _expand_video_entry(
@@ -710,6 +771,9 @@ def _execute_note_with_retry(task_id: str, generator, execute_fn):
     （默认 1 小时）仍是 429 就返回 :data:`RATE_LIMIT_PARKED`，把 worker 线程让出来，
     由调用方交还队列 —— 配额恢复可能要几小时，而 worker 只有 TASK_MAX_WORKERS 个。
     """
+    # 每次进入重试循环都重读：用户在设置页改完重试次数/退避，下一条任务即生效。
+    max_retries = runtime_limits.note_max_retries()
+    backoff_base = runtime_limits.note_retry_backoff_seconds()
     attempt = 0
     rate_limit_waits = 0
     while True:
@@ -743,20 +807,21 @@ def _execute_note_with_retry(task_id: str, generator, execute_fn):
             logger.error(f"任务 {task_id} 遇到不可重试错误，停止自动重试")
             return None
 
-        if attempt >= NOTE_MAX_RETRIES:
-            logger.error(f"任务 {task_id} 重试 {NOTE_MAX_RETRIES} 次后仍失败")
+        if attempt >= max_retries:
+            logger.error(f"任务 {task_id} 重试 {max_retries} 次后仍失败")
             return None
         retry_no = attempt + 1
-        delay = NOTE_RETRY_BACKOFF[min(attempt, len(NOTE_RETRY_BACKOFF) - 1)]
+        # 指数退避：5 / 15 / 45 / 45 …（基数可配，上限按三次方封顶）。
+        delay = backoff_base * (3 ** min(attempt, 2))
         attempt += 1
         logger.warning(
-            f"任务 {task_id} 失败，第 {retry_no}/{NOTE_MAX_RETRIES} 次重试（{delay}s 后）"
+            f"任务 {task_id} 失败，第 {retry_no}/{max_retries} 次重试（{delay}s 后）"
         )
         try:
             generator._update_status(
                 task_id,
                 TaskStatus.PENDING,
-                message=f"重试中 ({retry_no}/{NOTE_MAX_RETRIES})",
+                message=f"重试中 ({retry_no}/{max_retries})",
             )
         except Exception:
             # pi-lens-ignore: python-empty-except
@@ -907,7 +972,7 @@ def _enqueue_task(
     video_id: str,
     platform: str,
     group_id=None,
-    payload: Optional[dict] = None,
+    payload: dict | None = None,
 ) -> None:
     """入队时就把任务行写进数据库（含分组归属与完整生成参数）。
 
@@ -950,7 +1015,7 @@ def _build_task_kwargs(
     video_url: str,
     platform: str,
     data,
-    group_id: Optional[str],
+    group_id: str | None,
 ) -> dict:
     """把提交参数整理成 ``run_note_task`` 的关键字参数。
 
@@ -979,6 +1044,13 @@ def _build_task_kwargs(
         "frame_limit_mode": getattr(data, "frame_limit_mode", "total") or "total",
         "ocr_assist": getattr(data, "ocr_assist", None),
         "group_id": group_id,
+        # spec 018：合并任务的载荷。普通单集/批量任务这里是 None/False，
+        # 合并提交时由 _submit_merged_batch 填真值。放在这里是为了让
+        # 「提交参数 / 恢复载荷 / 重试载荷」三处始终是同一份键集合 ——
+        # tests/015-.../test_preset_contract.py 就在钉这条契约。
+        "merge_items": getattr(data, "merge_items", None),
+        "merge_title": getattr(data, "merge_title", None),
+        "merge_polish": bool(getattr(data, "merge_polish", False)),
     }
 
 
@@ -991,6 +1063,102 @@ def _payload_for_storage(task_kwargs: dict) -> dict:
         stored[key] = getattr(value, "value", value)
     stored.pop("provider_id", None)
     return stored
+
+
+#: 合并任务的合成 video_id 前缀（spec 018 决策 3）。合并产物不对应单一视频，
+#: 但任务行需要 video_id 才能落库，所以给一个可辨识的合成 id。
+MERGED_VIDEO_ID_PREFIX = "merged_"
+
+
+def _merged_item_entry(item: "BatchItem", platform: str) -> dict:
+    """把一条勾选项整理成合并子任务的输入（spec 018 §5.2）。"""
+    video_id = item.video_id or item.bvid
+    if item.url:
+        url = item.url
+    elif item.video_id and "_p" in item.video_id:
+        url = f"https://www.bilibili.com/video/{item.bvid}?p={item.p}"
+    else:
+        url = f"https://www.bilibili.com/video/{item.bvid}"
+    return {
+        "url": url,
+        "video_id": video_id,
+        "bvid": item.bvid,
+        "p": item.p,
+        "title": (item.title or "").strip(),
+    }
+
+
+def _submit_merged_batch(data: "BatchGenerateRequest"):
+    """合并任务提交：不建组，只建**一条**任务（spec 018 决策 3/6）。
+
+    与普通批量的两点差别：
+
+    * **不做「已生成」跳过**：合并要的是每个视频的真实内容，跳过会让合并笔记缺章节；
+    * **不做建组**：用户勾了合并就是「一篇笔记」，再建组等于给他一个空壳组。
+    """
+    items = list(data.items or [])
+    if not items:
+        return R.error(msg="请至少选择一个视频", code=400)
+
+    # 在途判定仍然要做：同一视频并发跑会互踩 data/data/<id>.mp4 与抽帧目录。
+    in_flight: list[str] = []
+    entries: list[dict] = []
+    for item in items:
+        entry = _merged_item_entry(item, data.platform)
+        if _is_task_in_flight(entry["video_id"], data.platform):
+            in_flight.append(entry["video_id"])
+        entries.append(entry)
+    if in_flight:
+        preview = "、".join(in_flight[:3])
+        return R.error(
+            msg=f"以下视频正在生成中，请稍后再试：{preview}",
+            code=300103,
+            data={"reason": "task_in_progress", "video_ids": in_flight},
+        )
+
+    if not (data.model_name and data.provider_id):
+        try:
+            resolve_active_model()
+        except RuntimeError as exc:
+            return R.error(msg=str(exc), code=400)
+
+    title = (data.merge_title or data.group_name or "").strip() or "合并笔记"
+    task_id = str(uuid.uuid4())
+    merged_video_id = f"{MERGED_VIDEO_ID_PREFIX}{task_id[:8]}"
+    NoteGenerator()._update_status(
+        task_id, TaskStatus.PENDING, message="合并任务排队中"
+    )
+
+    # video_url 取第一条：合并任务本身没有单一链接，但恢复逻辑要求 payload 里有它。
+    task_kwargs = _build_task_kwargs(
+        task_id, entries[0]["url"], data.platform, data, None
+    )
+    # merge_title / merge_polish 已经由 _build_task_kwargs 带出；这里补上 items
+    # 与解析后的标题（空标题要回落到「合并笔记」，不能把空串写进载荷）。
+    task_kwargs["merge_items"] = entries
+    task_kwargs["merge_title"] = title
+    task_kwargs["merge_polish"] = bool(data.merge_polish)
+    _enqueue_task(
+        task_id,
+        merged_video_id,
+        data.platform,
+        None,
+        _payload_for_storage(task_kwargs),
+    )
+    _dispatch_note_task(task_kwargs)
+    logger.info(
+        f"合并任务已提交 task_id={task_id} items={len(entries)} title={title} "
+        f"polish={bool(data.merge_polish)}"
+    )
+    return R.success(
+        {
+            "results": [
+                {"video_id": merged_video_id, "task_id": task_id, "status": "queued"}
+            ],
+            "group_id": None,
+            "merged": True,
+        }
+    )
 
 
 def _enforce_cache_limit_in_background() -> None:
@@ -1026,23 +1194,29 @@ def run_note_task(
     quality: DownloadQuality,
     link: bool = False,
     screenshot: bool = False,
-    model_name: str = None,
-    provider_id: str = None,
-    _format: list = None,
-    scene: str = None,
-    detail: str = None,
-    extras: str = None,
+    model_name: str | None = None,
+    provider_id: str | None = None,
+    _format: list | None = None,
+    scene: str | None = None,
+    detail: str | None = None,
+    extras: str | None = None,
     video_understanding: bool = False,
     video_interval=0,
-    # pi-lens-ignore: mutable-default-arg
-    grid_size=[],
+    grid_size=None,
     sampling_mode="interval",
     max_frames=60,
     frames_per_second=2,
     frame_limit_mode="total",
-    ocr_assist: Optional[bool] = None,
-    group_id: Optional[str] = None,
+    ocr_assist: bool | None = None,
+    group_id: str | None = None,
+    # spec 018：合并任务 —— items 为 [{url, video_id, title, p, bvid}]，
+    # 命中时在**这一条任务**里逐条生成再合并成一篇。
+    merge_items: list | None = None,
+    merge_title: str | None = None,
+    merge_polish: bool = False,
 ):
+    # 可变默认参数改成 None + 就地初始化：默认列表会被所有调用共享（spec 018 顺手修）。
+    grid_size = [] if grid_size is None else grid_size
     active_model = resolve_active_model()
     model_name = active_model["model_name"]
     provider_id = active_model["provider_id"]
@@ -1063,6 +1237,65 @@ def run_note_task(
         except Exception as exc:
             logger.warning(f"写入熔断跳过状态失败 (task_id={task_id}): {exc}")
         return
+
+    # 429 停放后重新派发要用同一份参数（spec 012）。就地组一份，键名与
+    # `_build_task_kwargs` 的返回值一一对应 —— 语义漂移会让停放的任务按默认参数
+    # 重跑，而那种 bug 只在配额耗尽时才显形。
+    # 放在合并分支之前：合并任务遇到 429 也要用同一份参数交还队列（spec 018）。
+    task_kwargs = {
+        "task_id": task_id,
+        "video_url": video_url,
+        "platform": platform,
+        "quality": quality,
+        "link": link,
+        "screenshot": screenshot,
+        "_format": _format,
+        "scene": scene,
+        "detail": detail,
+        "extras": extras,
+        "video_understanding": video_understanding,
+        "video_interval": video_interval,
+        "grid_size": grid_size,
+        "sampling_mode": sampling_mode,
+        "max_frames": max_frames,
+        "frames_per_second": frames_per_second,
+        "frame_limit_mode": frame_limit_mode,
+        "ocr_assist": ocr_assist,
+        "group_id": group_id,
+        "merge_items": merge_items,
+        "merge_title": merge_title,
+        "merge_polish": bool(merge_polish),
+    }
+
+    # spec 018 决策 3/6：合并任务在**一条**任务里跑完 N 个视频再合并成一篇。
+    # 分叉放在建 generator 之前：合并流程会为每个视频各建一个 generator，
+    # 这里再建一个纯属浪费（NoteGenerator 初始化要读转写器配置）。
+    if merge_items:
+        return _run_merged_note_task(
+            task_id=task_id,
+            items=merge_items,
+            merge_title=merge_title or "",
+            merge_polish=bool(merge_polish),
+            model_name=model_name,
+            provider_id=provider_id,
+            platform=platform,
+            quality=quality,
+            link=link,
+            screenshot=screenshot,
+            _format=_format,
+            scene=scene,
+            detail=detail,
+            extras=extras,
+            video_understanding=video_understanding,
+            video_interval=video_interval,
+            grid_size=grid_size,
+            sampling_mode=sampling_mode,
+            max_frames=max_frames,
+            frames_per_second=frames_per_second,
+            frame_limit_mode=frame_limit_mode,
+            ocr_assist=ocr_assist,
+            park_kwargs=task_kwargs,
+        )
 
     generator = NoteGenerator()
 
@@ -1090,31 +1323,6 @@ def run_note_task(
             ocr_assist=ocr_assist,
             group_id=group_id,
         )
-
-    # 429 停放后重新派发要用同一份参数（spec 012）。就地组一份，键名与
-    # `_build_task_kwargs` 的返回值一一对应 —— 语义漂移会让停放的任务按默认参数
-    # 重跑，而那种 bug 只在配额耗尽时才显形。
-    task_kwargs = {
-        "task_id": task_id,
-        "video_url": video_url,
-        "platform": platform,
-        "quality": quality,
-        "link": link,
-        "screenshot": screenshot,
-        "_format": _format,
-        "scene": scene,
-        "detail": detail,
-        "extras": extras,
-        "video_understanding": video_understanding,
-        "video_interval": video_interval,
-        "grid_size": grid_size,
-        "sampling_mode": sampling_mode,
-        "max_frames": max_frames,
-        "frames_per_second": frames_per_second,
-        "frame_limit_mode": frame_limit_mode,
-        "ocr_assist": ocr_assist,
-        "group_id": group_id,
-    }
 
     logger.info(f"任务进入执行队列 (task_id={task_id})")
     note = _execute_note_with_retry(task_id, generator, _execute_note_task)
@@ -1147,11 +1355,243 @@ def run_note_task(
     # 绝不能拖住任务工作线程。
     _enforce_cache_limit_in_background()
 
-    # 自动建立向量索引（用于 AI 问答）：放到后台线程池执行，
-    # 不占用任务工作线程，也不影响任务终态（spec 006 ticket 04）。
-    from app.services.vector_store import index_task_in_background
 
-    index_task_in_background(task_id)
+def _as_float(value, default: float = 0.0) -> float:
+    """把音频元数据里可能出现的任意值安全转成 float（'12:34'、None 都回落 default）。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cleanup_merged_subtask_files(sub_task_id: str) -> None:
+    """删掉合并子任务留下的状态/缓存文件（spec 018）。
+
+    子任务用「<合并 task_id>-s<i>」作为内部 task_id，只为让 NoteGenerator 的
+    状态文件、转写缓存、markdown 缓存互不覆盖。它们不该在 note_results/ 里
+    长期堆积 —— 用户看到的应该只有那一条合并任务。
+    """
+    for suffix in (".status.json", "_transcript.json", "_markdown.md"):
+        path = os.path.join(NOTE_OUTPUT_DIR, f"{sub_task_id}{suffix}")
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError as exc:
+            logger.debug(f"清理合并子任务文件失败（{path}）：{exc}")
+
+
+def _polish_merged_markdown(
+    title: str,
+    markdown: str,
+    model_name: str | None,
+    provider_id: str | None,
+) -> str:
+    """合并后的可选模型润色（spec 018 决策 5）。
+
+    失败一律回落到结构拼接结果：润色是锦上添花，为了它丢掉已经合并好的笔记
+    是最坏的取舍。
+    """
+    try:
+        gpt = NoteGenerator()._get_gpt(model_name, provider_id)
+    except Exception as exc:
+        logger.warning(f"合并润色取模型失败，保留结构拼接结果：{exc}")
+        return markdown
+    polish = getattr(gpt, "polish_markdown", None)
+    if polish is None:
+        logger.warning("当前模型实现不支持合并润色，保留结构拼接结果")
+        return markdown
+    try:
+        polished = polish(title, markdown)
+    except Exception as exc:
+        logger.warning(f"合并笔记润色失败，保留结构拼接结果：{exc}")
+        return markdown
+    return polished or markdown
+
+
+def _run_merged_note_task(
+    *,
+    task_id: str,
+    items: list,
+    merge_title: str,
+    merge_polish: bool,
+    model_name: str | None,
+    provider_id: str | None,
+    platform: str,
+    quality: DownloadQuality,
+    link: bool,
+    screenshot: bool,
+    _format: list | None,
+    scene: str | None,
+    detail: str | None,
+    extras: str | None,
+    video_understanding: bool,
+    video_interval,
+    grid_size,
+    sampling_mode: str,
+    max_frames,
+    frames_per_second,
+    frame_limit_mode: str,
+    ocr_assist: bool | None,
+    park_kwargs: dict,
+):
+    """合并任务执行：逐条生成 → 合并 → 存成**一条**任务（spec 018 §5.2）。
+
+    为什么逐条串行而不是并发：合并要按用户勾选顺序排列章节，而且并发跑多个
+    视频会让「最大笔记并行任务数」的语义变得不可预期（一条任务吃掉 N 个槽位）。
+    每次子生成仍各自过并行闸门，所以别的任务不会被这条长任务饿死。
+    """
+    from app.enmus.task_status_enums import TaskStage
+    from app.models.notes_model import NoteResult
+    from app.services.note_merge import (
+        MergedEntry,
+        MergedFailure,
+        build_merged_audio_meta,
+        build_merged_markdown,
+        merge_transcripts,
+    )
+
+    entries: list[MergedEntry] = []
+    failures: list[MergedFailure] = []
+    total = len(items)
+    status_writer = NoteGenerator()
+
+    for index, raw in enumerate(items, start=1):
+        item = raw if isinstance(raw, dict) else {}
+        url = str(item.get("url") or "")
+        label = str(item.get("title") or "") or f"第 {index} 个视频"
+        if not url:
+            failures.append(MergedFailure(title=label, reason="链接为空"))
+            continue
+
+        try:
+            status_writer._update_status(
+                task_id,
+                TaskStatus.DOWNLOADING,
+                stage=TaskStage.DOWNLOADING_VIDEO,
+                message=f"合并生成 {index}/{total}：{label}",
+                progress=int((index - 1) / max(total, 1) * 90),
+            )
+        except Exception as exc:  # noqa: BLE001 - 进度写失败不该打断合并
+            logger.debug(f"写入合并进度失败（{task_id}）：{exc}")
+
+        sub_task_id = f"{task_id}-s{index}"
+        generator = NoteGenerator()
+
+        def _execute(sub_id=sub_task_id, sub_url=url, sub_generator=generator):
+            return sub_generator.generate(
+                video_url=sub_url,
+                platform=platform,
+                quality=quality,
+                task_id=sub_id,
+                model_name=model_name,
+                provider_id=provider_id,
+                link=link,
+                _format=_format,
+                scene=scene,
+                detail=detail,
+                extras=extras,
+                screenshot=screenshot,
+                video_understanding=video_understanding,
+                video_interval=video_interval,
+                grid_size=grid_size,
+                sampling_mode=sampling_mode,
+                max_frames=max_frames,
+                frames_per_second=frames_per_second,
+                frame_limit_mode=frame_limit_mode,
+                ocr_assist=ocr_assist,
+                # 子任务不写任务行：用户只该看到一条合并任务（spec 018 决策 3）。
+                persist_metadata=False,
+            )
+
+        note = _execute_note_with_retry(sub_task_id, generator, _execute)
+        _cleanup_merged_subtask_files(sub_task_id)
+
+        if note == RATE_LIMIT_PARKED:
+            # 配额一直恢复不了：交还队列。已合并的部分不落盘，重跑时会重新生成。
+            logger.warning(
+                f"合并任务 {task_id} 因 429 交还队列（第 {index}/{total} 条）"
+            )
+            _park_rate_limited_task(task_id, park_kwargs)
+            return
+
+        if not note or not getattr(note, "markdown", None):
+            logger.warning(f"合并子任务失败 task_id={task_id} url={url}")
+            failures.append(MergedFailure(title=label, reason="生成失败"))
+            continue
+
+        audio = getattr(note, "audio_meta", None)
+        entries.append(
+            MergedEntry(
+                title=(getattr(audio, "title", "") or label),
+                markdown=note.markdown,
+                duration=_as_float(getattr(audio, "duration", 0)),
+                video_id=str(
+                    getattr(audio, "video_id", "") or item.get("video_id") or ""
+                ),
+                cover_url=getattr(audio, "cover_url", None),
+                transcript=getattr(note, "transcript", None),
+                source_url=url,
+            )
+        )
+
+    if not entries:
+        status_writer._update_status(
+            task_id,
+            TaskStatus.FAILED,
+            message=f"合并失败：{total} 个视频都没能生成",
+        )
+        _enforce_cache_limit_in_background()
+        return
+
+    title = (merge_title or "").strip() or "合并笔记"
+    merged_markdown = build_merged_markdown(title, entries, failures)
+
+    if merge_polish:
+        try:
+            status_writer._update_status(
+                task_id,
+                TaskStatus.FORMATTING,
+                stage=TaskStage.POST_PROCESSING,
+                message="正在润色合并笔记",
+                progress=95,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"写入润色进度失败（{task_id}）：{exc}")
+        merged_markdown = _polish_merged_markdown(
+            title, merged_markdown, model_name, provider_id
+        )
+
+    merged_note = NoteResult(
+        markdown=merged_markdown,
+        transcript=merge_transcripts(entries),
+        audio_meta=build_merged_audio_meta(
+            title,
+            entries,
+            platform,
+            video_id=f"{MERGED_VIDEO_ID_PREFIX}{task_id[:8]}",
+        ),
+    )
+
+    try:
+        status_writer._update_status(
+            task_id,
+            TaskStatus.SAVING,
+            stage=TaskStage.SAVING,
+            message="正在保存合并笔记",
+            stage_progress=50,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"写入保存进度失败（{task_id}）：{exc}")
+
+    save_note_to_file(task_id, merged_note)
+    _get_circuit_breaker().record_success()
+
+    message = f"已合并 {len(entries)}/{total} 个视频"
+    if failures:
+        message += f"，{len(failures)} 个失败（见笔记末尾）"
+    status_writer._update_status(task_id, TaskStatus.SUCCESS, message=message)
+    logger.info(f"合并笔记生成成功 (task_id={task_id})：{message}")
+    _enforce_cache_limit_in_background()
 
 
 @router.post("/delete_task")
@@ -1161,13 +1601,13 @@ def delete_task(data: RecordRequest):
         # NoteGenerator().delete_note(video_id=data.video_id, platform=data.platform)
         return R.success(msg="删除成功")
     except Exception as e:
-        return R.error(msg=e)
+        return R.error(msg=str(e))
 
 
 @router.post("/upload")
 async def upload(file: UploadFile = File(...)):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    file_location = os.path.join(UPLOAD_DIR, file.filename)
+    file_location = os.path.join(UPLOAD_DIR, file.filename or "upload.bin")
 
     with open(file_location, "wb+") as f:
         f.write(await file.read())
@@ -1211,6 +1651,11 @@ def generate_note(data: VideoRequest, background_tasks: BackgroundTasks):
             )
 
         video_id = extract_video_id(data.video_url, data.platform)
+        if video_id is None:
+            return R.error(msg="无法识别视频标识", code=400)
+        # spec 018 决策 8：多P 视频要与 /expand 用同一套 id（BV…_pN），
+        # 否则去重标记与在途判定都会把不同分P 当成同一个视频。
+        video_id = _resolve_single_video_id(video_id, data.video_url, data.platform)
 
         # 同一视频正在生成时不再重复起任务（spec 001 §12）：
         # 并发跑同一视频会互踩 data/data/<id>.mp4 与抽帧目录。
@@ -1267,8 +1712,10 @@ class ExpandRequest(BaseModel):
 class BatchItem(BaseModel):
     bvid: str
     p: int = 1
-    video_id: Optional[str] = None
-    url: Optional[str] = None
+    video_id: str | None = None
+    url: str | None = None
+    # spec 018：合并任务要用它做小节标题（前端在 /expand 结果里已经有了）。
+    title: str | None = None
 
 
 class BatchGenerateRequest(BaseModel):
@@ -1278,29 +1725,35 @@ class BatchGenerateRequest(BaseModel):
     items: list[BatchItem]
     quality: DownloadQuality = DownloadQuality.fast
     # Legacy request fields are accepted for client compatibility but are never stored or used.
-    model_name: Optional[str] = None
-    provider_id: Optional[str] = None
+    model_name: str | None = None
+    provider_id: str | None = None
     # pi-lens-ignore: python-mutable-class-attr
-    format: Optional[list] = []
-    scene: Optional[str] = None
-    detail: Optional[str] = None
-    extras: Optional[str] = None
-    screenshot: Optional[bool] = False
-    link: Optional[bool] = False
-    video_understanding: Optional[bool] = False
-    video_interval: Optional[int] = 0
+    format: list | None = []
+    scene: str | None = None
+    detail: str | None = None
+    extras: str | None = None
+    screenshot: bool | None = False
+    link: bool | None = False
+    video_understanding: bool | None = False
+    video_interval: int | None = 0
     # pi-lens-ignore: python-mutable-class-attr
-    grid_size: Optional[list] = []
+    grid_size: list | None = []
     # spec 002：interval=固定间隔抽帧；smart=画面变化+字幕分段高价值抽帧
-    sampling_mode: Optional[str] = "interval"
-    max_frames: Optional[int] = 60
+    sampling_mode: str | None = "interval"
+    max_frames: int | None = 60
     # smart 采样限制方式二选一：total=只用 max_frames；per_second=只用 frames_per_second
-    frames_per_second: Optional[int] = 2
-    frame_limit_mode: Optional[str] = "total"
+    frames_per_second: int | None = 2
+    frame_limit_mode: str | None = "total"
     # spec 007：批量新建时整批放进一个组。为空 = 全部归入「未分组」。
-    group_name: Optional[str] = None
+    group_name: str | None = None
     # 与单条 /generate_note 对齐：这三项此前漏了，批量任务无法覆盖 OCR 与预取字幕。
-    ocr_assist: Optional[bool] = None
+    ocr_assist: bool | None = None
+    # spec 018 决策 3：合并任务 —— 不建组，只产生一条任务，把所选视频的笔记合成一篇。
+    merge: bool | None = False
+    # 合并笔记标题（merge=true 时生效）；为空时回落到 group_name，再回落到「合并笔记」。
+    merge_title: str | None = None
+    # spec 018 决策 5：合并后再让模型润色一次（默认关，结构拼接更快且不丢内容）。
+    merge_polish: bool | None = False
 
 
 @router.post("/expand")
@@ -1352,7 +1805,6 @@ def expand(data: ExpandRequest):
 def generate_notes(data: BatchGenerateRequest, background_tasks: BackgroundTasks):
     """两阶段流程第二阶段：接收勾选列表，去重后逐条入队。"""
     try:
-
         # 就绪门禁：与单条 /generate_note 保持一致
         from app.services.transcriber_config_manager import TranscriberConfigManager
 
@@ -1383,6 +1835,12 @@ def generate_notes(data: BatchGenerateRequest, background_tasks: BackgroundTasks
 
         # 用户主动提交 = 熔断复位信号（spec 009 决策 12）。
         _get_circuit_breaker().reset()
+
+        # spec 018 决策 3：合并任务走另一条路 —— 不建组、只建一条任务。
+        # 必须在去重/建组之前分叉：合并要的是「每个分P 都真的生成一遍」，
+        # 跳过已生成的分P 会让合并笔记缺内容。
+        if data.merge:
+            return _submit_merged_batch(data)
 
         # 先过一遍去重/在途判定，收集**真正要入队**的条目。
         # 为什么先收集再建组（spec 009 决策 5）：整批都被跳过时不该留下一个空组
@@ -1483,7 +1941,7 @@ def download_task_archives(data: BatchArchiveRequest):
     if len(task_ids) > MAX_BATCH_ARCHIVE_TASKS:
         return R.error(f"一次最多归档 {MAX_BATCH_ARCHIVE_TASKS} 篇笔记", code=400)
 
-    from app.utils.note_archive import NoteArchiveError, write_note_archive
+    from app.utils.note_archive import write_note_archive
 
     temp_dir = Path(tempfile.mkdtemp(prefix="note-archives-"))
     try:
@@ -1505,7 +1963,11 @@ def download_task_archives(data: BatchArchiveRequest):
                     result = json.loads(result_path.read_text(encoding="utf-8"))
                 except Exception as exc:
                     failed.append({"task_id": task_id, "error": f"结果文件损坏：{exc}"})
-                    logger.warning("批量归档跳过一篇笔记：task_id=%s 结果文件损坏：%s", task_id, exc)
+                    logger.warning(
+                        "批量归档跳过一篇笔记：task_id=%s 结果文件损坏：%s",
+                        task_id,
+                        exc,
+                    )
                     continue
                 markdown = result.get("markdown")
                 if not isinstance(markdown, str) or not markdown.strip():
@@ -1540,7 +2002,9 @@ def download_task_archives(data: BatchArchiveRequest):
                     )
                 except NoteArchiveError as exc:
                     failed.append({"task_id": task_id, "error": str(exc)})
-                    logger.warning("批量归档跳过一篇笔记：task_id=%s 原因=%s", task_id, exc)
+                    logger.warning(
+                        "批量归档跳过一篇笔记：task_id=%s 原因=%s", task_id, exc
+                    )
                     continue
                 with ZipFile(note_zip) as single:
                     for item in single.infolist():
@@ -1626,7 +2090,7 @@ def download_task_archive(task_id: str):
         markdown = result.get("markdown")
         if not isinstance(markdown, str) or not markdown.strip():
             return R.error("笔记内容为空，无法导出", code=404)
-        from app.utils.note_archive import NoteArchiveError, write_note_archive
+        from app.utils.note_archive import write_note_archive
 
         temp_dir = Path(tempfile.mkdtemp(prefix="note-archive-"))
         try:
@@ -1725,7 +2189,7 @@ def _read_result_payload(task_id: str):
     if not os.path.exists(result_path):
         return None
     try:
-        with open(result_path, "r", encoding="utf-8") as f:
+        with open(result_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
         logger.debug("读取任务结果失败（%s）：%s", task_id, exc)
@@ -1773,7 +2237,7 @@ def _read_task_status(
 
     if os.path.exists(status_path):
         try:
-            with open(status_path, "r", encoding="utf-8") as f:
+            with open(status_path, encoding="utf-8") as f:
                 status_content = json.load(f)
         except Exception as exc:
             logger.debug("读取任务状态失败（%s）：%s", task_id, exc)
@@ -1810,6 +2274,87 @@ def _read_task_status(
         return None
     # 「排队中」占位**不进注册表**：它表达的是「没有任何落盘痕迹」，不是权威状态。
     return _pending_status(task_id)
+
+
+_TASK_READ_MODEL = TaskReadModel()
+
+
+@router.get("/v1/task-groups/events")
+async def get_task_groups_events(
+    request: Request,
+    task_ids: list[str] = Query(default_factory=list),
+    source: str = "sse",
+    since: int = 0,
+):
+    """Stream versioned task snapshots; clients can resume with the last revision.
+
+    The handler and the generator are **async** on purpose. A sync generator is iterated
+    inside Starlette's bounded worker pool, so one open stream parks a worker thread for
+    the whole 300s window. With a couple of open tabs (each EventSource reconnects on
+    error) the pool is gone and every other sync route — task list, note groups — stops
+    answering while this one looks perfectly healthy. Awaiting the sleep instead means an
+    idle stream costs no thread at all; only the snapshot read hops into a worker.
+    """
+    ids = list(
+        dict.fromkeys(
+            str(task_id).strip() for task_id in task_ids if str(task_id).strip()
+        )
+    )
+    if len(ids) > 1000:
+        return R.error("一次最多订阅 1000 个任务", code=400)
+
+    def read_snapshot() -> dict[str, Any]:
+        return _TASK_READ_MODEL.snapshot(
+            ids,
+            lambda task_id: _read_task_status(
+                task_id, include_result=False, unknown_is_none=True
+            ),
+            source=source,
+        )
+
+    async def event_stream():
+        last_revision = since
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline:
+            if await request.is_disconnected():
+                break
+            snapshot = await run_in_threadpool(read_snapshot)
+            revision = int(snapshot.get("snapshotRevision", 0))
+            if revision > last_revision or last_revision == since:
+                last_revision = revision
+                yield f"id: {revision}\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+            if all(
+                task.get("status") in {"succeeded", "failed", "cancelled"}
+                for task in snapshot.get("tasks", [])
+            ):
+                break
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+@router.get("/v1/task-groups/snapshot")
+def get_task_groups_snapshot(
+    task_ids: list[str] = Query(default_factory=list), source: str = "snapshot"
+):
+    """Return the versioned task read model while legacy endpoints remain available."""
+    ids = list(
+        dict.fromkeys(
+            str(task_id).strip() for task_id in task_ids if str(task_id).strip()
+        )
+    )
+    snapshot = _TASK_READ_MODEL.snapshot(
+        ids,
+        lambda task_id: _read_task_status(
+            task_id, include_result=False, unknown_is_none=True
+        ),
+        source=source,
+    )
+    return R.success(snapshot)
 
 
 class BatchStatusRequest(BaseModel):
@@ -1858,7 +2403,7 @@ def get_task_status(task_id: str):
 
     # 优先读状态文件
     if os.path.exists(status_path):
-        with open(status_path, "r", encoding="utf-8") as f:
+        with open(status_path, encoding="utf-8") as f:
             status_content = json.load(f)
 
         status = status_content.get("status")
@@ -1880,7 +2425,7 @@ def get_task_status(task_id: str):
         if status == TaskStatus.SUCCESS.value:
             # 成功状态的话，继续读取最终笔记内容
             if os.path.exists(result_path):
-                with open(result_path, "r", encoding="utf-8") as rf:
+                with open(result_path, encoding="utf-8") as rf:
                     result_content = json.load(rf)
                 return R.success(
                     {
@@ -1921,7 +2466,7 @@ def get_task_status(task_id: str):
 
     # 没有状态文件，但有结果
     if os.path.exists(result_path):
-        with open(result_path, "r", encoding="utf-8") as f:
+        with open(result_path, encoding="utf-8") as f:
             result_content = json.load(f)
         return R.success(
             {
@@ -2113,7 +2658,7 @@ def delete_task_record(data: TaskIdRequest):
     if not _valid_task_id(task_id):
         return R.error("任务标识无效", code=400)
     try:
-        from app.services.task_cleanup import TaskInFlightError, delete_task_completely
+        from app.services.task_cleanup import delete_task_completely
 
         return R.success(delete_task_completely(task_id))
     except TaskInFlightError as exc:
@@ -2153,7 +2698,7 @@ def delete_task_records(data: BatchDeleteRequest):
         if text:
             seen.setdefault(text, None)
 
-    from app.services.task_cleanup import TaskInFlightError, delete_task_completely
+    from app.services.task_cleanup import delete_task_completely
 
     deleted: list = []
     failed: list = []
@@ -2214,7 +2759,7 @@ class RetryFailedRequest(BaseModel):
     """
 
     scope: str = "all"
-    group_id: Optional[str] = None
+    group_id: str | None = None
 
 
 @router.post("/retry_failed_tasks")

@@ -129,6 +129,26 @@ def test_rate_limit_status_code_and_attribute_are_recognised():
     assert rl.is_rate_limit_error(WithFlag("whatever")) is True
 
 
+def _pin_cooldown(monkeypatch, cooldown=None, max_wait=None):
+    """钉住 429 冷却的两个时长。
+
+    这两个值现在是「设置 → 通用」里的可配置项，``note_rate_limit_hit()`` 在未显式
+    传参时通过 :mod:`app.services.runtime_limits` 读取。以前这些用例直接改
+    ``rl.RATE_LIMIT_COOLDOWN_SECONDS``；那个模块常量如今只是「读不到配置时的兜底」，
+    改它不会再影响执行路径 —— 所以要钉在真正被读的那一层。
+    """
+    from app.services import runtime_limits
+
+    if cooldown is not None:
+        monkeypatch.setattr(
+            runtime_limits, "llm_rate_limit_cooldown_seconds", lambda: cooldown
+        )
+    if max_wait is not None:
+        monkeypatch.setattr(
+            runtime_limits, "llm_rate_limit_max_wait_seconds", lambda: max_wait
+        )
+
+
 # ---------------------------------------------------------------------------
 # 冷却窗口
 # ---------------------------------------------------------------------------
@@ -137,8 +157,7 @@ def test_rate_limit_status_code_and_attribute_are_recognised():
 def test_hit_extends_window_and_budget_counts_from_first_hit(monkeypatch):
     clock = {"now": 1000.0}
     monkeypatch.setattr(rl.time, "monotonic", lambda: clock["now"])
-    monkeypatch.setattr(rl, "RATE_LIMIT_COOLDOWN_SECONDS", 300.0)
-    monkeypatch.setattr(rl, "RATE_LIMIT_MAX_WAIT_SECONDS", 600.0)
+    _pin_cooldown(monkeypatch, cooldown=300.0, max_wait=600.0)
 
     assert rl.note_rate_limit_hit() is False
     clock["now"] += 100.0
@@ -157,8 +176,7 @@ def test_max_wait_zero_means_never_give_up(monkeypatch):
     """``max_wait_seconds=0`` 是「不设上限」，不是「立刻放弃」。"""
     clock = {"now": 0.0}
     monkeypatch.setattr(rl.time, "monotonic", lambda: clock["now"])
-    monkeypatch.setattr(rl, "RATE_LIMIT_COOLDOWN_SECONDS", 10.0)
-    monkeypatch.setattr(rl, "RATE_LIMIT_MAX_WAIT_SECONDS", 0.0)
+    _pin_cooldown(monkeypatch, cooldown=10.0, max_wait=0.0)
 
     assert rl.note_rate_limit_hit() is False
     clock["now"] += 100000.0
@@ -166,8 +184,7 @@ def test_max_wait_zero_means_never_give_up(monkeypatch):
 
 
 def test_clear_resets_window_and_budget(monkeypatch):
-    monkeypatch.setattr(rl, "RATE_LIMIT_COOLDOWN_SECONDS", 600.0)
-    monkeypatch.setattr(rl, "RATE_LIMIT_MAX_WAIT_SECONDS", 60.0)
+    _pin_cooldown(monkeypatch, cooldown=600.0, max_wait=60.0)
     rl.note_rate_limit_hit()
     assert rl.rate_limit_remaining() > 0
 
@@ -191,7 +208,7 @@ def test_wait_sleeps_in_chunks_until_window_closes(monkeypatch):
         "sleep",
         lambda seconds: clock.__setitem__("now", clock["now"] + seconds),
     )
-    monkeypatch.setattr(rl, "RATE_LIMIT_COOLDOWN_SECONDS", 10.0)
+    _pin_cooldown(monkeypatch, cooldown=10.0)
 
     rl.note_rate_limit_hit()
 
@@ -201,7 +218,7 @@ def test_wait_sleeps_in_chunks_until_window_closes(monkeypatch):
 
 def test_reset_limiters_clears_cooldown(monkeypatch):
     """``reset_limiters()`` 是测试隔离入口，漏清冷却会让后续用例凭空睡 5 分钟。"""
-    monkeypatch.setattr(rl, "RATE_LIMIT_COOLDOWN_SECONDS", 600.0)
+    _pin_cooldown(monkeypatch, cooldown=600.0)
     rl.note_rate_limit_hit()
     assert rl.rate_limit_remaining() > 0
 

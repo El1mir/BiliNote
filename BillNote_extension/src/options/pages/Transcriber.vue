@@ -24,7 +24,7 @@ const loading = ref(false)
 const saving = ref(false)
 const message = ref<{ kind: 'ok' | 'err' | 'idle', text: string }>({ kind: 'idle', text: '' })
 
-const isWhisperLike = computed(() => selType.value === 'fast-whisper' || selType.value === 'mlx-whisper')
+const isWhisperLike = computed(() => selType.value === 'fast-whisper')
 
 async function refresh() {
   loading.value = true
@@ -63,7 +63,7 @@ async function save() {
 
 async function triggerDownload(size: WhisperModelSize) {
   try {
-    await downloadTranscriberModel(size, selType.value === 'mlx-whisper' ? 'mlx-whisper' : 'fast-whisper')
+    await downloadTranscriberModel(size, 'fast-whisper')
     message.value = { kind: 'ok', text: `已开始下载 ${size}` }
     await refresh()
   }
@@ -75,7 +75,7 @@ async function triggerDownload(size: WhisperModelSize) {
 const currentSizeStatus = computed<WhisperModelStatus[]>(() => {
   if (!status.value)
     return []
-  return selType.value === 'mlx-whisper' ? status.value.mlx_whisper : status.value.whisper
+  return status.value.whisper
 })
 
 onMounted(refresh)
@@ -85,7 +85,7 @@ onMounted(refresh)
   <div class="p-6 max-w-3xl">
     <h1 class="text-xl font-bold mb-1">音频转写配置</h1>
     <p class="text-xs text-gray-500 mb-4">
-      选择把视频音频转成文字的引擎。在线引擎（Groq / 必剪 / 快手）走第三方 API，本地 Whisper 需要先下载模型。
+      选择把视频音频转成文字的引擎。openai 兼容 ASR 走在线接口，Faster Whisper 在本地运行、需要先下载模型。
     </p>
 
     <div v-if="loading" class="text-sm text-gray-500">加载中…</div>
@@ -98,9 +98,6 @@ onMounted(refresh)
             {{ opt.label }}
           </option>
         </select>
-        <p v-if="selType === 'mlx-whisper' && !config.mlx_whisper_available" class="text-xs text-red-600">
-          ⚠ 当前后端没有装 mlx_whisper 包（仅 macOS 可用）。如果不是 Mac，请改用 fast-whisper / Groq / 必剪 / 快手。
-        </p>
       </section>
 
       <section v-if="isWhisperLike" class="section-card">

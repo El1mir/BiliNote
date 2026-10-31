@@ -18,11 +18,24 @@ function getBackendBase(): string {
   return (fromEnv && fromEnv.length > 0 ? fromEnv : '/api').replace(/\/$/, '')
 }
 
+/**
+ * 启动失败的结构化原因。hook 只给出 code + 原始细节，人话文案由前端按当前语言渲染 ——
+ * 否则失败页在英文界面里会蹦出一句中文（旧实现把整句话拼在 hook 里）。
+ */
+export type BootFailureCode = 'timeout' | 'connect' | 'http' | 'terminated' | 'startup_timeout' | 'unknown'
+
+export interface BootFailureReason {
+  code: BootFailureCode
+  detail?: string
+}
+
 /** 探活结果：ok=就绪；ready=后端确实答复了（哪怕业务码非 0）；err=网络层原因。 */
 interface ProbeResult {
   ok: boolean
   ready: boolean
   err?: string
+  code: BootFailureCode
+  detail?: string
 }
 
 /**
@@ -42,16 +55,21 @@ async function probeSysCheck(): Promise<ProbeResult> {
   try {
     const res = await fetch(url, { signal: ctrl.signal })
     if (!res.ok) {
-      return { ok: false, ready: false, err: `后端返回 HTTP ${res.status}` }
+      return { ok: false, ready: false, code: 'http', detail: `HTTP ${res.status}`, err: `后端返回 HTTP ${res.status}` }
     }
     // 2xx 就算答复了：业务码细节交给 /sys_health，别在这里卡启动。
     const json = await res.json().catch(() => null)
     // 2xx 且能解析出 code === 0 → 完全就绪；2xx 但业务码非 0 → 仍然算「后端在线」。
-    return { ok: json?.code === 0, ready: true }
+    return { ok: json?.code === 0, ready: true, code: 'unknown' }
   } catch (e) {
     // AbortError 是本地 5s 超时；TypeError: Failed to fetch 是连不上 / 被代理挡掉。
-    const err = e instanceof Error ? e.name : String(e)
-    return { ok: false, ready: false, err: err === 'AbortError' ? '探测超时' : err }
+    // 失败页要直接展示这句，所以给出人话而不是裸的 e.name（旧实现只留 "TypeError"，
+    // 用户看到等于没看到）。
+    if (e instanceof Error && e.name === 'AbortError') {
+      return { ok: false, ready: false, code: 'timeout', detail: '5s', err: '探测超时（后端未在 5s 内响应）' }
+    }
+    const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+    return { ok: false, ready: false, code: 'connect', detail, err: `无法连接到后端服务（${detail}）` }
   } finally {
     clearTimeout(t)
   }
@@ -62,6 +80,8 @@ interface Status {
   initialized: boolean
   failed: boolean
   lastError: string | null
+  /** 结构化失败原因；失败页按当前语言渲染它，lastError 只作兜底。 */
+  reason: BootFailureReason | null
 }
 
 interface BackendCheck extends Status {
@@ -73,6 +93,7 @@ const initialStatus: Status = {
   initialized: false,
   failed: false,
   lastError: null,
+  reason: null,
 }
 
 /**
@@ -108,13 +129,13 @@ export const useCheckBackend = (): BackendCheck => {
     const markReady = () => {
       if (cancelled || settledRef.current) return
       settledRef.current = true
-      setStatus({ loading: false, initialized: true, failed: false, lastError: null })
+      setStatus({ loading: false, initialized: true, failed: false, lastError: null, reason: null })
     }
 
-    const markFailed = (msg: string) => {
+    const markFailed = (msg: string, reason: BootFailureReason) => {
       if (cancelled || settledRef.current) return
       settledRef.current = true
-      setStatus({ loading: false, initialized: false, failed: true, lastError: msg })
+      setStatus({ loading: false, initialized: false, failed: true, lastError: msg, reason })
     }
 
     const poll = async () => {
@@ -129,22 +150,32 @@ export const useCheckBackend = (): BackendCheck => {
       }
       // 真·网络层失败：不报 toast、不抛错，继续轮询，但把原始原因记下来，
       // 这样 60s 后失败态里能显示「连不上」还是「超时」，而不是笼统一句网络异常。
-      setStatus(s => ({ ...s, lastError: probe.err || '后端尚未响应' }))
+      setStatus(s => ({
+        ...s,
+        lastError: probe.err || '后端尚未响应',
+        reason: { code: probe.code, detail: probe.detail || probe.err },
+      }))
       pollTimerId = setTimeout(poll, POLL_INTERVAL_MS)
     }
 
     // 总超时兜底：带上最后一轮的真实原因，方便用户自己定位。
     timeoutId = setTimeout(() => {
-      setStatus(s => {
-        if (settledRef.current) return s
-        settledRef.current = true
-        return {
-          loading: false,
-          initialized: false,
-          failed: true,
-          lastError: `后端 ${TOTAL_TIMEOUT_MS / 1000}s 内未就绪（${s.lastError || '无响应'}），请检查后端是否已启动，或点「重试」`,
-        }
-      })
+      // 注意：settle 标记必须在 updater 之外完成。React StrictMode 会双调用
+      // updater 以检测副作用，若在 updater 内改 ref，第二次调用就会走
+      // `return s` 分支，把已经算好的失败态丢掉 —— 结果就是开发环境永远
+      // 停在「正在启动后端服务」。
+      if (cancelled || settledRef.current) return
+      settledRef.current = true
+      setStatus(s => ({
+        loading: false,
+        initialized: false,
+        failed: true,
+        lastError: `后端 ${TOTAL_TIMEOUT_MS / 1000}s 内未就绪（${s.lastError || '无响应'}），请检查后端是否已启动，或点「重试」`,
+        reason: {
+          code: s.reason?.code === 'connect' ? 'connect' : 'timeout',
+          detail: s.reason?.detail || s.lastError || undefined,
+        },
+      }))
     }, TOTAL_TIMEOUT_MS)
 
     // 桌面端订阅 Tauri 事件（动态 import 避免 web 端打包报错）
@@ -154,11 +185,17 @@ export const useCheckBackend = (): BackendCheck => {
           if (cancelled) return
           const offReady = await listen<number>('backend-ready', () => markReady())
           const offTimeout = await listen<string>('backend-startup-timeout', e => {
-            markFailed(typeof e.payload === 'string' ? e.payload : '后端启动超时')
+            markFailed(typeof e.payload === 'string' ? e.payload : '后端启动超时', {
+              code: 'startup_timeout',
+              detail: typeof e.payload === 'string' ? e.payload : undefined,
+            })
           })
           const offTerm = await listen<number | null>('backend-terminated', e => {
             const code = e.payload
-            markFailed(`后端进程已退出 (code=${code ?? 'unknown'})`)
+            markFailed(`后端进程已退出 (code=${code ?? 'unknown'})`, {
+              code: 'terminated',
+              detail: String(code ?? 'unknown'),
+            })
           })
           tauriUnsubs.push(offReady, offTimeout, offTerm)
         })

@@ -37,10 +37,14 @@ def model_list(provider_id):
 
 @router.post("/models")
 def create_model(data: CreateModelRequest):
-    success = ModelService.add_new_model(data.provider_id, data.model_name)
-    if not success:
-        return R.error("模型添加失败")
-    return R.success(msg="模型添加成功")
+    outcome = ModelService.create_model_outcome(data.provider_id, data.model_name)
+    if outcome == "created":
+        return R.success(msg="模型添加成功")
+    if outcome == "exists":
+        return R.error("模型已存在", code=400, data={"reason": "model_name_exists"})
+    if outcome == "provider_missing":
+        return R.error("供应商不存在", code=400, data={"reason": "provider_not_found"})
+    return R.error("模型添加失败")
 
 @router.get("/model_enable/{provider_id}")
 def get_enabled_models_by_provider(provider_id: str):

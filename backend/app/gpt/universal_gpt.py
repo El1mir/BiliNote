@@ -1,21 +1,37 @@
-from app.gpt.base import GPT
-from app.gpt.prompt_builder import generate_base_prompt
-from app.models.gpt_model import GPTSource
-import os
 import hashlib
 import json
+import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.gpt.base import GPT
 from app.gpt.prompt import MERGE_PROMPT
-from app.gpt.utils import load_llm_json
+from app.gpt.prompt_builder import generate_base_prompt
 from app.gpt.request_chunker import RequestChunker
+from app.gpt.utils import load_llm_json
+from app.models.gpt_model import GPTSource
 from app.models.transcriber_model import TranscriptSegment
+from app.services import runtime_limits
 from app.utils.llm_rate_limit import _null_slot, provider_slot
 from app.utils.logger import get_logger
-from datetime import timedelta
-from typing import List
+
+
+def _as_float(value, default: float = 0.0) -> float:
+    """把时长/数字收敛成 float：脏数据（None / '12:34' / 空串）一律回退默认值。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    """环境变量转 int：填错时不让模块 import 直接炸掉，回退默认值。"""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
 
 logger = get_logger(__name__)
 
@@ -26,8 +42,8 @@ logger = get_logger(__name__)
 #:
 #: 注意它与 ``OPENAI_MAX_REQUEST_BYTES``（45MB 默认值）**不是一回事**：后者是
 #: 应用侧给自己定的预算，从来没和网关对齐过。判定层必须遵守的是本常量。
-GATEWAY_MAX_REQUEST_BYTES = int(
-    os.getenv("OPENAI_GATEWAY_MAX_REQUEST_BYTES", str(9 * 1024 * 1024))
+GATEWAY_MAX_REQUEST_BYTES = _env_int(
+    "OPENAI_GATEWAY_MAX_REQUEST_BYTES", 9 * 1024 * 1024
 )
 
 #: 判定层每次请求留给图片的字节预算。
@@ -39,12 +55,23 @@ GATEWAY_MAX_REQUEST_BYTES = int(
 #: 那个 503 的 body 是 ``{"code":"model_not_found"}``，**完全误导** —— 模型确实
 #: 存在（``GET /v1/models`` 里在，纯文本与小批量带图都正常），它其实是网关在大
 #: 请求上超时/断连后给出的兜底错误码。判定层必须远低于网关的 413 硬上限。
-JUDGE_IMAGE_BUDGET_BYTES = int(
-    os.getenv("OPENAI_JUDGE_IMAGE_BUDGET_BYTES", str(3 * 1024 * 1024))
-)
+JUDGE_IMAGE_BUDGET_BYTES = _env_int("OPENAI_JUDGE_IMAGE_BUDGET_BYTES", 3 * 1024 * 1024)
 JUDGE_IMAGE_BUDGET_BYTES = min(
-    JUDGE_IMAGE_BUDGET_BYTES, max(0, GATEWAY_MAX_REQUEST_BYTES - int(1024 * 1024))
+    JUDGE_IMAGE_BUDGET_BYTES, max(0, GATEWAY_MAX_REQUEST_BYTES - (1024 * 1024))
 )
+
+
+def gateway_max_request_bytes() -> int:
+    """当前生效的网关硬上限（字节）。
+
+    模块常量 :data:`GATEWAY_MAX_REQUEST_BYTES` 在导入期求值一次；这个函数每次
+    调用都重新读 ``OPENAI_GATEWAY_MAX_REQUEST_BYTES``（默认仍是 9 MiB），所以
+    测试或运行时改环境变量后立刻生效。
+
+    用户在「设置 → 通用 → LLM 请求体预算」里配的值只能**低于**它：超限时网关
+    直接回 413，而 413 不在可重试清单里。
+    """
+    return runtime_limits.llm_gateway_ceiling_bytes()
 
 
 class UniversalGPT(GPT):
@@ -79,92 +106,93 @@ class UniversalGPT(GPT):
         # 现在默认对齐 GATEWAY_MAX_REQUEST_BYTES；仍允许用
         # OPENAI_MAX_REQUEST_BYTES 显式覆盖（比如换成自建网关、上限更宽），
         # 但任何时候都不会超过网关上限。
-        configured = int(
-            os.getenv("OPENAI_MAX_REQUEST_BYTES", str(GATEWAY_MAX_REQUEST_BYTES))
-        )
-        self.max_request_bytes = min(configured, GATEWAY_MAX_REQUEST_BYTES)
-        if configured > GATEWAY_MAX_REQUEST_BYTES:
+        # 预算来源：环境变量 > 用户设置（通用设置页）> 默认值；再与网关硬上限收敛。
+        # 每次构造实例读一次（runtime_limits 内部有 5 秒缓存），所以用户在设置页
+        # 改完不需要重启服务，下一个任务就生效。
+        configured = runtime_limits.llm_max_request_bytes()
+        ceiling = gateway_max_request_bytes()
+        self.max_request_bytes = min(configured, ceiling)
+        if configured > ceiling:
             logger.warning(
-                "OPENAI_MAX_REQUEST_BYTES=%d 超过网关上限 %d，已收敛到网关上限；"
+                "LLM 请求体预算 %d 超过网关上限 %d，已收敛到网关上限；"
                 "否则请求会被网关以 413 拒绝",
                 configured,
-                GATEWAY_MAX_REQUEST_BYTES,
+                ceiling,
             )
         self.checkpoint_dir = Path(os.getenv("NOTE_OUTPUT_DIR", "note_results"))
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        # 初始化时缓存重试配置，避免每次请求重复读取环境变量
-        self._max_retry_attempts = max(1, int(os.getenv("OPENAI_RETRY_ATTEMPTS", "3")))
-        self._retry_base_backoff = float(os.getenv("OPENAI_RETRY_BACKOFF_SECONDS", "1.5"))
+        # 初始化时缓存重试配置，避免每次请求重复读取环境变量 / 数据库
+        self._max_retry_attempts = runtime_limits.llm_retry_attempts()
+        self._retry_base_backoff = runtime_limits.llm_retry_backoff_seconds()
 
     def _format_time(self, seconds: float) -> str:
-        return str(timedelta(seconds=int(seconds)))[2:]
+        return str(timedelta(seconds=int(_as_float(seconds))))[2:]
 
-    def _build_segment_text(self, segments: List[TranscriptSegment]) -> str:
+    def _build_segment_text(self, segments: list[TranscriptSegment]) -> str:
         return "\n".join(
-            f"{self._format_time(seg.start)} - {seg.text.strip()}"
-            for seg in segments
+            f"{self._format_time(seg.start)} - {seg.text.strip()}" for seg in segments
         )
 
-    def ensure_segments_type(self, segments) -> List[TranscriptSegment]:
-        return [TranscriptSegment(**seg) if isinstance(seg, dict) else seg for seg in segments]
+    def ensure_segments_type(self, segments) -> list[TranscriptSegment]:
+        return [
+            TranscriptSegment(**seg) if isinstance(seg, dict) else seg
+            for seg in segments
+        ]
 
-    def create_messages(self, segments: List[TranscriptSegment], **kwargs):
+    def create_messages(self, segments: list[TranscriptSegment], **kwargs):
 
         content_text = generate_base_prompt(
-            title=kwargs.get('title'),
+            title=kwargs.get("title"),
             segment_text=self._build_segment_text(segments),
-            tags=kwargs.get('tags'),
-            _format=kwargs.get('_format'),
-            scene=kwargs.get('scene'),
-            detail=kwargs.get('detail'),
-            extras=kwargs.get('extras'),
+            tags=kwargs.get("tags"),
+            _format=kwargs.get("_format"),
+            scene=kwargs.get("scene"),
+            detail=kwargs.get("detail"),
+            extras=kwargs.get("extras"),
             # spec 008 ticket 02：OCR 辅助模式下截图指令换成编号占位符版本
-            ocr_assist=bool(kwargs.get('ocr_assist')),
-            approved_shots=kwargs.get('approved_shots') or [],
+            ocr_assist=bool(kwargs.get("ocr_assist")),
+            approved_shots=kwargs.get("approved_shots") or [],
             # m04445 pivot：OCR 参考内容（q1：全部输出）。
-            ocr_reference=kwargs.get('ocr_reference'),
+            ocr_reference=kwargs.get("ocr_reference"),
         )
 
-        video_img_urls = kwargs.get('video_img_urls', [])
+        video_img_urls = kwargs.get("video_img_urls", [])
 
         content: list[dict] | str
         if video_img_urls:
             # 有截图时走 OpenAI 多模态 content 数组（text + image_url）
             content = [{"type": "text", "text": content_text}]
             for url in video_img_urls:
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": url,
-                        "detail": "auto"
-                    }
-                })
+                content.append(
+                    {"type": "image_url", "image_url": {"url": url, "detail": "auto"}}
+                )
         else:
             # 纯文本场景退回 string content：DeepSeek deepseek-chat 等非多模态模型
             # 不识别 [{"type":"text",...}] 数组形态，会返回 invalid_request_error
             # （issue #282）。OpenAI 规范本身也允许 content 为 string。
             content = content_text
 
-        messages = [{
-            "role": "user",
-            "content": content
-        }]
+        messages = [{"role": "user", "content": content}]
 
         return messages
 
     # ---------------- 视频理解：按字幕挑截图时间点（spec 002 综合采样） ----------------
 
-    def plan_frame_timestamps(self, segments: List[TranscriptSegment], duration: float = 0.0,
-                              max_items: int = 24) -> List[float]:
+    def plan_frame_timestamps(
+        self,
+        segments: list[TranscriptSegment],
+        duration: float = 0.0,
+        max_items: int = 24,
+    ) -> list[float]:
         """让 LLM 读字幕，挑出「值得截图给多模态模型看」的时间点（秒）。失败返回 []。"""
         segments = self.ensure_segments_type(segments or [])
         if not segments:
             return []
         lines = self._build_plan_lines(segments)
-        if not duration or float(duration or 0) <= 0:
+        if not duration or _as_float(duration) <= 0:
             # 时长探测失败时用字幕末尾时间兜底：没有时长就没有「均匀覆盖」，
             # 而均匀覆盖正是模型交白卷时唯一的救生索。
-            duration = float(segments[-1].end or segments[-1].start or 0)
+            duration = _as_float(segments[-1].end or segments[-1].start or 0)
         # 用 replace 而不是 str.format：模板里有 JSON 示例的花括号。
         system_prompt = build_frame_plan_prompt(duration, max_items)
         messages = [
@@ -185,12 +213,12 @@ class UniversalGPT(GPT):
         if fallback:
             logger.warning(
                 "画面挑选层返回空结果，改用均匀覆盖兜底：时长=%.1fs 兜底=%d 个时间点",
-                float(duration or 0),
+                _as_float(duration),
                 len(fallback),
             )
         return fallback
 
-    def _build_plan_lines(self, segments: List[TranscriptSegment]) -> str:
+    def _build_plan_lines(self, segments: list[TranscriptSegment]) -> str:
         """字幕太长时按时间均匀抽稀，控制 prompt 体积（保留整段覆盖）。"""
         segs = list(segments)
         if len(segs) > MAX_PLAN_SEGMENTS:
@@ -202,8 +230,8 @@ class UniversalGPT(GPT):
 
     def judge_note_frames(
         self,
-        segments: List[TranscriptSegment],
-        candidates: List[float],
+        segments: list[TranscriptSegment],
+        candidates: list[float],
         duration: float = 0.0,
         max_items: int | None = None,
         image_urls: list | None = None,
@@ -219,15 +247,14 @@ class UniversalGPT(GPT):
         「都不值得」时返回空 approved，那是合法结果。
         """
         from app.services.ocr_assist import (
-            MAX_NOTE_IMAGES,
             WorthJudgementError,
             build_judge_system_prompt,
-            extract_judgement_items,
             parse_worth_judgement,
         )
 
         segments = self.ensure_segments_type(segments or [])
-        limit = max_items or MAX_NOTE_IMAGES
+        # 上限来自「设置 → 通用 → 单篇插图上限」，用户在任务运行中改了也立刻生效。
+        limit = max_items or runtime_limits.note_max_images()
         system_prompt = build_judge_system_prompt(
             candidates, duration=duration, max_items=limit
         )
@@ -239,10 +266,12 @@ class UniversalGPT(GPT):
             if batch:
                 content = [{"type": "text", "text": user_text}]
                 for url in batch:
-                    content.append({
-                        "type": "image_url",
-                        "image_url": {"url": url, "detail": "auto"},
-                    })
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": url, "detail": "auto"},
+                        }
+                    )
             else:
                 content = user_text
             return [
@@ -262,7 +291,7 @@ class UniversalGPT(GPT):
             "判定层分批：图片=%d 批次=%d 预算=%dB",
             len(image_urls),
             len(batches),
-            JUDGE_IMAGE_BUDGET_BYTES,
+            runtime_limits.llm_judge_image_budget_bytes(),
         )
         items: list = []
         for index, batch in enumerate(batches, 1):
@@ -288,7 +317,10 @@ class UniversalGPT(GPT):
         outcome = parse_worth_judgement(merged, candidates, max_images=limit)
         logger.info(
             "判定层分批完成：图片=%d 批次=%d 条目=%d 最终通过=%d",
-            len(image_urls), len(batches), len(items), len(outcome.approved),
+            len(image_urls),
+            len(batches),
+            len(items),
+            len(outcome.approved),
         )
         return outcome
 
@@ -358,7 +390,8 @@ class UniversalGPT(GPT):
         """
         import copy
 
-        budget = JUDGE_IMAGE_BUDGET_BYTES
+        # 每次分批都重新取：用户可能在任务运行中改了预算，而实例是长生命周期的。
+        budget = runtime_limits.llm_judge_image_budget_bytes()
         if budget <= 0 or not image_urls:
             return [list(image_urls)]
 
@@ -376,10 +409,12 @@ class UniversalGPT(GPT):
             messages = copy.deepcopy(skeleton)
             target = messages[-1]["content"]
             for url in batch:
-                target.append({
-                    "type": "image_url",
-                    "image_url": {"url": url, "detail": "auto"},
-                })
+                target.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": url, "detail": "auto"},
+                    }
+                )
             return messages
 
         batches: list = []
@@ -400,18 +435,18 @@ class UniversalGPT(GPT):
 
     def _estimate_messages_bytes(self, messages: list) -> int:
         import json
+
         return len(json.dumps(messages, ensure_ascii=False).encode("utf-8"))
 
     def _build_merge_messages(self, partials: list) -> list:
         merge_text = MERGE_PROMPT + "\n\n" + "\n\n---\n\n".join(partials)
         # 合并阶段没有图片，直接用 string content 兼容非多模态模型（issue #282）
-        return [{
-            "role": "user",
-            "content": merge_text
-        }]
+        return [{"role": "user", "content": merge_text}]
 
     def _checkpoint_path(self, checkpoint_key: str) -> Path:
-        safe_key = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in checkpoint_key)
+        safe_key = "".join(
+            ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in checkpoint_key
+        )
         return self.checkpoint_dir / f"{safe_key}.gpt.checkpoint.json"
 
     def _build_source_signature(self, source: GPTSource) -> str:
@@ -430,14 +465,17 @@ class UniversalGPT(GPT):
             # 切换开关会命中旧 checkpoint，产出与当前模式不符的笔记。
             "ocr_assist": bool(source.ocr_assist),
             "approved_shots": [
-                {"time": getattr(shot, "time", None), "caption": getattr(shot, "caption", "")}
+                {
+                    "time": getattr(shot, "time", None),
+                    "caption": getattr(shot, "caption", ""),
+                }
                 for shot in (source.approved_shots or [])
             ],
             "segments": [
                 {
                     "start": getattr(seg, "start", None),
                     "end": getattr(seg, "end", None),
-                    "text": getattr(seg, "text", "")
+                    "text": getattr(seg, "text", ""),
                 }
                 for seg in source.segment
             ],
@@ -445,7 +483,9 @@ class UniversalGPT(GPT):
         raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    def _load_checkpoint(self, checkpoint_key: str, source_signature: str) -> dict | None:
+    def _load_checkpoint(
+        self, checkpoint_key: str, source_signature: str
+    ) -> dict | None:
         path = self._checkpoint_path(checkpoint_key)
         if not path.exists():
             return None
@@ -459,17 +499,21 @@ class UniversalGPT(GPT):
             path.unlink(missing_ok=True)
             return None
 
-    def _save_checkpoint(self, checkpoint_key: str, source_signature: str, partials: list, phase: str) -> None:
+    def _save_checkpoint(
+        self, checkpoint_key: str, source_signature: str, partials: list, phase: str
+    ) -> None:
         path = self._checkpoint_path(checkpoint_key)
         data = {
             "version": 1,
             "source_signature": source_signature,
             "phase": phase,
             "partials": partials,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
         }
         tmp_path = path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         tmp_path.replace(path)
 
     def _clear_checkpoint(self, checkpoint_key: str) -> None:
@@ -541,7 +585,9 @@ class UniversalGPT(GPT):
                 )
             except Exception as exc:
                 if self._is_temperature_unsupported_error(exc):
-                    print(f"[universal_gpt] 模型 {self.model} 不支持自定义 temperature，改用默认值重试")
+                    print(
+                        f"[universal_gpt] 模型 {self.model} 不支持自定义 temperature，改用默认值重试"
+                    )
                     return self.client.chat.completions.create(
                         model=self.model,
                         messages=messages,
@@ -555,28 +601,35 @@ class UniversalGPT(GPT):
                 return self._do_create(messages)
             except Exception as exc:
                 last_exc = exc
-                if attempt == self._max_retry_attempts - 1 or not self._is_retryable_error(exc):
+                if (
+                    attempt == self._max_retry_attempts - 1
+                    or not self._is_retryable_error(exc)
+                ):
                     raise
-                sleep_seconds = self._retry_base_backoff * (2 ** attempt)
+                sleep_seconds = self._retry_base_backoff * (2**attempt)
                 time.sleep(sleep_seconds)
 
         if last_exc is not None:
             raise last_exc
         raise RuntimeError("chat completion failed without exception")
 
-    def _merge_partials(self, partials: list, checkpoint_key: str | None, source_signature: str | None) -> str:
+    def _merge_partials(
+        self, partials: list, checkpoint_key: str | None, source_signature: str | None
+    ) -> str:
         def build_messages(texts, *_args, **_kwargs):
             return self._build_merge_messages(texts)
 
         merge_chunker = RequestChunker(
             lambda *_args, **_kwargs: [],
             self.max_request_bytes,
-            self._estimate_messages_bytes
+            self._estimate_messages_bytes,
         )
 
         current_partials = list(partials)
         while len(current_partials) > 1:
-            groups = merge_chunker.group_texts_by_budget(current_partials, build_messages)
+            groups = merge_chunker.group_texts_by_budget(
+                current_partials, build_messages
+            )
             new_partials = []
             for group_idx, group in enumerate(groups):
                 messages = build_messages(group)
@@ -584,33 +637,69 @@ class UniversalGPT(GPT):
                     response = self._chat_completion_create(messages)
                 except Exception:
                     if checkpoint_key and source_signature:
-                        self._save_checkpoint(checkpoint_key, source_signature, current_partials, "merge")
+                        self._save_checkpoint(
+                            checkpoint_key, source_signature, current_partials, "merge"
+                        )
                     raise
 
                 new_partials.append(response.choices[0].message.content.strip())
 
                 if checkpoint_key and source_signature:
                     remaining_partials = []
-                    for remaining_group in groups[group_idx + 1:]:
+                    for remaining_group in groups[group_idx + 1 :]:
                         remaining_partials.extend(remaining_group)
                     resumable_partials = new_partials + remaining_partials
-                    self._save_checkpoint(checkpoint_key, source_signature, resumable_partials, "merge")
+                    self._save_checkpoint(
+                        checkpoint_key, source_signature, resumable_partials, "merge"
+                    )
 
             current_partials = new_partials
 
         return current_partials[0]
+
+    def polish_markdown(self, title: str, markdown: str) -> str:
+        """把合并后的笔记整体润色一次（spec 018 决策 5）。
+
+        超过请求体预算时**直接返回原文**：切块润色会让各块之间的衔接重新断开
+        （等于白润），硬发又会撞网关 413。两者都不如让结构拼接结果原样落盘。
+        """
+        text = markdown or ""
+        if not text.strip():
+            return text
+        messages = [
+            {"role": "system", "content": MERGE_NOTES_PROMPT},
+            {"role": "user", "content": f"合并标题：{title}\n\n{text}"},
+        ]
+        try:
+            estimated = self._estimate_messages_bytes(messages)
+        except Exception:
+            estimated = None
+        if estimated is not None and estimated > self.max_request_bytes:
+            logger.warning(
+                "合并笔记润色被跳过：请求体约 %.1f MB 超过预算 %.1f MB（保留结构拼接结果）",
+                estimated / 1024 / 1024,
+                self.max_request_bytes / 1024 / 1024,
+            )
+            return text
+        response = self._chat_completion_create(messages)
+        content = (response.choices[0].message.content or "").strip()
+        return content or text
 
     def summarize(self, source: GPTSource) -> str:
         self.screenshot = source.screenshot
         self.link = source.link
         source.segment = self.ensure_segments_type(source.segment)
         checkpoint_key = source.checkpoint_key
-        source_signature = self._build_source_signature(source) if checkpoint_key else None
+        source_signature = (
+            self._build_source_signature(source) if checkpoint_key else None
+        )
 
         def message_builder(segments, image_urls, **kwargs):
             return self.create_messages(segments, video_img_urls=image_urls, **kwargs)
 
-        chunker = RequestChunker(message_builder, self.max_request_bytes, self._estimate_messages_bytes)
+        chunker = RequestChunker(
+            message_builder, self.max_request_bytes, self._estimate_messages_bytes
+        )
 
         try:
             chunks = chunker.chunk(
@@ -623,7 +712,7 @@ class UniversalGPT(GPT):
                 detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
-                approved_shots=source.approved_shots
+                approved_shots=source.approved_shots,
             )
         except ValueError:
             chunks = chunker.chunk(
@@ -636,7 +725,7 @@ class UniversalGPT(GPT):
                 detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
-                approved_shots=source.approved_shots
+                approved_shots=source.approved_shots,
             )
 
         partials = []
@@ -648,7 +737,7 @@ class UniversalGPT(GPT):
         if len(partials) > len(chunks):
             partials = []
 
-        for chunk in chunks[len(partials):]:
+        for chunk in chunks[len(partials) :]:
             messages = self.create_messages(
                 chunk.segments,
                 title=source.title,
@@ -659,18 +748,22 @@ class UniversalGPT(GPT):
                 detail=source.detail,
                 extras=source.extras,
                 ocr_assist=source.ocr_assist,
-                approved_shots=source.approved_shots
+                approved_shots=source.approved_shots,
             )
             try:
                 response = self._chat_completion_create(messages)
             except Exception:
                 if checkpoint_key and source_signature:
-                    self._save_checkpoint(checkpoint_key, source_signature, partials, "summarize")
+                    self._save_checkpoint(
+                        checkpoint_key, source_signature, partials, "summarize"
+                    )
                 raise
 
             partials.append(response.choices[0].message.content.strip())
             if checkpoint_key and source_signature:
-                self._save_checkpoint(checkpoint_key, source_signature, partials, "summarize")
+                self._save_checkpoint(
+                    checkpoint_key, source_signature, partials, "summarize"
+                )
 
         if len(partials) == 1:
             if checkpoint_key:
@@ -754,8 +847,7 @@ def build_frame_plan_prompt(duration: float, max_items: int) -> str:
     else:
         duration_range = "不要超过字幕里最后一条时间戳"
     return (
-        FRAME_PLAN_PROMPT
-        .replace("{DURATION}", str(seconds))
+        FRAME_PLAN_PROMPT.replace("{DURATION}", str(seconds))
         .replace("{DURATION_RANGE}", duration_range)
         .replace("{MAX_ITEMS}", str(max(1, int(max_items or 1))))
         .replace("{MIN_ITEMS}", str(plan_min_items(duration, max_items)))

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Ember viewport harness</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #e7e5e4; font-family: system-ui, sans-serif; }
+  #wrap { display: flex; height: 100%; align-items: stretch; justify-content: center; gap: 16px; padding: 16px; box-sizing: border-box; }
+  .pane { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .label { font-size: 12px; font-weight: 600; color: #57534e; letter-spacing: .04em; text-transform: uppercase; }
+  .frame { border: 0; background: #fafaf9; box-shadow: 0 8px 30px rgba(28,25,23,.14); border-radius: 12px; flex: 1; min-height: 0; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<script>
+  var params = new URLSearchParams(location.search);
+  var widths = (params.get('w') || '1440').split(',').map(Number);
+  var height = Number(params.get('h') || 0) || window.innerHeight - 32;
+  var target = params.get('src') || '/';
+  var wrap = document.getElementById('wrap');
+  widths.forEach(function (w) {
+    var pane = document.createElement('div');
+    pane.className = 'pane';
+    var label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = w + 'px';
+    var frame = document.createElement('iframe');
+    frame.className = 'frame';
+    frame.width = w;
+    frame.height = height;
+    frame.src = target;
+    pane.appendChild(label);
+    pane.appendChild(frame);
+    wrap.appendChild(pane);
+  });
+</script>
+</body>
+</html>

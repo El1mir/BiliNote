@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
+import { translate } from '@/ember/i18n/locale'
 import { useTaskStore, readLatestMarkdown, type Task } from '@/store/taskStore'
-import { getTaskStatusBatch, readTaskStatusMap, type TaskStatusLite } from '@/services/note.ts'
+import { getTaskReadModelSnapshot, subscribeTaskReadModel, type TaskStatusLite, type TaskReadModelSnapshot } from '@/services/note.ts'
 import toast from 'react-hot-toast'
 
 /**
@@ -42,12 +43,62 @@ export const useTaskPolling = (interval = 3000) => {
    * 偶发超时/网络抖动不应该把任务判死（spec 009 ticket 06）。
    */
   const failuresRef = useRef(0)
+  const pollingRef = useRef(false)
+  const sseConnectedRef = useRef(false)
   const MAX_POLL_FAILURES = 5
 
   // 每次 tasks 更新，把最新的 tasks 同步进去
   useEffect(() => {
     tasksRef.current = tasks
   }, [tasks])
+
+  /**
+   * The ids the stream covers, as a string. Depending on `tasks` directly re-subscribed
+   * on every status tick: each re-subscribe opened a new EventSource and aborted the old
+   * one, so a single running task produced a reconnect storm that pinned the backend's
+   * request workers. The id set only changes when a task actually starts or finishes.
+   */
+  const pendingKey = tasks
+    .filter(task => task.status !== 'SUCCESS' && task.status !== 'FAILED')
+    .map(task => task.id)
+    .sort()
+    .join(',')
+
+  useEffect(() => {
+    const pendingIds = pendingKey ? pendingKey.split(',') : []
+    if (pendingIds.length === 0) return
+    let unsubscribe: (() => void) | undefined
+    let closed = false
+    const stop = () => {
+      if (closed) return
+      closed = true
+      sseConnectedRef.current = false
+      unsubscribe?.()
+      unsubscribe = undefined
+    }
+    try {
+      unsubscribe = subscribeTaskReadModel(
+        pendingIds,
+        (snapshot: TaskReadModelSnapshot) => {
+          for (const view of snapshot.tasks) {
+            const status = view.status === "succeeded" ? "SUCCESS" : view.status === "failed" ? "FAILED" : view.status === "cancelled" ? "CANCELLED" : view.status.toUpperCase()
+            updateTaskStatus(view.taskId, { status: status as Task["status"], stage: view.phase, progress: view.progress, message: view.message, detail: view.detail, updatedAt: view.updatedAt, revision: view.revision })
+            if (status === "SUCCESS") void rehydrateTask(view.taskId)
+          }
+          // EventSource reconnects by itself when the server ends the stream, so a
+          // finished batch would otherwise reopen a stream forever.
+          if (snapshot.tasks.every(view => view.status === 'succeeded' || view.status === 'failed' || view.status === 'cancelled')) {
+            stop()
+          }
+        },
+        () => stop(),
+        () => { sseConnectedRef.current = true },
+      )
+    } catch {
+      unsubscribe = undefined
+    }
+    return stop
+  }, [pendingKey, updateTaskStatus, rehydrateTask])
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -58,8 +109,9 @@ export const useTaskPolling = (interval = 3000) => {
           (task.status === 'SUCCESS' && !hasMarkdownContent(task))
       )
 
-      // 无活跃任务时跳过轮询
-      if (pendingTasks.length === 0) return
+      // 无活跃任务或上一轮尚未完成时跳过轮询，避免慢请求叠加。
+      if (pendingTasks.length === 0 || pollingRef.current || sseConnectedRef.current) return
+      pollingRef.current = true
 
       // 每轮只发一个状态请求（spec 009 ticket 06 验收：200 个待办也是 1 个请求）。
       // 后端对单个请求有 1000 个 id 的上限（note.py 的 BatchStatusRequest 检查），
@@ -69,9 +121,27 @@ export const useTaskPolling = (interval = 3000) => {
       try {
         for (let i = 0; i < pendingTasks.length; i += BATCH_STATUS_CHUNK) {
           const chunk = pendingTasks.slice(i, i + BATCH_STATUS_CHUNK)
-          const payload = await getTaskStatusBatch(chunk.map(task => task.id))
-          // 后端返回的键名可能是 states 或 statuses，readTaskStatusMap 两个都认。
-          Object.assign(statuses, readTaskStatusMap(payload))
+          const snapshot = await getTaskReadModelSnapshot(chunk.map(task => task.id))
+          for (const view of snapshot.tasks) {
+            Object.assign(statuses, {
+              [view.taskId]: {
+                status:
+                  view.status === 'succeeded'
+                    ? 'SUCCESS'
+                    : view.status === 'failed'
+                      ? 'FAILED'
+                      : view.status === 'cancelled'
+                        ? 'CANCELLED'
+                        : view.status.toUpperCase(),
+                stage: view.phase,
+                progress: view.progress,
+                message: view.message,
+                detail: view.detail,
+                updatedAt: view.updatedAt,
+                revision: view.revision,
+              } satisfies TaskStatusLite,
+            })
+          }
         }
         failuresRef.current = 0
       } catch (e) {
@@ -80,9 +150,12 @@ export const useTaskPolling = (interval = 3000) => {
         // 单轮失败**绝不**改任务状态：任务其实还在跑，误标 FAILED 会让界面出现
         // 「重试」，点下去就重复提交同一个任务。只在连续失败到阈值时提示一次。
         if (failuresRef.current === MAX_POLL_FAILURES) {
-          toast.error('连续多次获取任务状态失败，请检查后端服务；任务状态未改动，恢复后会自动继续')
+          toast.error(translate('poll.pollingFailed'))
         }
+        pollingRef.current = false
         return
+      } finally {
+        pollingRef.current = false
       }
 
       // 本轮新成功的任务数，用于把 N 条成功提示合并成一条（否则 200 个任务弹 200 次）。
@@ -123,7 +196,11 @@ export const useTaskPolling = (interval = 3000) => {
       }
 
       if (newlySucceeded > 0) {
-        toast.success(newlySucceeded === 1 ? '笔记生成成功' : `已完成 ${newlySucceeded} 个任务`)
+        toast.success(
+          newlySucceeded === 1
+            ? translate('poll.noteSuccess')
+            : translate('poll.completed', { count: newlySucceeded }),
+        )
       }
     }, interval)
 

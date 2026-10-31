@@ -1,5 +1,6 @@
 // 与 backend/app/routers/note.py / provider.py / model.py 对齐
-export type Platform = 'bilibili' | 'youtube' | 'douyin' | 'kuaishou' | 'local'
+// 生成链路只支持 B 站：其他平台由后端 adapter 层决定何时接回（spec 017）。
+export type Platform = 'bilibili'
 export type Quality = 'fast' | 'medium' | 'slow'
 
 export type TaskStatus =
@@ -149,7 +150,7 @@ export interface ProviderCreatePayload {
   logo?: string
 }
 
-export type TranscriberType = 'fast-whisper' | 'bcut' | 'kuaishou' | 'groq' | 'mlx-whisper'
+export type TranscriberType = 'fast-whisper' | 'openai-asr'
 export type WhisperModelSize = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3' | 'large-v3-turbo'
 
 export interface TranscriberOption {
@@ -162,7 +163,6 @@ export interface TranscriberConfig {
   whisper_model_size: WhisperModelSize | null
   available_types: TranscriberOption[]
   whisper_model_sizes: WhisperModelSize[]
-  mlx_whisper_available: boolean
 }
 
 export interface WhisperModelStatus {
@@ -173,8 +173,6 @@ export interface WhisperModelStatus {
 
 export interface TranscriberModelsStatus {
   whisper: WhisperModelStatus[]
-  mlx_whisper: WhisperModelStatus[]
-  mlx_available: boolean
 }
 
 export interface DeployStatus {

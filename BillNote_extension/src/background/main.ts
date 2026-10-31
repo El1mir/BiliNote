@@ -154,10 +154,7 @@ browser.runtime.onInstalled.addListener(() => {
       contexts: ['page', 'link', 'video'],
       documentUrlPatterns: [
         '*://*.bilibili.com/*',
-        '*://*.youtube.com/*',
-        '*://youtu.be/*',
-        '*://*.douyin.com/*',
-        '*://*.kuaishou.com/*',
+        '*://b23.tv/*',
       ],
     })
   }

@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.utils.logger import get_logger
 
@@ -87,6 +87,10 @@ PAYLOAD_KEYS = (
     "frame_limit_mode",
     "ocr_assist",
     "group_id",
+    # spec 018：合并任务的载荷（与 task_recovery._PAYLOAD_KEYS 是同一份契约）。
+    "merge_items",
+    "merge_title",
+    "merge_polish",
 )
 
 
@@ -103,13 +107,13 @@ def _note_output_dir() -> str:
     return note_router.NOTE_OUTPUT_DIR
 
 
-def read_task_status(task_id: str) -> Optional[str]:
+def read_task_status(task_id: str) -> str | None:
     """读 ``<task_id>.status.json`` 的 status；文件不存在/损坏/无该键返回 ``None``。"""
     path = os.path.join(_note_output_dir(), f"{task_id}.status.json")
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
     except Exception as exc:
         logger.debug("读取任务状态文件失败（%s）：%s", task_id, exc)
@@ -124,7 +128,7 @@ def read_task_failure_message(task_id: str) -> str:
     """读失败任务的错误消息（给用户看「为什么失败」，重试前先判断值不值得）。"""
     path = os.path.join(_note_output_dir(), f"{task_id}.status.json")
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
     except Exception:
         return ""
@@ -134,7 +138,7 @@ def read_task_failure_message(task_id: str) -> str:
     return str(message) if message else ""
 
 
-def _fallback_payload(video_id: str, platform: str) -> Optional[dict]:
+def _fallback_payload(video_id: str, platform: str) -> dict | None:
     """``payload_json`` 缺失时按 ``video_id`` 重建最小参数集（只支持 bilibili）。
 
     与 ``services/task_recovery.py`` 的同名函数职责一致。这里不做「跨模块复用」是
@@ -165,7 +169,7 @@ def _fallback_payload(video_id: str, platform: str) -> Optional[dict]:
     return {"video_url": url, "platform": platform}
 
 
-def payload_from_row(row: dict) -> Optional[dict]:
+def payload_from_row(row: dict) -> dict | None:
     """从任务行还原 ``run_note_task`` 的参数；还原不了返回 ``None``。"""
     task_id = row.get("task_id")
     raw = row.get("payload_json")
@@ -174,7 +178,9 @@ def payload_from_row(row: dict) -> Optional[dict]:
             parsed = json.loads(raw)
         except Exception as exc:
             logger.warning(
-                "任务 %s 的 payload_json 解析失败，尝试按 video_id 重建：%s", task_id, exc
+                "任务 %s 的 payload_json 解析失败，尝试按 video_id 重建：%s",
+                task_id,
+                exc,
             )
             parsed = None
         if isinstance(parsed, dict):
@@ -195,7 +201,7 @@ def payload_from_row(row: dict) -> Optional[dict]:
     return fallback
 
 
-def _as_row_dict(row: Any) -> Optional[dict]:
+def _as_row_dict(row: Any) -> dict | None:
     """把 DAO 返回的行统一成 dict —— 两条取数路径的类型并不一致。
 
     ``list_recoverable_tasks()`` 返回 dict，``get_video_task()`` 返回 **ORM 对象**，
@@ -216,15 +222,15 @@ def _as_row_dict(row: Any) -> Optional[dict]:
     return _row_to_dict(row)
 
 
-def _select_retryable(rows: List[dict]) -> tuple[List[dict], List[Dict[str, Any]]]:
+def _select_retryable(rows: list[dict]) -> tuple[list[dict], list[dict[str, Any]]]:
     """挑出可重试的失败任务，并给出被跳过项的原因（按传入顺序）。
 
     返回 ``(retryable_rows, skipped)``；``skipped`` 每条是
     ``{"task_id", "reason"}`` —— 界面上要如实告诉用户「有几条没重试、为什么」，
     静默跳过等于让用户以为全都重试了。
     """
-    retryable: List[dict] = []
-    skipped: List[Dict[str, Any]] = []
+    retryable: list[dict] = []
+    skipped: list[dict[str, Any]] = []
     for row in rows:
         task_id = str(row.get("task_id") or "")
         if not task_id:
@@ -235,14 +241,18 @@ def _select_retryable(rows: List[dict]) -> tuple[List[dict], List[Dict[str, Any]
         elif status in IN_FLIGHT_STATUSES:
             skipped.append({"task_id": task_id, "reason": "任务仍在执行"})
         elif status is None:
-            skipped.append({"task_id": task_id, "reason": "任务尚未开始，没有可重试的失败记录"})
+            skipped.append(
+                {"task_id": task_id, "reason": "任务尚未开始，没有可重试的失败记录"}
+            )
         else:
             # SUCCESS，以及任何将来新增的未知状态：不猜。
-            skipped.append({"task_id": task_id, "reason": f"任务状态为 {status}，无需重试"})
+            skipped.append(
+                {"task_id": task_id, "reason": f"任务状态为 {status}，无需重试"}
+            )
     return retryable, skipped
 
 
-def retry_failed_tasks(task_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+def retry_failed_tasks(task_ids: list[str] | None = None) -> dict[str, Any]:
     """把失败的任务重新入队；返回统计信息（也在测试里断言用）。
 
     :param task_ids: 要重试的 task_id 列表；``None`` = 库里全部任务（由调用方按
@@ -267,7 +277,7 @@ def retry_failed_tasks(task_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         # 去重但保持顺序：重复提交同一个 id 会让同一个任务被入队两次。
         wanted = list(dict.fromkeys(str(t).strip() for t in task_ids if str(t).strip()))
 
-    missing: List[str] = []
+    missing: list[str] = []
     if wanted is None:
         # 全部任务：与启动恢复走同一个 DAO（它按 created_at 升序返回全部行）。
         rows = list_recoverable_tasks()
@@ -283,7 +293,7 @@ def retry_failed_tasks(task_ids: Optional[List[str]] = None) -> Dict[str, Any]:
             else:
                 rows.append(row)
 
-    stats: Dict[str, Any] = {
+    stats: dict[str, Any] = {
         "candidates": len(rows),
         "requeued": [],
         "skipped": [],
@@ -316,7 +326,7 @@ def retry_failed_tasks(task_ids: Optional[List[str]] = None) -> Dict[str, Any]:
 
         # _dispatch_note_task 只认 run_note_task 的关键字参数，payload 里多出来的
         # 键会 TypeError；按 PAYLOAD_KEYS 白名单重建，并显式补上 task_id。
-        task_kwargs: Dict[str, Any] = {"task_id": task_id}
+        task_kwargs: dict[str, Any] = {"task_id": task_id}
         for key in PAYLOAD_KEYS:
             if key in payload:
                 task_kwargs[key] = payload[key]
@@ -329,7 +339,9 @@ def retry_failed_tasks(task_ids: Optional[List[str]] = None) -> Dict[str, Any]:
             stats["requeued"].append(task_id)
         except Exception as exc:
             logger.error("重试：重新入队失败（%s）：%s", task_id, exc)
-            stats["skipped"].append({"task_id": task_id, "reason": f"重新入队失败：{exc}"})
+            stats["skipped"].append(
+                {"task_id": task_id, "reason": f"重新入队失败：{exc}"}
+            )
 
     logger.info(
         "失败任务重试：候选 %d 条，重新入队 %d 条，跳过 %d 条，库中不存在 %d 条",

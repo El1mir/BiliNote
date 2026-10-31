@@ -6,7 +6,6 @@ from .routers import (
     provider,
     model,
     config,
-    chat,
     media,
     ocr,
     note_group,
@@ -20,7 +19,6 @@ def create_app(lifespan) -> FastAPI:
     app.include_router(provider.router, prefix="/api")
     app.include_router(model.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
-    app.include_router(chat.router, prefix="/api")
     app.include_router(media.router, prefix="/api")
     app.include_router(ocr.router, prefix="/api")
     app.include_router(note_group.router, prefix="/api")

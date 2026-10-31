@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FINISHED_TASK_STATUSES, isTaskInFlight } from '@/utils/taskStatus'
+import { FINISHED_TASK_STATUSES, isTaskInFlight } from '../../src/utils/taskStatus'
 
 describe('isTaskInFlight', () => {
   it('treats only SUCCESS and FAILED as finished', () => {

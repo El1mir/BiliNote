@@ -1,5 +1,4 @@
 import os
-import platform
 import time
 from pathlib import Path
 
@@ -81,11 +80,7 @@ class OpenAISREndpointRequest(BaseModel):
 
 AVAILABLE_TRANSCRIBER_TYPES = [
     {"value": "fast-whisper", "label": "Faster Whisper（本地）"},
-    {"value": "bcut", "label": "必剪（在线）"},
-    {"value": "kuaishou", "label": "快手（在线）"},
-    {"value": "groq", "label": "Groq（在线）"},
-    {"value": "openai-asr", "label": "OpenAI 兼容 ASR（在线）"},
-    {"value": "mlx-whisper", "label": "MLX Whisper（仅macOS）"},
+    {"value": "openai-asr", "label": "openai 兼容 ASR（在线）"},
 ]
 
 WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
@@ -93,7 +88,6 @@ WHISPER_MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3", "large-v3-
 
 @router.get("/transcriber_config")
 def get_transcriber_config():
-    from app.transcriber.transcriber_provider import MLX_WHISPER_AVAILABLE
     from app.transcriber.whisper_models import get_registry, BUILTIN_WHISPER_MODELS
 
     registry = get_registry()
@@ -106,7 +100,6 @@ def get_transcriber_config():
         "whisper_model_sizes": registry.visible_model_names(),
         "whisper_builtin_models": BUILTIN_WHISPER_MODELS,
         "whisper_custom_models": registry.get_custom_models(),
-        "mlx_whisper_available": MLX_WHISPER_AVAILABLE,
         # 供设置页展示本地推理硬件能力（CUDA 是否可用不依赖 torch）
         "local_hardware": _detect_local_inference_hardware(),
     })
@@ -237,15 +230,14 @@ def add_openai_asr(data: OpenAISREndpointRequest):
             chunk_size_mb=data.chunk_size_mb if data.chunk_size_mb is not None else 18,
             api_style=data.api_style or "transcriptions",
             max_speech_chunks=data.max_speech_chunks if data.max_speech_chunks is not None else 120,
-            silence_noise_db=data.silence_noise_db if data.silence_noise_db is not None else -30.0,
-            min_silence_seconds=data.min_silence_seconds if data.min_silence_seconds is not None else 0.5,
+            # 静音三兄弟不填默认值：None 表示「跟随通用设置」，由配置层决定是否落盘
+            silence_noise_db=data.silence_noise_db,
+            min_silence_seconds=data.min_silence_seconds,
             max_rpm=data.max_rpm if data.max_rpm is not None else 30,
             chunk_concurrency=(
                 data.chunk_concurrency if data.chunk_concurrency is not None else 4
             ),
-            silence_split=(
-                data.silence_split if data.silence_split is not None else True
-            ),
+            silence_split=data.silence_split,
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -256,21 +248,11 @@ def add_openai_asr(data: OpenAISREndpointRequest):
 def update_openai_asr(endpoint_id: str, data: OpenAISREndpointRequest):
     """更新一条端点；api_key 传打码值（含 *）时视为未改动。"""
     try:
+        # 只转发请求里真正出现过的键：没出现的字段保持原值；静音三兄弟传 null
+        # 表示「回到跟随通用设置」，因此不能用 None 占位补全。
         endpoint = transcriber_config_manager.update_openai_asr(
             endpoint_id,
-            name=data.name,
-            base_url=data.base_url,
-            api_key=data.api_key,
-            model=data.model,
-            timeout=data.timeout,
-            chunk_size_mb=data.chunk_size_mb,
-            api_style=data.api_style,
-            max_speech_chunks=data.max_speech_chunks,
-            silence_noise_db=data.silence_noise_db,
-            min_silence_seconds=data.min_silence_seconds,
-            max_rpm=data.max_rpm,
-            chunk_concurrency=data.chunk_concurrency,
-            silence_split=data.silence_split,
+            **data.model_dump(exclude_unset=True),
         )
     except ValueError as e:
         return R.error(msg=str(e))
@@ -399,25 +381,6 @@ def _check_whisper_model_exists(model_size: str, subdir: str = "whisper") -> boo
     return legacy.exists()
 
 
-def _check_mlx_whisper_model_exists(model_size: str) -> bool:
-    """检查 mlx-whisper 模型是否已下载完整到本地。
-
-    与 fast-whisper 的目录布局不同：mlx 模型按 HuggingFace repo_id
-    （如 mlx-community/whisper-tiny-mlx）落盘，且没有 model.bin，
-    用 config.json 作为「下载完成」的判据，和 mlx_whisper_transcriber.py 保持一致。
-    """
-    try:
-        from app.transcriber.mlx_whisper_transcriber import MLX_MODEL_MAP
-    except Exception:
-        return False
-    repo_id = MLX_MODEL_MAP.get(model_size)
-    if not repo_id:
-        return False
-    model_dir = get_model_dir("mlx-whisper")
-    model_path = os.path.join(model_dir, repo_id)
-    return (Path(model_path) / "config.json").exists()
-
-
 #: 模型目录扫描结果的缓存 TTL（秒）。取 5s：与前端「下载中每 3s 轮询」同量级，
 #: 状态不会晚两个周期才可见。
 _MODELS_STATUS_TTL_SECONDS = 5.0
@@ -476,29 +439,14 @@ def get_transcriber_models_status():
     downloaded_map = _scan_downloaded_models(names)
     statuses = [dl_state.status_row(size, downloaded_map.get(size, False)) for size in names]
 
-    # 也检查 mlx-whisper（仅 macOS）
-    mlx_available = platform.system() == "Darwin"
-    mlx_statuses = []
-    if mlx_available:
-        from app.transcriber.mlx_whisper_transcriber import MLX_MODEL_MAP
-        for size in WHISPER_MODEL_SIZES:
-            repo_id = MLX_MODEL_MAP.get(size)
-            # 用 config.json 判定，和 _check_mlx_whisper_model_exists / 加载逻辑保持一致
-            downloaded = _check_mlx_whisper_model_exists(size)
-            row = dl_state.status_row(size, downloaded, key=f"mlx-{size}")
-            row["available"] = repo_id is not None
-            mlx_statuses.append(row)
-
     return R.success(data={
         "whisper": statuses,
-        "mlx_whisper": mlx_statuses,
-        "mlx_available": mlx_available,
     })
 
 
 class ModelDownloadRequest(BaseModel):
     model_size: str
-    transcriber_type: str = "fast-whisper"  # "fast-whisper" 或 "mlx-whisper"
+    transcriber_type: str = "fast-whisper"  # 只有 fast-whisper 有「下载模型」概念
 
 
 def _friendly_download_error(e: Exception) -> str:
@@ -594,66 +542,16 @@ def _do_download_whisper(model_size: str):
         _invalidate_models_status_cache()
 
 
-def _do_download_mlx_whisper(model_size: str):
-    """后台下载 mlx-whisper 模型。"""
-    key = f"mlx-{model_size}"
-    try:
-        dl_state.mark_downloading(key)
-        from huggingface_hub import snapshot_download as hf_download
-        from app.transcriber.mlx_whisper_transcriber import resolve_mlx_repo_id
-        from app.services.proxy_config_manager import ProxyConfigManager
-
-        # 让 UI 配的代理对 HuggingFace 下载也生效（issue #417）
-        proxy = ProxyConfigManager().apply_to_env()
-        if proxy:
-            logger.info(f"mlx-whisper 下载走代理: {proxy}")
-
-        try:
-            repo_id = resolve_mlx_repo_id(model_size)
-        except ValueError as e:
-            logger.error(str(e))
-            dl_state.mark_failed(key, str(e))
-            return
-
-        model_dir = get_model_dir("mlx-whisper")
-        model_path = os.path.join(model_dir, repo_id)
-        # 用 config.json 判定而非目录存在：半成品目录不能算「已下载」
-        if (Path(model_path) / "config.json").exists():
-            dl_state.mark_done(key)
-            return
-        logger.info(f"开始下载 mlx-whisper 模型: {model_size} ← {repo_id}")
-        hf_download(repo_id, local_dir=model_path, local_dir_use_symlinks=False)
-        logger.info(f"mlx-whisper 模型下载完成: {model_size}")
-        dl_state.mark_done(key)
-    except Exception as e:
-        msg = _friendly_download_error(e)
-        logger.error(f"mlx-whisper 模型下载失败: {model_size}, {e}")
-        dl_state.mark_failed(key, msg)
-    finally:
-        _invalidate_models_status_cache()
-
-
 @router.post("/transcriber_download")
 def download_transcriber_model(data: ModelDownloadRequest, background_tasks: BackgroundTasks):
     """触发后台下载指定的 whisper 模型（fast-whisper 支持内置档位 + 自定义模型）。"""
-    if data.transcriber_type == "mlx-whisper":
-        # mlx 只认内置档位（mlx-community 的固定映射）
-        if data.model_size not in WHISPER_MODEL_SIZES:
-            return R.error(msg=f"MLX 不支持的模型大小: {data.model_size}")
-        if platform.system() != "Darwin":
-            return R.error(msg="MLX Whisper 仅支持 macOS")
-        key = f"mlx-{data.model_size}"
-        if dl_state.is_downloading(key):
-            return R.success(msg="模型正在下载中")
-        background_tasks.add_task(_do_download_mlx_whisper, data.model_size)
-    else:
-        # fast-whisper：内置档位 / 自定义 repo_id / 本地路径都允许
-        from app.transcriber.whisper_models import get_registry
-        if not get_registry().is_known(data.model_size):
-            return R.error(msg=f"不支持的模型: {data.model_size}（请先在自定义模型中登记）")
-        if dl_state.is_downloading(data.model_size):
-            return R.success(msg="模型正在下载中")
-        background_tasks.add_task(_do_download_whisper, data.model_size)
+    # fast-whisper：内置档位 / 自定义 repo_id / 本地路径都允许
+    from app.transcriber.whisper_models import get_registry
+    if not get_registry().is_known(data.model_size):
+        return R.error(msg=f"不支持的模型: {data.model_size}（请先在自定义模型中登记）")
+    if dl_state.is_downloading(data.model_size):
+        return R.success(msg="模型正在下载中")
+    background_tasks.add_task(_do_download_whisper, data.model_size)
 
     return R.success(msg="模型下载已开始")
 
@@ -689,12 +587,9 @@ async def sys_health():
         ttype = cfg["transcriber_type"]
         whisper_info["size"] = size
         whisper_info["type"] = ttype
-        # 只有本地引擎才有「下载」概念；groq / bcut / kuaishou 在线引擎跳过
+        # 只有本地引擎才有「下载」概念；在线 ASR 端点跳过
         if ttype == "fast-whisper":
             whisper_info["downloaded"] = _check_whisper_model_exists(size, "whisper")
-            whisper_info["checked"] = True
-        elif ttype == "mlx-whisper":
-            whisper_info["downloaded"] = _check_mlx_whisper_model_exists(size)
             whisper_info["checked"] = True
     except Exception:
         pass
@@ -721,8 +616,8 @@ async def deploy_status():
     """返回部署监控所需的所有状态信息。
 
     所有子项都用 try 包起来——监控页本身不应该被任何一个子项打死。
-    特别是 torch：它只在 fast-whisper 路径用得到，用 Groq / 必剪 / 快手在线
-    引擎的轻量部署完全可以不装，那种情况这个 endpoint 不应该 500。
+    特别是 torch：它只在 fast-whisper 路径用得到，用在线 ASR 的
+    轻量部署完全可以不装，那种情况这个 endpoint 不应该 500。
     """
     import os
 
@@ -751,8 +646,6 @@ async def deploy_status():
         ttype = transcriber_cfg["transcriber_type"]
         if ttype == "fast-whisper":
             downloaded = _check_whisper_model_exists(size, "whisper")
-        elif ttype == "mlx-whisper":
-            downloaded = _check_mlx_whisper_model_exists(size)
         else:
             downloaded = False  # 在线引擎无下载概念
         whisper_info = {

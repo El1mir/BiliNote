@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toPercent } from '@/utils/progress'
+import { toPercent } from '../../src/utils/progress'
 
 describe('toPercent', () => {
   it('keeps backend 0-100 percentages as-is', () => {

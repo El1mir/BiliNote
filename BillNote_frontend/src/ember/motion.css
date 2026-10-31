@@ -1,0 +1,182 @@
+/* ==========================================================================
+   Ember Studio — motion
+   Rules enforced here:
+   - only transform / opacity are animated (GPU)
+   - entering elements use ease-out; nothing enters from scale(0)
+   - UI durations stay under 300ms
+   - hover motion is gated behind (hover: hover) and (pointer: fine)
+   - prefers-reduced-motion keeps colour/opacity, drops movement
+   ========================================================================== */
+
+:root {
+  --dur-press: 140ms;
+  --dur-hover: 160ms;
+  --dur-popover: 180ms;
+  --dur-menu: 200ms;
+  --dur-dialog: 240ms;
+  --dur-drawer: 280ms;
+  --dur-progress: 300ms;
+}
+
+/* --- Press feedback -------------------------------------------------------
+   Buttons, chips and list rows acknowledge the press. Subtle scale only. */
+.ember-press {
+  transition:
+    transform var(--dur-press) var(--ease),
+    background-color var(--dur-hover) var(--ease),
+    border-color var(--dur-hover) var(--ease),
+    color var(--dur-hover) var(--ease),
+    box-shadow var(--dur-hover) var(--ease);
+}
+.ember-press:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+/* --- Lift on hover --------------------------------------------------------
+   Cards lift 2px with a warmer shadow. Pointer-fine only. */
+.ember-lift {
+  transition:
+    transform var(--dur-hover) var(--ease),
+    box-shadow var(--dur-hover) var(--ease),
+    border-color var(--dur-hover) var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ember-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-raise);
+  }
+}
+
+/* --- Enter transitions ----------------------------------------------------
+   Content that swaps in fades and rises a few pixels. Never from scale(0). */
+@keyframes ember-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ember-enter {
+  animation: ember-enter var(--dur-dialog) var(--ease) both;
+}
+
+/* Staggered group entrance — decorative, never blocks interaction. */
+.ember-stagger > * {
+  animation: ember-enter 260ms var(--ease) both;
+}
+.ember-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.ember-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.ember-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.ember-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.ember-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.ember-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* --- Overlay + dialog -----------------------------------------------------
+   Modals are exempt from trigger-origin scaling: they stay centred. */
+@keyframes ember-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ember-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.ember-overlay[data-state='open'] {
+  animation: ember-overlay-in var(--dur-popover) var(--ease) both;
+}
+.ember-dialog[data-state='open'] {
+  animation: ember-dialog-in var(--dur-dialog) var(--ease) both;
+}
+
+/* --- Drawer ---------------------------------------------------------------
+   Mobile navigation slides from the same edge it dismisses to. */
+@keyframes ember-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.ember-drawer[data-state='open'] {
+  animation: ember-drawer-in var(--dur-drawer) var(--ease-drawer) both;
+}
+
+/* --- Toast ----------------------------------------------------------------
+   Enters and exits through the same edge; transitions retarget mid-flight. */
+.ember-toast {
+  transition:
+    opacity var(--dur-menu) var(--ease),
+    transform var(--dur-menu) var(--ease);
+}
+
+/* --- Progress -------------------------------------------------------------
+   The fill animates; the track never does. */
+.ember-progress-fill {
+  transition: transform var(--dur-progress) var(--ease-inout);
+  transform-origin: left center;
+}
+
+/* --- Spinner --------------------------------------------------------------
+   Continuous rotation is the one place a loop is legitimate. */
+@keyframes ember-spin {
+  to { transform: rotate(360deg); }
+}
+.ember-spin {
+  animation: ember-spin 900ms linear infinite;
+}
+
+/* --- Live pulse -----------------------------------------------------------
+   Marks a running task without moving layout. */
+@keyframes ember-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.ember-pulse {
+  animation: ember-pulse 1.8s var(--ease-inout) infinite;
+}
+
+/* --- Indeterminate bar ---------------------------------------------------
+   Boot screen only: no real progress value exists yet, so the bar sweeps
+   instead of claiming a percentage. Transform-only. */
+@keyframes ember-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(320%); }
+}
+.ember-indeterminate {
+  animation: ember-indeterminate 1400ms var(--ease-inout) infinite;
+}
+
+/* --- Reduced motion -------------------------------------------------------
+   Keep opacity/colour feedback, drop movement entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .ember-press,
+  .ember-lift,
+  .ember-toast {
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+  }
+  .ember-press:active:not(:disabled),
+  .ember-lift:hover {
+    transform: none;
+  }
+  .ember-enter,
+  .ember-stagger > *,
+  .ember-overlay[data-state='open'],
+  .ember-dialog[data-state='open'],
+  .ember-drawer[data-state='open'] {
+    animation: ember-overlay-in 1ms linear both;
+  }
+  .ember-spin,
+  .ember-pulse,
+  .ember-indeterminate {
+    animation: none;
+  }
+  .ember-progress-fill {
+    transition: none;
+  }
+}

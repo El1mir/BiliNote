@@ -5,15 +5,11 @@ import { tasks, tasksReady, settingsReady, upsertTask } from '~/logic/storage'
 import type { TaskRecord } from '~/logic/types'
 import { getTaskDisplayTitle } from '~/logic/task-display'
 
-type ViewMode = 'markdown' | 'mindmap' | 'chat'
-
 const activeTaskId = ref<string>('')
 const activeTask = computed<TaskRecord | undefined>(() => tasks.value?.find(t => t.taskId === activeTaskId.value))
 const errorMsg = ref('')
 const successMsg = ref('')
-const viewMode = ref<ViewMode>('markdown')
 const showHistory = ref(false)
-const mindMapRef = ref<{ toPngBlob: () => Promise<Blob> } | null>(null)
 
 const isDone = computed(() => activeTask.value?.status === 'SUCCESS')
 const isFailed = computed(() => activeTask.value?.status === 'FAILED')
@@ -98,43 +94,6 @@ function downloadMarkdown() {
   a.download = `${title}.md`
   a.click()
   URL.revokeObjectURL(url)
-}
-
-async function copyMindMapImage() {
-  try {
-    errorMsg.value = ''
-    successMsg.value = ''
-    const blob = await mindMapRef.value?.toPngBlob()
-    if (!blob)
-      return
-    await navigator.clipboard.write([
-      new ClipboardItem({ [blob.type]: blob }),
-    ])
-    successMsg.value = '思维导图图片已复制'
-    setTimeout(() => { successMsg.value = '' }, 2000)
-  }
-  catch (e) {
-    errorMsg.value = (e as Error).message || '复制思维导图图片失败'
-  }
-}
-
-async function downloadMindMapImage() {
-  try {
-    errorMsg.value = ''
-    successMsg.value = ''
-    const blob = await mindMapRef.value?.toPngBlob()
-    if (!blob)
-      return
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${safeFilename(getTaskDisplayTitle(activeTask.value))}.png`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-  catch (e) {
-    errorMsg.value = (e as Error).message || '下载思维导图图片失败'
-  }
 }
 
 const activeTitle = computed(() => getTaskDisplayTitle(activeTask.value))
@@ -247,66 +206,27 @@ onUnmounted(() => {
         v-else-if="isDone && activeTask.result?.markdown"
         class="flex items-center gap-1 px-2 py-1.5 border-b shrink-0 text-xs"
       >
-        <button
-          class="px-2 py-1 rounded"
-          :class="viewMode === 'markdown' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'"
-          @click="viewMode = 'markdown'"
-        >Markdown</button>
-        <button
-          class="px-2 py-1 rounded"
-          :class="viewMode === 'mindmap' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'"
-          @click="viewMode = 'mindmap'"
-        >思维导图</button>
-        <button
-          class="px-2 py-1 rounded"
-          :class="viewMode === 'chat' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-700'"
-          @click="viewMode = 'chat'"
-        >AI 问答</button>
+        <span class="px-2 py-1 rounded bg-blue-600 text-white">Markdown</span>
         <div class="flex-1" />
         <button
-          v-if="viewMode === 'markdown'"
           class="text-gray-500 hover:text-gray-800 px-1.5 py-1 rounded hover:bg-gray-100"
           title="复制 Markdown"
           @click="copyMarkdown"
         >复制</button>
         <button
-          v-if="viewMode === 'markdown'"
           class="text-gray-500 hover:text-gray-800 px-1.5 py-1 rounded hover:bg-gray-100"
           title="下载 .md"
           @click="downloadMarkdown"
-        >下载</button>
-        <button
-          v-if="viewMode === 'mindmap'"
-          class="text-gray-500 hover:text-gray-800 px-1.5 py-1 rounded hover:bg-gray-100"
-          title="复制思维导图图片"
-          @click="copyMindMapImage"
-        >复制</button>
-        <button
-          v-if="viewMode === 'mindmap'"
-          class="text-gray-500 hover:text-gray-800 px-1.5 py-1 rounded hover:bg-gray-100"
-          title="下载思维导图 PNG"
-          @click="downloadMindMapImage"
         >下载</button>
       </div>
 
       <!-- 内容区：占满剩余空间 -->
       <div class="flex-1 overflow-auto min-h-0">
         <MarkdownView
-          v-if="isDone && activeTask.result?.markdown && viewMode === 'markdown'"
+          v-if="isDone && activeTask.result?.markdown"
           :markdown="activeTask.result.markdown"
           :title="(activeTask.result.audio_meta as { title?: string } | undefined)?.title"
           :hide-actions="true"
-        />
-        <MindMap
-          v-else-if="isDone && activeTask.result?.markdown && viewMode === 'mindmap'"
-          ref="mindMapRef"
-          :markdown="activeTask.result.markdown"
-          class="h-full"
-        />
-        <ChatPanel
-          v-else-if="isDone && viewMode === 'chat'"
-          :task-id="activeTask.taskId"
-          class="h-full"
         />
         <div v-else-if="isFailed" class="p-4 text-sm text-red-600">
           {{ activeTask.message || '任务失败' }}

@@ -6,7 +6,13 @@ from app.routers import note as note_module
 
 
 def _run_with(execute, generator):
-    with mock.patch.object(note_module, "NOTE_RETRY_BACKOFF", [0, 0, 0]), \
+    # 重试次数与退避基数现在是「设置 → 通用」里的可配置项，走 runtime_limits
+    # 门面读取（改完立刻生效，不必重启）。以前这些用例改的是 note_module 上的
+    # 模块常量，那个常量如今只是文档与兜底，改它不再影响执行路径。
+    with mock.patch.object(note_module.runtime_limits, "note_max_retries", lambda: 3), \
+         mock.patch.object(
+             note_module.runtime_limits, "note_retry_backoff_seconds", lambda: 0.0
+         ), \
          mock.patch.object(note_module, "task_serial_executor") as executor:
         executor.run.side_effect = lambda fn: fn()
         return note_module._execute_note_with_retry("t1", generator, execute)

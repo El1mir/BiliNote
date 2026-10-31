@@ -3,27 +3,19 @@ import type { Platform } from './types'
 
 // 后端期望的 cookie 字符串格式：name=value; name=value; ...
 // 见 backend/app/downloaders/bilibili_downloader.py 的 split("; ")
-const COOKIE_DOMAINS: Record<Exclude<Platform, 'local'>, string> = {
+const COOKIE_DOMAINS: Record<Platform, string> = {
   bilibili: '.bilibili.com',
-  youtube: '.youtube.com',
-  douyin: '.douyin.com',
-  kuaishou: '.kuaishou.com',
 }
 
-export const SUPPORTED_COOKIE_PLATFORMS: Array<Exclude<Platform, 'local'>> = [
-  'bilibili',
-  'douyin',
-  'kuaishou',
-  'youtube',
-]
+export const SUPPORTED_COOKIE_PLATFORMS: Platform[] = ['bilibili']
 
-export async function readBrowserCookies(platform: Exclude<Platform, 'local'>): Promise<string> {
+export async function readBrowserCookies(platform: Platform): Promise<string> {
   const domain = COOKIE_DOMAINS[platform]
   const list = await browser.cookies.getAll({ domain })
   return list.map(c => `${c.name}=${c.value}`).join('; ')
 }
 
-export async function syncCookieToBackend(platform: Exclude<Platform, 'local'>): Promise<{ ok: boolean, count: number, error?: string }> {
+export async function syncCookieToBackend(platform: Platform): Promise<{ ok: boolean, count: number, error?: string }> {
   try {
     const cookieStr = await readBrowserCookies(platform)
     if (!cookieStr)

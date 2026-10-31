@@ -19,7 +19,51 @@ logger = get_logger(__name__)
 
 # 截图/抽帧类 ffmpeg 调用的上限。视频损坏、路径是网络盘、或 ffmpeg 等着读
 # 标准输入时都会永久阻塞，而调用方（ThreadPoolExecutor.map）会把整个任务挂死。
+#
+# 2026-10-17：超时、缩放宽度、JPEG 质量改为运行时配置（设置页「通用 → 截图与 OCR」）。
+# 这三个值共同决定「一张图有多大」，而图片字节数直接决定 llm_max_request_bytes
+# 能塞进几张图。模块常量降级为兜底：读不到运行时配置时（测试里本模块常被单独
+# 加载、app 包被桩替换）仍然按历史行为出图。
 _FFMPEG_TIMEOUT_SECONDS = 60
+
+
+def _runtime_limits():
+    """延迟取运行时限额门面；取不到返回 None（测试里 app 包可能被桩替换）。"""
+    try:
+        from app.services import runtime_limits
+    except Exception:  # noqa: BLE001 - 只是兜底，不该让截图失败
+        return None
+    return runtime_limits
+
+
+def _ffmpeg_timeout_seconds() -> int:
+    limits = _runtime_limits()
+    if limits is None:
+        return _FFMPEG_TIMEOUT_SECONDS
+    try:
+        return int(limits.ffmpeg_timeout_seconds())
+    except Exception:  # noqa: BLE001
+        return _FFMPEG_TIMEOUT_SECONDS
+
+
+def _screenshot_max_width() -> int:
+    limits = _runtime_limits()
+    if limits is None:
+        return 0
+    try:
+        return int(limits.screenshot_max_width())
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _screenshot_quality() -> int:
+    limits = _runtime_limits()
+    if limits is None:
+        return 2
+    try:
+        return int(limits.screenshot_quality())
+    except Exception:  # noqa: BLE001
+        return 2
 
 
 def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index: int) -> str:
@@ -32,6 +76,10 @@ def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index:
     filename = f"screenshot_{index:03}_{uuid.uuid4()}.jpg"
     output_path = output_dir / filename
 
+    # 缩放只缩不放（min(W, iw)），高度用 -2 保持偶数以免某些编码器报错；
+    # 宽度为 0 表示用户要求保持原始分辨率，此时不加 -vf。
+    max_width = _screenshot_max_width()
+    quality = _screenshot_quality()
     command = [
         "ffmpeg",
         "-hide_banner",
@@ -41,14 +89,16 @@ def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index:
         "-ss", str(timestamp),
         "-i", str(video_path),
         "-frames:v", "1",
-        "-q:v", "2",
-        str(output_path),
+        "-q:v", str(quality),
     ]
+    if max_width > 0:
+        command += ["-vf", f"scale='min({max_width},iw)':-2"]
+    command.append(str(output_path))
 
     logger.debug("Running command: %s", command)
     try:
         result = subprocess.run(
-            command, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS
+            command, capture_output=True, text=True, timeout=_ffmpeg_timeout_seconds()
         )
     except subprocess.TimeoutExpired:
         # 没有 timeout 时这里会**永久**阻塞，而调用方是 executor.map，
@@ -56,7 +106,7 @@ def generate_screenshot(video_path: str, output_dir: str, timestamp: int, index:
         # 交给上层的「生成截图失败」分支统一处理。
         logger.error(
             "ffmpeg 截图超时（超过 %ss，ts=%s）：%s",
-            _FFMPEG_TIMEOUT_SECONDS,
+            _ffmpeg_timeout_seconds(),
             timestamp,
             (video_path or ""),
         )
