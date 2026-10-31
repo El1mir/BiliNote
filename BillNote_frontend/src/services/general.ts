@@ -135,6 +135,19 @@ export interface GeneralSettings {
   download_socket_timeout_seconds_default: number
   download_socket_timeout_seconds_min: number
   download_socket_timeout_seconds_max: number
+
+  /* ---- BASE_PROMPT 覆盖层（spec 005 ticket 11）----
+   *
+   * 空串 = 用内置模板（这也是「恢复默认」的传值）。后端把内置模板原文与必需
+   * 占位符一并下发，前端不用把 prompt.py 里的散文抄一遍（抄了必然漂移）。
+   * 模板必须含 base_prompt_required_placeholders 里的每一个占位符，否则后端
+   * 会判无效并回落空串 —— 所以保存前先在界面上拦一次，给出明确提示。
+   */
+  base_prompt_override: string
+  /** 内置模板原文（只读） */
+  base_prompt_default: string
+  base_prompt_override_limit: number
+  base_prompt_required_placeholders: string[]
 }
 
 /**
@@ -169,6 +182,8 @@ export interface GeneralSettingsPatch {
   screenshot_quality?: number
   ffmpeg_timeout_seconds?: number
   ocr_max_judge_candidates?: number
+  /** 传空串 = 恢复内置模板（与数值字段不同，空值在这里有明确语义）。 */
+  base_prompt_override?: string
 }
 
 export const getGeneralSettings = async (): Promise<GeneralSettings> => {

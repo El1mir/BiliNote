@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { Activity, AudioLines, Cpu, FileText, HardDrive, Info, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
+import { Activity, AudioLines, Cpu, FileText, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
 import { useI18n } from '@/ember/i18n/context'
 import type { MessageKey } from '@/ember/i18n/strings'
 import { AppShell } from '@/ember/shell/AppShell'
@@ -9,6 +9,7 @@ import { GeneralSection } from '@/ember/pages/settings/sections/GeneralSection'
 import { ModelSection } from '@/ember/pages/settings/sections/ModelSection'
 import { TranscriberSection } from '@/ember/pages/settings/sections/TranscriberSection'
 import { OcrSection } from '@/ember/pages/settings/sections/OcrSection'
+import { PromptSection } from '@/ember/pages/settings/sections/PromptSection'
 import { MediaSection } from '@/ember/pages/settings/sections/MediaSection'
 import { DownloadSection } from '@/ember/pages/settings/sections/DownloadSection'
 import { MonitorSection } from '@/ember/pages/settings/sections/MonitorSection'
@@ -21,6 +22,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'model', labelKey: 'settings.model', icon: <Cpu className="size-4" /> },
   { id: 'transcriber', labelKey: 'settings.transcriber', icon: <AudioLines className="size-4" /> },
   { id: 'ocr', labelKey: 'settings.ocr', icon: <ScanText className="size-4" /> },
+  { id: 'prompt', labelKey: 'settings.prompt', icon: <MessageSquareText className="size-4" /> },
   { id: 'media', labelKey: 'settings.media', icon: <HardDrive className="size-4" /> },
   { id: 'download', labelKey: 'settings.download', icon: <DownloadIcon className="size-4" /> },
   { id: 'monitor', labelKey: 'settings.monitor', icon: <Activity className="size-4" /> },
@@ -78,6 +80,7 @@ export default function SettingsPage() {
               <Route path="model" element={<ModelSection />} />
               <Route path="transcriber" element={<TranscriberSection />} />
               <Route path="ocr" element={<OcrSection />} />
+              <Route path="prompt" element={<PromptSection />} />
               <Route path="media" element={<MediaSection />} />
               <Route path="download" element={<DownloadSection />} />
               <Route path="monitor" element={<MonitorSection />} />

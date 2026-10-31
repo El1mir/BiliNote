@@ -59,6 +59,11 @@ class GeneralSettingsRequest(BaseModel):
     ffmpeg_timeout_seconds: int | None = None
     ocr_max_judge_candidates: int | None = None
 
+    # 2026-10-05（spec 005 ticket 11）：BASE_PROMPT 覆盖层的编辑入口。
+    # 传空串 = 恢复内置模板；这一项是本模块唯一允许「用空值表达清空」的字段，
+    # 因为空串有明确语义（没覆盖），而不是像数值字段那样有各自的合法下界。
+    base_prompt_override: str | None = None
+
 
 class ActiveModelRequest(BaseModel):
     provider_id: str
@@ -107,6 +112,7 @@ def write_general_settings(data: GeneralSettingsRequest):
                 screenshot_quality=data.screenshot_quality,
                 ffmpeg_timeout_seconds=data.ffmpeg_timeout_seconds,
                 ocr_max_judge_candidates=data.ocr_max_judge_candidates,
+                base_prompt_override=data.base_prompt_override,
             )
         )
     except Exception as exc:

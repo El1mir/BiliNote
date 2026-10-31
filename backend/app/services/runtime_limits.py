@@ -396,3 +396,31 @@ def ocr_max_judge_candidates() -> int:
         int(_value("ocr_max_judge_candidates", DEFAULT_OCR_MAX_JUDGE_CANDIDATES)),
     )
     return max(1, min(value, MAX_OCR_MAX_JUDGE_CANDIDATES))
+
+# ---------------------------------------------------------------------------
+# BASE_PROMPT 覆盖层（spec 005 ticket 11）
+# ---------------------------------------------------------------------------
+
+def base_prompt_override() -> str:
+    """用户自定义的 BASE_PROMPT 覆盖层；空串 = 用内置模板。
+
+    为什么放在这里而不是直接读 DAO：这是**生成热路径**上的读取（每段字幕拼一次
+    提示词），必须复用本模块的 5 秒缓存，否则每生成一段就开一次 SQLite 连接。
+    写入路径（update_general_settings）已经会调 reset_cache()，所以设置页保存后
+    在下一个任务就能生效，不需要重启服务。
+
+    环境变量优先：部署方用 BASE_PROMPT_OVERRIDE 固定模板时，不该被界面覆盖 ——
+    与其余字段的处理一致。读到非法值/空值一律返回空串，由调用方回落到内置模板。
+    """
+    raw = os.getenv("BASE_PROMPT_OVERRIDE")
+    if raw is not None and str(raw).strip():
+        value: Any = raw
+    else:
+        value = _value("base_prompt_override", "")
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    return text
+

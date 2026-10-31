@@ -69,8 +69,11 @@ from app.db.models.general_settings import (
     MIN_LLM_MAX_REQUEST_BYTES,
     MIN_LLM_RATE_LIMIT_RESUME_INTERVAL_SECONDS,
     MIN_SCREENSHOT_QUALITY,
+    MAX_BASE_PROMPT_OVERRIDE_CHARS,
+    REQUIRED_PROMPT_PLACEHOLDERS,
     GeneralSettings,
 )
+from app.gpt.prompt import BASE_PROMPT
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -422,6 +425,13 @@ def _serialize(row: GeneralSettings) -> dict[str, Any]:
         ),
         "ocr_max_judge_candidates_default": DEFAULT_OCR_MAX_JUDGE_CANDIDATES,
         "ocr_max_judge_candidates_limit": MAX_OCR_MAX_JUDGE_CANDIDATES,
+
+        # 2026-10-05（spec 005 ticket 11）：BASE_PROMPT 覆盖层。空串 = 用内置模板。
+        # 同时下发内置模板原文与占位符要求，前端不用把 prompt.py 里的散文抄一遍。
+        "base_prompt_override": normalize_base_prompt_override(row.base_prompt_override),
+        "base_prompt_default": BASE_PROMPT,
+        "base_prompt_override_limit": MAX_BASE_PROMPT_OVERRIDE_CHARS,
+        "base_prompt_required_placeholders": list(REQUIRED_PROMPT_PLACEHOLDERS),
         "active_provider_id": str(row.active_provider_id)
         if row.active_provider_id is not None
         else None,
@@ -514,6 +524,10 @@ def _default_payload() -> dict[str, Any]:
         "ocr_max_judge_candidates": DEFAULT_OCR_MAX_JUDGE_CANDIDATES,
         "ocr_max_judge_candidates_default": DEFAULT_OCR_MAX_JUDGE_CANDIDATES,
         "ocr_max_judge_candidates_limit": MAX_OCR_MAX_JUDGE_CANDIDATES,
+        "base_prompt_override": "",
+        "base_prompt_default": BASE_PROMPT,
+        "base_prompt_override_limit": MAX_BASE_PROMPT_OVERRIDE_CHARS,
+        "base_prompt_required_placeholders": list(REQUIRED_PROMPT_PLACEHOLDERS),
         "active_provider_id": None,
         "active_model_name": None,
     }
@@ -751,6 +765,31 @@ def normalize_ocr_max_judge_candidates(value: Any) -> int:
     return min(parsed, MAX_OCR_MAX_JUDGE_CANDIDATES)
 
 
+def normalize_base_prompt_override(value: Any) -> str:
+    """用户自定义的 BASE_PROMPT 覆盖层；空串 = 用内置模板。
+
+    三条收敛规则，各有理由：
+
+    * **strip 后为空就是空串**（不是 None）：数据库列是 TEXT，用空串表达「没覆盖」
+      比用 NULL 少一种状态，读路径也只有一条分支；
+    * **必须含全部占位符**才被接受 —— generate_base_prompt 会对模板做一次
+      str.format(video_title=..., segment_text=..., tags=...) 调用，缺占位符就等于
+      把标题或字幕整段从提示词里删掉，模型只能凭空编；这种模板一律判无效、回落
+      空串。宁可让用户看到「没保存上」，也不要静默生成一篇没有正文引用的笔记；
+    * **超过上限就拒绝**（不是截断）：截断会把模板腰斩成半句话，比不接受更糟。
+    """
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    if len(text) > MAX_BASE_PROMPT_OVERRIDE_CHARS:
+        return ""
+    if not all("{" + name + "}" in text for name in REQUIRED_PROMPT_PLACEHOLDERS):
+        return ""
+    return text
+
+
 #: 字段名 -> normalize 函数。更新时统一走这张表，避免每加一个字段就要在
 #: update_general_settings 里复制一段一模一样的 ``if x is not None: setattr``。
 _SETTING_NORMALIZERS = {
@@ -780,6 +819,7 @@ _SETTING_NORMALIZERS = {
     "screenshot_quality": normalize_screenshot_quality,
     "ffmpeg_timeout_seconds": normalize_ffmpeg_timeout_seconds,
     "ocr_max_judge_candidates": normalize_ocr_max_judge_candidates,
+    "base_prompt_override": normalize_base_prompt_override,
 }
 
 
@@ -810,6 +850,7 @@ def update_general_settings(
     screenshot_quality: Any = None,
     ffmpeg_timeout_seconds: Any = None,
     ocr_max_judge_candidates: Any = None,
+    base_prompt_override: Any = None,
 ) -> dict[str, Any]:
     """部分更新：只有**显式传入**（非 None）的字段会被改写，其余保持原值。
 
@@ -854,6 +895,10 @@ def update_general_settings(
             "screenshot_quality": screenshot_quality,
             "ffmpeg_timeout_seconds": ffmpeg_timeout_seconds,
             "ocr_max_judge_candidates": ocr_max_judge_candidates,
+            # 2026-10-05（spec 005 ticket 11）：BASE_PROMPT 覆盖层。空串是**合法取值**
+            # （= 恢复内置模板），靠 `is not None` 区分「没传」与「传了空串」，
+            # 用户点「恢复默认」正是靠传空串生效。
+            "base_prompt_override": base_prompt_override,
         }
         for _field, _raw in provided.items():
             if _raw is None:

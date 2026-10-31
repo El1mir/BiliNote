@@ -1,0 +1,146 @@
+import { useState } from 'react'
+import toast from 'react-hot-toast'
+import { Braces, Eye, EyeOff, RotateCcw } from 'lucide-react'
+import { getGeneralSettings, updateGeneralSettings } from '@/services/general'
+import { useAsync } from '@/ember/lib/useAsync'
+import { useI18n } from '@/ember/i18n/context'
+import { Badge } from '@/ember/ui/Badge'
+import { Button } from '@/ember/ui/Button'
+import { Card } from '@/ember/ui/Card'
+import { Field } from '@/ember/ui/Field'
+import { Textarea } from '@/ember/ui/Input'
+import { Skeleton } from '@/ember/ui/Skeleton'
+import { SettingsSection } from '@/ember/pages/settings/Section'
+
+/**
+ * Base prompt editing (spec 005 ticket 11).
+ *
+ * Two rules shape this screen:
+ *
+ * 1. **Empty means "use the built-in template".** That is also what the restore
+ *    button sends, so the draft is a plain string and never null.
+ * 2. **Every required placeholder must survive.** The backend silently rejects a
+ *    template that is missing one (it would drop the title or the whole transcript
+ *    from the prompt), so the screen blocks the save and says which ones are absent
+ *    instead of letting the value disappear without explanation.
+ */
+export function PromptSection() {
+  const { t } = useI18n()
+  const { data, loading, reload } = useAsync(getGeneralSettings)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [showDefault, setShowDefault] = useState(false)
+
+  const value = draft ?? data?.base_prompt_override ?? ''
+  const limit = data?.base_prompt_override_limit ?? 20000
+  const required = data?.base_prompt_required_placeholders ?? []
+  const missing = required.filter(name => !value.includes('{' + name + '}'))
+  const tooLong = value.length > limit
+  const invalid = missing.length > 0 || tooLong
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateGeneralSettings({ base_prompt_override: value })
+      toast.success(t('settings.saved'))
+      setDraft(null)
+      reload()
+    } catch {
+      toast.error(t('settings.saveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const restore = () => {
+    // Deliberately local: nothing is written until Save, matching every other section.
+    setDraft('')
+  }
+
+  if (loading && !data) return <Skeleton className="h-72 w-full" />
+
+  return (
+    <SettingsSection
+      title={t('settings.prompt')}
+      description={t('settings.prompt.description')}
+      actions={
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={restore}>
+            <RotateCcw className="size-3.5" />
+            {t('settings.prompt.restore')}
+          </Button>
+          <Button size="sm" variant="primary" onClick={save} loading={saving} disabled={invalid}>
+            {t('common.save')}
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Card className="bg-canvas p-4 sm:p-5">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Field label={t('settings.prompt.override')} htmlFor="base-prompt" className="flex-1">
+                <Textarea
+                  id="base-prompt"
+                  rows={14}
+                  className="font-mono text-caption"
+                  value={value}
+                  placeholder={t('settings.prompt.placeholder')}
+                  onChange={event => setDraft(event.target.value)}
+                />
+              </Field>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={value.trim() ? 'ember' : 'neutral'}>
+                <Braces className="size-3" />
+                {value.trim() ? t('settings.prompt.usingCustom') : t('settings.prompt.usingDefault')}
+              </Badge>
+              <span className="text-caption text-ink-soft">
+                {t('settings.prompt.chars', { current: value.length, limit })}
+              </span>
+              {tooLong ? <Badge tone="danger">{t('settings.prompt.tooLong', { limit, current: value.length })}</Badge> : null}
+              {missing.length > 0 ? (
+                <Badge tone="danger">
+                  {t('settings.prompt.missing', { names: missing.map(name => '{' + name + '}').join(', ') })}
+                </Badge>
+              ) : null}
+            </div>
+
+            <p className="text-caption text-ink-soft">{t('settings.prompt.overrideHint')}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-caption text-ink-soft">{t('settings.prompt.required')}</span>
+              {required.map(name => (
+                <Badge key={name} tone={missing.includes(name) ? 'danger' : 'success'}>
+                  {'{' + name + '}'}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="bg-canvas p-4 sm:p-5">
+          <div className="flex flex-col gap-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowDefault(current => !current)}
+              className="self-start"
+            >
+              {showDefault ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {showDefault ? t('settings.prompt.hideDefault') : t('settings.prompt.viewDefault')}
+            </Button>
+            {showDefault ? (
+              <div className="flex flex-col gap-2">
+                <span className="text-caption text-ink-soft">{t('settings.prompt.defaultTitle')}</span>
+                <pre className="max-h-72 overflow-auto rounded-control bg-surface p-3 font-mono text-caption whitespace-pre-wrap text-ink-soft">
+                  {data?.base_prompt_default ?? ''}
+                </pre>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+      </div>
+    </SettingsSection>
+  )
+}

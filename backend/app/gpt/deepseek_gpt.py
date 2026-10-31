@@ -1,6 +1,7 @@
 from typing import List
 from app.gpt.base import GPT
 from app.utils.openai_client import build_openai_client
+from app.gpt.prompt_builder import resolve_base_prompt
 from app.gpt.prompt import BASE_PROMPT, AI_SUM, SCREENSHOT
 from app.gpt.utils import fix_markdown
 from app.models.gpt_model import GPTSource
@@ -34,7 +35,9 @@ class DeepSeekGPT(GPT):
         ]
 
     def create_messages(self, segments: List[TranscriptSegment], title: str,tags:str):
-        content = BASE_PROMPT.format(
+        # 模板统一走 resolve_base_prompt()：设置页里的覆盖层在这里同样生效
+        # （spec 005 ticket 11）。空串回落内置 BASE_PROMPT。
+        content = resolve_base_prompt().format(
             video_title=title,
             segment_text=self._build_segment_text(segments),
             tags=tags

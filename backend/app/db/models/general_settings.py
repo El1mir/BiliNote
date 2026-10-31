@@ -4,7 +4,7 @@
 供应商/引擎无关、全局生效」的开关。
 """
 
-from sqlalchemy import Column, Float, Integer, String
+from sqlalchemy import Column, Float, Integer, String, Text
 
 from app.db.engine import Base
 
@@ -192,6 +192,19 @@ MAX_FFMPEG_TIMEOUT_SECONDS = 600
 # 一次判定最多看多少个候选时间点：候选越多提示词越长，和图片抢同一份请求预算。
 DEFAULT_OCR_MAX_JUDGE_CANDIDATES = 200
 MAX_OCR_MAX_JUDGE_CANDIDATES = 1000
+
+#: 用户自定义 BASE_PROMPT 的字符上限（spec 005 ticket 11）。
+#:
+#: 为什么是 20000：内置 BASE_PROMPT 约 3.5k 字符，六条恒定原则全部写进去也远不到
+#: 2 万；再长的模板会把 LLM 的注意力稀释掉，而且模板是**每段字幕**都要拼一次的东西，
+#: 体积直接吃请求预算（见 llm_max_request_bytes）。
+MAX_BASE_PROMPT_OVERRIDE_CHARS = 20000
+
+#: BASE_PROMPT 覆盖层要求的占位符。默认模板与自定义模板必须都能被同样的
+#: str.format 调用填满 —— 少一个占位符，那部分内容就会从笔记里消失。
+REQUIRED_PROMPT_PLACEHOLDERS = ("video_title", "segment_text", "tags")
+
+
 class GeneralSettings(Base):
     __tablename__ = "general_settings"
 
@@ -280,3 +293,7 @@ class GeneralSettings(Base):
     ocr_max_judge_candidates = Column(
         Integer, nullable=True, default=DEFAULT_OCR_MAX_JUDGE_CANDIDATES
     )
+    # 2026-10-05（spec 005 ticket 11）：用户自定义的 BASE_PROMPT 覆盖层。
+    # NULL/空串 = 用内置模板（app/gpt/prompt.py 里的 BASE_PROMPT 保持原样不动，
+    # 覆盖只发生在运行时），这样默认行为与所有既有契约测试都不受影响。
+    base_prompt_override = Column(Text, nullable=True)

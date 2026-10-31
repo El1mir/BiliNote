@@ -1,4 +1,20 @@
 from app.gpt.prompt import BASE_PROMPT
+from app.services import runtime_limits
+
+def resolve_base_prompt() -> str:
+    """本次生成实际要用的 BASE_PROMPT 模板（spec 005 ticket 11）。
+
+    五个消费者（prompt_builder.generate_base_prompt 以及 deepseek / openai / qwen
+    三个适配器里各自的 format 调用）都必须走这里，否则用户改了设置页里的覆盖层，
+    走旧适配器的生成依然用内置模板 —— 「保存了但不生效」比没有这个功能更糟。
+
+    解析顺序：数据库里的覆盖层 > 内置 BASE_PROMPT。空串（用户点了「恢复默认」，
+    或从未设置过）一律回落到内置模板；读取经由 runtime_limits 的 5 秒缓存，
+    不额外打库。
+    """
+    override = runtime_limits.base_prompt_override()
+    return override or BASE_PROMPT
+
 
 note_formats = [
     {'label': '目录', 'value': 'toc'},
@@ -81,8 +97,9 @@ def generate_base_prompt(
     approved_shots=None,
     ocr_reference=None,
 ):
-    # 生成 Base Prompt 开头部分
-    prompt = BASE_PROMPT.format(
+    # 生成 Base Prompt 开头部分。模板走 resolve_base_prompt()：用户在设置页写的
+    # 覆盖层在这里生效，空串则回落到内置 BASE_PROMPT（spec 005 ticket 11）。
+    prompt = resolve_base_prompt().format(
         video_title=title,
         segment_text=segment_text,
         tags=tags
