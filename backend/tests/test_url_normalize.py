@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.utils.url_parser import normalize_video_url
 from app.validators.video_url_validator import VideoRequest
@@ -62,6 +63,12 @@ def test_note_router_request_accepts_watchlater():
     assert req.video_url == "https://www.bilibili.com/video/BV1CPXpBYEui"
 
 
-def test_video_request_youtube_unaffected():
-    req = VideoRequest(url="https://www.youtube.com/watch?v=dQw4w9WgXcQ", platform="youtube")
-    assert str(req.url) == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+def test_video_request_rejects_platform_without_downloader():
+    """youtube 的 downloader 已随死代码清理删除（spec 005 §12.5）。
+
+    这个用例原先断言「youtube 链接照常通过、不被规范化」——前置条件是 youtube 还
+    能生成笔记。现在入口校验与 SUPPORT_PLATFORM_MAP 一致，只放行 B 站，所以改成
+    断言拒绝：放行的后果是用户排完队才撞 PLATFORM_NOT_SUPPORTED。
+    """
+    with pytest.raises(ValidationError):
+        VideoRequest(url="https://www.youtube.com/watch?v=dQw4w9WgXcQ", platform="youtube")

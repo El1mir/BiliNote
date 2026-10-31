@@ -4,11 +4,15 @@ from urllib.parse import urlparse
 
 from app.utils.url_parser import normalize_video_url, parse_bilibili_collection_url
 
+#: 真正能生成笔记的平台。**必须与** `app/services/constant.py` 的
+#: `SUPPORT_PLATFORM_MAP` **保持一致**：那里只管实例化哪个 downloader，这里管
+#: 链接入口放不放行。两者脱节的后果是用户提交一个能过校验、到了流水线里才
+#: `PLATFORM_NOT_SUPPORTED` 的链接 —— 白等一次排队。
+#:
+#: 2026-10-05 收口：youtube / douyin / kuaishou 的 downloader 已随死代码清理删除，
+#: 对应的识别规则也一并下线。
 SUPPORTED_PLATFORMS = {
     "bilibili": r"(https?://)?(www\.)?bilibili\.com/video/[a-zA-Z0-9]+",
-    "youtube": r"(https?://)?(www\.)?(youtube\.com/(watch\?v=|shorts/)|youtu\.be/)[\w\-]+",
-    "douyin": "douyin",
-    "kuaishou": "kuaishou"
 }
 
 
@@ -23,14 +27,7 @@ def is_supported_video_url(url: str) -> bool:
     if parse_bilibili_collection_url(url):
         return True
 
-    for name, pattern in SUPPORTED_PLATFORMS.items():
-        if pattern in ["douyin", "kuaishou"]:
-            if pattern in url:
-                return True
-        else:
-            if re.match(pattern, url):
-                return True
-    return False
+    return any(re.match(pattern, url) for pattern in SUPPORTED_PLATFORMS.values())
 
 
 class VideoRequest(BaseModel):

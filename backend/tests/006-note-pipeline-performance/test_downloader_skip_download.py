@@ -8,7 +8,11 @@
   1. skip_download ⇒ skip_download + ignore_no_formats_error，且 extract_info(download=False)；
   2. ext=None 时回退 .m4a（不能拼出 "xxx.None"）；
   3. 正常下载仍然选择音频格式，且不打开 ignore_no_formats_error；
-另外用 AST 校验四个平台下载器的 download() 都对齐了 skip_download 接口。
+另外用 AST 校验 Bilibili 下载器的 download() 对齐了 skip_download 接口。
+
+2026-10-05 收口（spec 005 死代码清理）：YouTube / 抖音 / 快手 / 小宇宙的下载器已删除，
+`SUPPORT_PLATFORM_MAP` 只剩 bilibili（见 `app/services/constant.py`）。这条 AST 契约
+随之只对 bilibili 生效 —— 它校验的是「当前真正会被实例化的那个下载器」。
 """
 import ast
 import importlib.util
@@ -22,9 +26,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "app" / "downloaders" / "bilibili_downloader.py"
 PLATFORM_MODULES = {
     "bilibili": MODULE_PATH,
-    "douyin": ROOT / "app" / "downloaders" / "douyin_downloader.py",
-    "kuaishou": ROOT / "app" / "downloaders" / "kuaishou_downloader.py",
-    "xiaoyuzhoufm": ROOT / "app" / "downloaders" / "xiaoyuzhoufm_download.py",
 }
 
 
@@ -231,8 +232,8 @@ def _download_signature(path: pathlib.Path):
 
 class DownloaderInterfaceTest(unittest.TestCase):
     # download() 里真正使用 skip_download 的次数下限（参数本身是 ast.arg，不计入）。
-    # xiaoyuzhoufm 是纯音频 stub（body 为 pass），只需要对齐接口。
-    MIN_USES = {"bilibili": 1, "douyin": 1, "kuaishou": 2, "xiaoyuzhoufm": 0}
+    # 只剩 bilibili：其余平台的下载器已随 spec 005 的死代码清理删除。
+    MIN_USES = {"bilibili": 1}
 
     def test_every_platform_accepts_skip_download(self):
         for platform, path in PLATFORM_MODULES.items():

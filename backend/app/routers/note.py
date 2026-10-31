@@ -93,11 +93,6 @@ def resolve_intake(data: IntakeResolveRequest):
     return R.success(resolve_bilibili_inputs(data.urls))
 
 
-class RecordRequest(BaseModel):
-    video_id: str
-    platform: str
-
-
 class VideoRequest(BaseModel):
     video_url: str
     platform: str
@@ -1592,16 +1587,6 @@ def _run_merged_note_task(
     status_writer._update_status(task_id, TaskStatus.SUCCESS, message=message)
     logger.info(f"合并笔记生成成功 (task_id={task_id})：{message}")
     _enforce_cache_limit_in_background()
-
-
-@router.post("/delete_task")
-def delete_task(data: RecordRequest):
-    try:
-        # TODO: 待持久化完成
-        # NoteGenerator().delete_note(video_id=data.video_id, platform=data.platform)
-        return R.success(msg="删除成功")
-    except Exception as e:
-        return R.error(msg=str(e))
 
 
 @router.post("/upload")

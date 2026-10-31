@@ -26,7 +26,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOWNLOADERS = ROOT / "app" / "downloaders"
-DOWNLOADER_SOURCES = ["youtube_downloader.py", "bilibili_downloader.py"]
+DOWNLOADER_SOURCES = ["bilibili_downloader.py"]
 
 
 class _DownloadQuality:

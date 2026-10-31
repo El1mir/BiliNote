@@ -42,11 +42,11 @@ def test_get_logger_is_idempotent():
 
 
 def test_business_modules_share_the_configured_logger():
-    from app.downloaders import bilibili_dm_patch, bilibili_downloader, youtube_downloader
+    from app.downloaders import bilibili_dm_patch, bilibili_downloader
     from app.routers import note as note_router
     from app.services import note as note_service
 
-    for module in (note_service, note_router, bilibili_downloader, bilibili_dm_patch, youtube_downloader):
+    for module in (note_service, note_router, bilibili_downloader, bilibili_dm_patch):
         logger = module.logger
         assert isinstance(logger, logging.Logger)
         assert logger.name == module.__name__
@@ -54,7 +54,7 @@ def test_business_modules_share_the_configured_logger():
 
 
 def test_downloader_modules_no_longer_use_bare_stdlib_logger():
-    for name in ("bilibili_downloader.py", "youtube_downloader.py", "bilibili_dm_patch.py"):
+    for name in ("bilibili_downloader.py", "bilibili_dm_patch.py"):
         source = (ROOT / "app" / "downloaders" / name).read_text(encoding="utf-8")
         assert "logging.getLogger(__name__)" not in source, f"{name} 仍在用无 handler 的 logger"
         assert "get_logger(__name__)" in source

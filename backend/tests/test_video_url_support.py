@@ -40,10 +40,30 @@ class TestVideoUrlSupport(unittest.TestCase):
                     expected_id,
                 )
 
-    def test_accepts_youtube_shorts_url(self):
-        url = "https://www.youtube.com/shorts/dQw4w9WgXcQ"
+    def test_rejects_platforms_without_a_downloader(self):
+        """入口校验必须与 SUPPORT_PLATFORM_MAP 一致（spec 005 收口）。
 
-        self.assertTrue(video_url_validator.is_supported_video_url(url))
+        youtube / douyin / kuaishou 的 downloader 已随死代码清理删除，入口若还
+        放行这些链接，用户会白排一次队才在流水线里撞上 PLATFORM_NOT_SUPPORTED。
+        url_parser 仍认得这些 URL 形状（它是无平台的纯工具），但校验层不再放行。
+        """
+        for url in (
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://www.douyin.com/video/7123456789012345678",
+            "https://www.kuaishou.com/short-video/3xabcdef",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(video_url_validator.is_supported_video_url(url))
+
+    def test_still_accepts_bilibili(self):
+        for url in (
+            "https://www.bilibili.com/video/BV1xx411c7mD",
+            "https://b23.tv/abcdEFG",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(video_url_validator.is_supported_video_url(url))
 
 
 if __name__ == "__main__":
