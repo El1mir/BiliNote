@@ -200,11 +200,11 @@
 | 工单 | 结论 | 依据 |
 | --- | --- | --- |
 | 07 | **已完成** | 三条验收均有实现，落点见 `tickets/07-frontend-task-contract.md` 的「完成情况」 |
-| 08 | 待实现（遗留缺陷） | 6 条与主题无关的真实缺陷，见 `tickets/08-progress-timeline.md` |
+| 08 | ~~待实现（遗留缺陷）~~ → **已完成（2026-10-05 收口）** | 原 6 条缺陷落点见 §12.5；原记录见 `tickets/08-progress-timeline.md` |
 | 09 | **已被取代** | 随 m02324 整体作废，见 `tickets/09-dark-theme-foundation.md` |
-| 10 | 待实现（遗留缺陷） | 4 条，见 `tickets/10-home-workbench-redesign.md` |
-| 11 | 待实现（遗留缺陷） | 只剩 Prompt 页未挂路由，见 `tickets/11-note-and-settings-redesign.md` |
-| 12 | 待实现（遗留缺陷） | 后端测试齐备、前端几乎空白，见 `tickets/12-regression-and-visual-acceptance.md` |
+| 10 | ~~待实现（遗留缺陷）~~ → **已完成（2026-10-05 收口）** | 原 4 条缺陷落点见 §12.5；原记录见 `tickets/10-home-workbench-redesign.md` |
+| 11 | ~~待实现（遗留缺陷）~~ → **已完成（2026-10-05 收口）** | Prompt 页已挂进 `SettingsPage.tsx`，落点见 §12.5；原记录见 `tickets/11-note-and-settings-redesign.md` |
+| 12 | ~~待实现（遗留缺陷）~~ → **已完成（2026-10-05 收口）** | 前后端测试已补齐，落点见 §12.5；原记录见 `tickets/12-regression-and-visual-acceptance.md` |
 
 ### 12.3 最要紧的三条
 
