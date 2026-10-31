@@ -32,7 +32,7 @@ specs/
 | 002 | [002-video-understanding-sampling](./002-video-understanding-sampling/spec.md) | implemented | 视频理解采样方式 + 批量模式融入表单 |
 | 003 | [003-openai-compatible-asr](./003-openai-compatible-asr/spec.md) | implemented | OpenAI 兼容 ASR 引擎（替代本地 ASR） |
 | 004 | [004-note-math-rendering](./004-note-math-rendering/spec.md) | implemented | 笔记里的 LaTeX 公式渲染（`\(...\)` → `$...$`） |
-| 005 | [005-modern-dark-ui-and-task-progress](./005-modern-dark-ui-and-task-progress/spec.md) | **implemented** | 任务阶段协议与前端任务契约（暗色主题随 m02324 已被取代）。2026-10-05 收口：detail dict 贯通、终态阶段归属、任务卡显示阶段与进度、设置页 Prompt 编辑（覆盖层四处落点全部走 `resolve_base_prompt()`）、前端回归测试补齐、`/delete_task` 空壳与非 B 站 downloader 清理。见 spec §12.5。验证：后端 952 passed、前端 78 passed、`tsc -b`/`lint`/`build` 全绿。 |
+| 005 | [005-modern-dark-ui-and-task-progress](./005-modern-dark-ui-and-task-progress/spec.md) | **implemented** | 任务阶段协议与前端任务契约（暗色主题随 m02324 已被取代）。2026-10-05 收口：detail dict 贯通、终态阶段归属、任务卡显示阶段与进度、设置页 Prompt 编辑（覆盖层四处落点全部走 `resolve_base_prompt()`）、前端回归测试补齐、`/delete_task` 空壳与非 B 站 downloader 清理。见 spec §12.5。验证：后端 953 passed、前端 78 passed、`tsc -b`/`lint`/`build` 全绿（2026-10-05 合并 `flow/T-012` 到 `master` 后在 master 工作树复跑确认）。 |
 | 006 | [006-note-pipeline-performance](./006-note-pipeline-performance/spec.md) | implemented | 笔记生成流水线耗时优化（ASR/拼图/截图并发、下载冗余消除、索引移出关键路径） |
 | 007 | [007-note-archive-and-media-cache](./007-note-archive-and-media-cache/spec.md) | implemented | 笔记 ZIP 归档、媒体资源过期清理与视觉图像缓存优化 |
 | 008 | [008-ocr-assist-and-legacy-cleanup](./008-ocr-assist-and-legacy-cleanup/spec.md) | implemented | OCR 辅助模式（只有判定通过的帧才编入笔记）+ 删除重新生成与笔记版本管理；⚠️ 2026-10-06 追加 §12.8 提示词全面改写与两处召回缺陷修复 |

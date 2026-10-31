@@ -238,4 +238,6 @@
 
 同时清理的死代码：`routers/note.py` 的 `/delete_task` 空壳路由与 `RecordRequest`；非 B 站 downloader（`youtube` / `douyin` / `kuaishou` / `xiaoyuzhoufm` / `local`）连同 helper 目录一并删除，`SUPPORT_PLATFORM_MAP` 只剩 B 站。
 
-闸门实测（2026-10-05）：后端 `pytest` **952 passed**（收口前 934，新增 18 条全是本批用例）；前端 `pnpm test` 14 文件 / 78 用例、`tsc -b`、`pnpm lint`、`pnpm build` 全部 exit 0；`scripts/i18n-contract.cjs` 报 "501 keys, zh-CN and en-US aligned"。
+闸门实测（2026-10-05，在 `flow/T-012` 合入 `master` 之后的 master 工作树复跑）：后端 `pytest` **953 passed, 1 warning, 15 subtests passed**（收口前 934，新增 19 条全是本批用例）；前端 `pnpm test` 14 文件 / 78 用例、`tsc -b`、`pnpm lint`、`pnpm build`（built in 24.50s，仅 markdown chunk 795.41 kB 的体积告警）全部 exit 0；`scripts/i18n-contract.cjs` 报 "501 keys, zh-CN and en-US aligned"。
+
+分支落地（2026-10-05）：工单 08/10/11/12 与死代码清理的四个提交 `49522d7` / `6538a41` / `9b81067` / `442ecbf` 原本只落在 `flow/T-012`，以 `git merge --ff-only flow/T-012` 快进并入 `master`（merge-base `7471c35`，无冲突、不 squash，保留四个独立提交），此后 `git merge-base --is-ancestor 442ecbf master` 为 true。
