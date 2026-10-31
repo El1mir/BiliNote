@@ -7,6 +7,7 @@ import {
   type BatchDeleteResult,
   type TaskListRow,
 } from '@/services/note.ts'
+import type { TaskDetail } from '@/utils/taskStatus'
 
 /**
  * 历史数据容错：早期版本把 markdown 存成「版本数组」（新版本前插），
@@ -64,7 +65,7 @@ export interface TaskProgress {
   progress?: number | null
   stageProgress?: number | null
   message?: string | null
-  detail?: string | null
+  detail?: TaskDetail | null
   updatedAt?: string | null
   revision?: number
 }
@@ -142,7 +143,7 @@ export interface Task {
   progress?: number | null
   stageProgress?: number | null
   message?: string | null
-  detail?: string | null
+  detail?: TaskDetail | null
   updatedAt?: string | null
   revision?: number
   platform: string
@@ -175,7 +176,7 @@ interface TaskStatusPayload {
   stage_progress?: number | null
   stageProgress?: number | null
   message?: string | null
-  detail?: string | null
+  detail?: TaskDetail | null
   updated_at?: string | null
   updatedAt?: string | null
   data?: unknown

@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
-import { CheckSquare, FolderInput, Search, Square, Trash2, X } from 'lucide-react'
+import { CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
 import { useTaskStore, type Task } from '@/store/taskStore'
 import { useI18n } from '@/ember/i18n/context'
-import { Badge } from '@/ember/ui/Badge'
 import { Button } from '@/ember/ui/Button'
 import { Chip } from '@/ember/ui/Chip'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { EmptyState } from '@/ember/ui/EmptyState'
 import { cn } from '@/ember/lib/cn'
-import { statusKey, statusTone, taskTitle } from '@/ember/features/workspace/taskState'
+import { taskTitle } from '@/ember/features/workspace/taskState'
+import { TaskCard } from '@/ember/features/workspace/TaskCard'
 import { Dialog } from '@/ember/ui/Dialog'
 import { UNGROUPED_ID } from '@/services/noteGroup'
 
@@ -33,19 +33,6 @@ const isReady = (task: Task) => String(task.status) === 'SUCCESS'
 const isFailed = (task: Task) => ['FAILED', 'FAILD'].includes(String(task.status))
 const isRunning = (task: Task) => !isReady(task) && !isFailed(task)
 
-const relativeTime = (iso: string, locale: string): string => {
-  const then = new Date(iso).getTime()
-  if (!Number.isFinite(then)) return ''
-  const diff = Date.now() - then
-  const minutes = Math.floor(diff / 60000)
-  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-  if (minutes < 1) return formatter.format(0, 'minute')
-  if (minutes < 60) return formatter.format(-minutes, 'minute')
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return formatter.format(-hours, 'hour')
-  return formatter.format(-Math.floor(hours / 24), 'day')
-}
-
 /**
  * The history rail. One flat, searchable list — groups narrow the list instead of
  * nesting it, because a nested tree inside a 340px rail hides most of the content.
@@ -61,7 +48,7 @@ export function TaskList({
   groups = [],
   onMoveTasks,
 }: TaskListProps) {
-  const { t, locale } = useI18n()
+  const { t } = useI18n()
   const tasks = useTaskStore(state => state.tasks)
   const currentTaskId = useTaskStore(state => state.currentTaskId)
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
@@ -191,21 +178,23 @@ export function TaskList({
       <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
         {loading && !tasks.length ? (
           <>
-            <Skeleton className="h-[68px] w-full" />
-            <Skeleton className="h-[68px] w-full" />
-            <Skeleton className="h-[68px] w-full" />
+            <Skeleton className="h-[92px] w-full" />
+            <Skeleton className="h-[92px] w-full" />
+            <Skeleton className="h-[92px] w-full" />
           </>
         ) : visible.length ? (
           visible.map(task => {
             const active = task.id === currentTaskId
             const checked = selected.includes(task.id)
             return (
-              <button
+              <TaskCard
                 key={task.id}
-                type="button"
-                onClick={() => (selecting ? toggleSelected(task.id) : setCurrentTask(task.id))}
-                aria-current={active ? 'true' : undefined}
+                task={task}
+                active={active}
+                selecting={selecting}
+                checked={checked}
                 draggable={!selecting && Boolean(onDragTasks)}
+                onClick={() => (selecting ? toggleSelected(task.id) : setCurrentTask(task.id))}
                 onDragStart={event => {
                   // Dragging in select mode takes the whole checked set; otherwise just this card.
                   const ids = selecting && checked ? [...selected] : [task.id]
@@ -214,36 +203,7 @@ export function TaskList({
                   onDragTasks?.(ids)
                 }}
                 onDragEnd={() => onDragEnd?.()}
-                className={cn(
-                  'ember-press group relative flex w-full flex-col gap-1.5 rounded-surface border px-3 py-2.5 text-left transition-colors',
-                  active ? 'border-ember/40 bg-ember-soft/60' : 'border-line bg-surface hover:border-ink-mute/40',
-                )}
-              >
-                <span className="flex items-start gap-2">
-                  {selecting ? (
-                    checked ? (
-                      <CheckSquare className="mt-0.5 size-4 shrink-0 text-ember" />
-                    ) : (
-                      <Square className="mt-0.5 size-4 shrink-0 text-ink-mute" />
-                    )
-                  ) : null}
-                  <span className="line-clamp-2 min-w-0 flex-1 text-small font-semibold text-ink">
-                    {taskTitle(task)}
-                  </span>
-                  <Badge tone={statusTone(task.status)}>{t(statusKey(task.status))}</Badge>
-                </span>
-                <span className="flex items-center gap-2 text-caption text-ink-mute">
-                  <span className="shrink-0 whitespace-nowrap tabular-nums">
-                    {relativeTime(task.createdAt, locale)}
-                  </span>
-                  {task.groupName ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="truncate">{task.groupName}</span>
-                    </>
-                  ) : null}
-                </span>
-              </button>
+              />
             )
           })
         ) : (

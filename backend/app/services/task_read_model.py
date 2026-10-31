@@ -28,8 +28,12 @@ _STATUS_ALIASES = {
     "CANCELED": "cancelled",
 }
 
+#: 旧值与别名的归一化。**只做追加**：`success` / `failed` 原本被折叠成
+#: `finalizing`，于是「已经走完的阶段」「失败发生在哪一步」同时丢失 —— 前端拿到
+#: 一个终态聚合值，12 个阶段全显示待处理（spec 005 ticket 08）。
+#: 现在终态阶段按后端写下的真实阶段值透传（`saving` / `transcribing` …，
+#: 或没有在途阶段时的 `success` / `failed`），`finalizing` 仍保留给旧别名。
 _PHASE_ALIASES = {
-    "success": "finalizing",
     "completed": "finalizing",
     "done": "finalizing",
 }
@@ -42,7 +46,7 @@ class TaskView:
     phase: str | None
     progress: float | None
     message: str | None
-    detail: str | None
+    detail: dict[str, Any] | None
     updated_at: str | None
     revision: int
     error: dict[str, Any] | None
@@ -70,10 +74,38 @@ def normalize_status(value: Any) -> str:
 
 
 def normalize_phase(value: Any, status: str) -> str | None:
+    """阶段归一化。缺值时按终态给 success / failed，不再一律 finalizing。"""
     if value is None:
-        return "finalizing" if status == "succeeded" else None
+        if status == "succeeded":
+            return "success"
+        if status == "failed":
+            return "failed"
+        return None
     phase = str(value).strip().lower()
     return _PHASE_ALIASES.get(phase, phase or None)
+
+
+def detail_payload(value: Any) -> dict[str, Any] | None:
+    """阶段详情归一化成 dict 或 None。
+
+    后端写的一直是 dict（切片数 / 帧数 / 网格数 / 候选数），历史 payload 里也出现过
+    字符串。读模型必须给出唯一的形状，前端才敢直接按键渲染：dict 原样透传，
+    JSON 字符串解一次，其它字符串包成 {'text': ...}。
+    """
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            return {"text": text}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"text": text}
+    return None
 
 
 def _progress(value: Any) -> float | None:
@@ -115,7 +147,7 @@ def to_task_view(task_id: str, raw: dict[str, Any] | None, revision: int) -> Tas
         phase=normalize_phase(payload.get("stage") or payload.get("phase"), status),
         progress=_progress(payload.get("progress")),
         message=payload.get("message"),
-        detail=payload.get("detail"),
+        detail=detail_payload(payload.get("detail")),
         updated_at=payload.get("updated_at") or payload.get("updatedAt"),
         revision=revision,
         error=_error(payload, status),

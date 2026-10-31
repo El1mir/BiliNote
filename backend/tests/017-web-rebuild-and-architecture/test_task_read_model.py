@@ -4,10 +4,35 @@ from app.services.task_read_model import TaskReadModel, to_task_view  # type: ig
 def test_task_view_normalizes_legacy_status_and_actions():
     view = to_task_view("task-1", {"status": "SUCCESS", "progress": 101}, 2)
     assert view.status == "succeeded"
-    assert view.phase == "finalizing"
+    # spec 005 ticket 08：终态不再折叠成 finalizing —— 折叠之后前端拿不到
+    # 「最后走完的是哪一步」，12 个阶段会全部显示待处理。
+    assert view.phase == "success"
     assert view.progress == 100
     assert view.actions["openNote"] is True
     assert view.actions["cancel"] is False
+
+
+def test_terminal_phase_keeps_the_recorded_stage():
+    """SUCCESS / FAILED 保留后端写下的真实阶段，而不是折叠成终态名。"""
+    done = to_task_view("task-3", {"status": "SUCCESS", "stage": "saving"}, 1)
+    assert done.phase == "saving"
+    failed = to_task_view("task-4", {"status": "FAILED", "stage": "transcribing"}, 1)
+    assert failed.phase == "transcribing"
+    legacy_done = to_task_view("task-5", {"status": "SUCCESS", "stage": "completed"}, 1)
+    assert legacy_done.phase == "finalizing"
+    legacy_failed = to_task_view("task-6", {"status": "FAILED"}, 1)
+    assert legacy_failed.phase == "failed"
+
+
+def test_task_view_detail_is_a_mapping():
+    """后端写 dict 详情（切片数 / 帧数 / 网格数），读模型必须原样透传。"""
+    view = to_task_view(
+        "task-7",
+        {"status": "RUNNING", "detail": {"current": 3, "total": 10, "unit": "frames"}},
+        1,
+    )
+    assert view.detail == {"current": 3, "total": 10, "unit": "frames"}
+    assert to_task_view("task-8", {"status": "RUNNING"}, 1).detail is None
 
 
 def test_task_view_failed_has_safe_error_shape():

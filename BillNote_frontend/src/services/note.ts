@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 import toast from 'react-hot-toast'
 import { translate } from '@/ember/i18n/locale'
+import type { TaskDetail } from '@/utils/taskStatus'
 
 export type IntakeItemState =
   | 'ready'
@@ -373,7 +374,7 @@ export interface TaskStatusLite {
   stage_progress?: number | null
   stageProgress?: number | null
   message?: string | null
-  detail?: string | null
+  detail?: TaskDetail | null
   updated_at?: string | null
   updatedAt?: string | null
   revision?: number
@@ -418,7 +419,7 @@ export interface TaskView {
   phase: string | null
   progress: number | null
   message: string | null
-  detail: string | null
+  detail: TaskDetail | null
   updatedAt: string | null
   revision: number
   error: { code: string; messageKey: string; retryable: boolean } | null

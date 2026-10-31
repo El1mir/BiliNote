@@ -2,24 +2,16 @@ import { useEffect, useRef } from 'react'
 import { translate } from '@/ember/i18n/locale'
 import { useTaskStore, readLatestMarkdown, type Task } from '@/store/taskStore'
 import { getTaskReadModelSnapshot, subscribeTaskReadModel, type TaskStatusLite, type TaskReadModelSnapshot } from '@/services/note.ts'
+import { normalizeTaskStatus } from '@/utils/taskStatus'
 import toast from 'react-hot-toast'
 
 /**
  * `POST /api/task_status/batch` 返回的每条轻量状态（见 `TaskStatusLite`）。
- * 后端可能用下划线命名也可能用驼峰，这里统一收敛。
+ * 后端可能用下划线命名也可能用驼峰，统一收敛交给 `normalizeTaskStatus`
+ * （纯函数，住在 utils 里才测得动）。
  * 注意：轻量端点**不含** markdown 与 transcript —— 任务成功那一刻才用
  * `rehydrateTask` 单条拉完整结果（spec 009 ticket 06 第 3 条）。
  */
-const normalizeTaskStatus = (lite: TaskStatusLite) => ({
-  status: lite.status,
-  stage: lite.stage ?? null,
-  stageLabel: lite.stage_label ?? lite.stageLabel ?? null,
-  progress: lite.progress ?? null,
-  stageProgress: lite.stage_progress ?? lite.stageProgress ?? null,
-  message: lite.message ?? null,
-  detail: lite.detail ?? null,
-  updatedAt: lite.updated_at ?? lite.updatedAt ?? null,
-})
 
 const hasMarkdownContent = (task: Task | undefined) => Boolean(readLatestMarkdown(task?.markdown))
 
@@ -82,6 +74,8 @@ export const useTaskPolling = (interval = 3000) => {
         (snapshot: TaskReadModelSnapshot) => {
           for (const view of snapshot.tasks) {
             const status = view.status === "succeeded" ? "SUCCESS" : view.status === "failed" ? "FAILED" : view.status === "cancelled" ? "CANCELLED" : view.status.toUpperCase()
+            // read model 的 phase 就是后端 stage（终态也保留真实阶段），
+            // 但没有 stage_label；前端自己按 stageKey 回退，不要在这里编一个中文。
             updateTaskStatus(view.taskId, { status: status as Task["status"], stage: view.phase, progress: view.progress, message: view.message, detail: view.detail, updatedAt: view.updatedAt, revision: view.revision })
             if (status === "SUCCESS") void rehydrateTask(view.taskId)
           }

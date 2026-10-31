@@ -89,6 +89,35 @@ IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "/static/screenshots")
 # 并且带 `时间 [级别] 模块名 -` 前缀（裸 logging.getLogger 会因为无 handler 丢掉全部 INFO）。
 logger = get_logger(__name__)
 
+def _read_recorded_stage(task_id: str) -> "TaskStage | None":
+    """读回某个 task_id 最近一次记录的在途阶段（内存注册表优先，其次状态文件）。
+
+    为什么需要它：终态写入经常来自**另一个** ``NoteGenerator`` 实例（路由层的熔断跳过、
+    合并笔记收尾、重启恢复），实例上记不到在途阶段。此时从状态注册表/投影文件读回
+    上一次写下的 stage，才能让「成功保留最后一步」「失败保留出错步骤」跨实例成立。
+    """
+    if not task_id:
+        return None
+    payload: dict | None = None
+    try:
+        from app.services import task_status_cache
+
+        payload = task_status_cache.get(task_id)
+    except Exception:
+        payload = None
+    raw = None if payload is None else payload.get("stage")
+    if not raw:
+        status_file = NOTE_OUTPUT_DIR / f"{task_id}.status.json"
+        try:
+            with status_file.open("r", encoding="utf-8") as handle:
+                raw = json.load(handle).get("stage")
+        except (OSError, ValueError):
+            raw = None
+    try:
+        return TaskStage(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
 # spec 008 ticket 02：OCR 辅助模式的插图占位符与文本比对工具
 
 
@@ -277,6 +306,10 @@ class NoteGenerator:
         # 429 是**另一条路**（spec 012）：不是「不能重试」，而是「还没轮到」——
         # 交给任务级循环等全局冷却窗口，不判失败、不计熔断。
         self.last_error_rate_limited = False
+        #: 最近一次写出的**在途**阶段（进程内、按实例）。终态阶段不再靠
+        #: stage_for_status 猜：SUCCESS 保留最后一个真正跑完的阶段，FAILED 保留
+        #: 失败发生的那一步（spec 005 ticket 08）。
+        self._in_flight_stage: TaskStage | None = None
 
         logger.info("NoteGenerator 初始化完成")
 
@@ -1717,6 +1750,26 @@ class NoteGenerator:
         logger.info(f"使用下载器：{downloader.__class__}")
         return downloader
 
+    def _resolve_stage(self, task_id: str | None, status_value: str) -> TaskStage | str:
+        """终态阶段继承在途阶段，不再按 status 猜（spec 005 ticket 08）。
+
+        历史缺陷：SUCCESS 一律写成 ``stage='success'``、FAILED 一律写成
+        ``stage='failed'``，于是前端拿到的阶段序列里「已经走完的阶段」与「失败发生
+        在哪一步」同时丢失 —— 12 个阶段在成功后全显示待处理，失败后也看不出所属步骤。
+
+        现在：在途阶段（QUEUED … SAVING）仍由显式传入的 ``stage=`` 记录，终态沿用
+        最后一次记录到的在途阶段；查不到时回落到 :func:`stage_for_status`（与旧行为
+        一致，冷启动 / 状态文件缺失的路径仍能给出一个合法阶段）。
+        """
+        mapped = stage_for_status(status_value)
+        if mapped not in (TaskStage.SUCCESS, TaskStage.FAILED):
+            return mapped
+        previous = self._in_flight_stage
+        if (previous is None or previous in (TaskStage.SUCCESS, TaskStage.FAILED)) and task_id:
+            previous = _read_recorded_stage(task_id)
+        if previous is None or previous in (TaskStage.SUCCESS, TaskStage.FAILED):
+            return mapped
+        return previous
     def _update_status(
         self,
         task_id: str | None,
@@ -1735,18 +1788,26 @@ class NoteGenerator:
         NOTE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         status_file = NOTE_OUTPUT_DIR / f"{task_id}.status.json"
         status_value = status.value if isinstance(status, TaskStatus) else str(status)
-        resolved_stage = stage or stage_for_status(status_value)
+        resolved_stage = stage or self._resolve_stage(task_id, status_value)
         try:
             resolved_stage = TaskStage(resolved_stage)
         except (TypeError, ValueError):
             resolved_stage = stage_for_status(status_value)
+        if resolved_stage not in (TaskStage.SUCCESS, TaskStage.FAILED):
+            self._in_flight_stage = resolved_stage
 
         normalized_stage_progress = normalize_progress(stage_progress)
         normalized_progress = normalize_progress(progress)
         if normalized_progress is None:
-            normalized_progress = global_progress(
-                resolved_stage, normalized_stage_progress
-            )
+            if status_value == TaskStatus.SUCCESS.value:
+                # 终态继承了在途阶段（多半是 ``saving``，权重 1），按阶段权重算出来
+                # 会是 99% —— 一个已经成功的任务不该停在 99。成功即 100，
+                # 阶段只用来告诉前端「最后走完的是哪一步」。
+                normalized_progress = 100
+            else:
+                normalized_progress = global_progress(
+                    resolved_stage, normalized_stage_progress
+                )
 
         data = {
             "status": status_value,

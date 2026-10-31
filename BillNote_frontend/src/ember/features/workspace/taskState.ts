@@ -51,6 +51,14 @@ export const taskProgress = (task: Task | undefined): number => {
   return percent / 100
 }
 
+/**
+ * 后端 14 个阶段 → 一条文案。
+ *
+ * 阶段是进度条上"走到哪一步"的唯一来源：`success` / `failed` 不再被折叠成聚合值
+ * （见 `backend/app/services/task_read_model.py` 的 `_PHASE_ALIASES`），所以这里
+ * 必须认得每一个 —— 认不出就返回 null，让调用方回落到状态文案，绝不能猜成
+ * "已完成"。历史数据里的 `success` 直接复用"完成"。
+ */
 export const stageKey = (stage: string | null | undefined): MessageKey | null => {
   switch (stage) {
     case 'queued':
@@ -69,9 +77,48 @@ export const stageKey = (stage: string | null | undefined): MessageKey | null =>
     case 'summarizing':
       return 'task.stage.summarizing'
     case 'post_processing':
+      return 'task.stage.postProcessing'
     case 'saving':
+      return 'task.stage.saving'
     case 'success':
       return 'task.stage.done'
+    case 'failed':
+      return 'task.stage.failed'
+    default:
+      return null
+  }
+}
+
+/**
+ * 阶段详情的一行摘要：`{current: 3, total: 12, unit: 'frames'}` → `3 / 12 帧`。
+ *
+ * 后端的 detail 是自由 dict（切片数 / 帧数 / 网格数都塞在这里），形状不止一种，
+ * 所以这里只挑能认出来的键；认不出来就当没有详情，卡片上不渲染空行。
+ */
+export const detailSummary = (
+  detail: Record<string, unknown> | null | undefined,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string,
+): string | null => {
+  if (!detail) return null
+  const current = typeof detail.current === 'number' ? detail.current : null
+  const total = typeof detail.total === 'number' ? detail.total : null
+  const unit = typeof detail.unit === 'string' ? detail.unit : null
+  if (current !== null && total !== null) {
+    const label = unit ? unitKey(unit) : null
+    return label ? t(label, { current, total }) : `${current} / ${total}`
+  }
+  if (current !== null) return String(current)
+  return null
+}
+
+const unitKey = (unit: string): MessageKey | null => {
+  switch (unit) {
+    case 'frames':
+      return 'task.detail.frames'
+    case 'grids':
+      return 'task.detail.grids'
+    case 'segments':
+      return 'task.detail.segments'
     default:
       return null
   }

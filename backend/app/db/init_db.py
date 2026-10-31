@@ -149,6 +149,9 @@ def init_db():
                 ("screenshot_quality", "INTEGER DEFAULT 2"),
                 ("ffmpeg_timeout_seconds", "INTEGER DEFAULT 60"),
                 ("ocr_max_judge_candidates", "INTEGER DEFAULT 200"),
+                # 2026-10-05（spec 005 ticket 11）：用户自定义 BASE_PROMPT 覆盖层。
+                # 空的 TEXT 列，NULL 表示「用内置模板」。
+                ("base_prompt_override", "TEXT"),
             )
             for _column, _ddl in _settings_additions:
                 if _column in settings_columns:
