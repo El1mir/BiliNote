@@ -1,6 +1,6 @@
 # 005 · 现代暗色核心界面与任务阶段进度
 
-- **状态**：partial（部分实现，残余见 §12）
+- **状态**：implemented（残余缺陷已于 2026-10-05 收口，见 §12.5）
 - **日期**：2026-09-26
 - **范围**：后端任务阶段协议、任务轮询日志降噪、Web 核心页面暗色重构
 - **上游**：001 / 002 / 003 / 004
@@ -142,11 +142,11 @@
 | 05 | 采样、抽帧、拼图流程进度埋点 | 已完成 |
 | 06 | 总结、后处理、保存流程进度埋点 | 已完成 |
 | 07 | 前端任务类型、轮询和持久化适配 | 已完成 |
-| 08 | 前端阶段时间线与进度组件（遗留缺陷） | 待实现 |
+| 08 | 前端阶段时间线与进度组件 | 已完成（2026-10-05 收口） |
 | 09 | 暗色设计 token 与基础组件统一 | 已被取代（2026-10-05） |
-| 10 | 首页任务队列信息密度（遗留缺陷） | 待实现 |
-| 11 | 设置页 Prompt 页面缺失（遗留缺陷） | 待实现 |
-| 12 | 前端回归测试（遗留缺陷） | 待实现 |
+| 10 | 首页任务队列信息密度 | 已完成（2026-10-05 收口） |
+| 11 | 设置页 Prompt 页面缺失 | 已完成（2026-10-05 收口） |
+| 12 | 前端回归测试 | 已完成（2026-10-05 收口） |
 | 13 | 修复 note.py 日志丢失（未接入统一 logger） | 已完成 |
 | 14 | 任务 ID 贯穿全流程（修复幻影状态文件与 90% 冻结） | 已完成 |
 | 15 | 转写进度回调接线与阶段明细 | 已完成 |
@@ -223,3 +223,19 @@
 - 不重命名 spec 005 目录或标题。目录名里的「dark-ui」已是历史名词，改名会让所有既有引用失效。
 - 不动 `index.css:209–275`。它是浅色方向的实现，不是死代码。
 - 不补前端测试。那正是工单 12 的内容。
+
+### 12.5 2026-10-05 收口结果
+
+§12.2 / §12.3 列的遗留缺陷已全部实现，本节记录落点，供后续回归时对照。
+
+| 原缺陷 | 修复落点 |
+| --- | --- |
+| `detail` 永远不显示（工单 08 缺陷 1） | 后端 `app/services/task_read_model.py` 新增 `detail_payload()`：dict 透传、JSON 字符串解一次、其它字符串包成 `{'text': ...}`；`TaskView.detail` 改为 `dict[str, Any] \| None`。前端 `utils/taskStatus.ts` 的 `TaskDetail = Record<string, unknown>` + `toDetailPayload()`，`taskStore/index.ts` 同步把 `detail` 从 `string \| null` 改掉；`taskState.ts` 的 `detailSummary()` 负责渲染切片数 / 帧数 / 网格数。 |
+| 成功时 12 个阶段全显示待处理（工单 08 缺陷 2/3） | `task_read_model.py` 的 `_PHASE_ALIASES` 删掉 `"success": "finalizing"`，`normalize_phase` 在缺阶段时按终态落 `success` / `failed`；`services/note.py` 新增 `_read_recorded_stage()` + `_resolve_stage()`，终态继承最后一次在途阶段，失败时能定位到断在哪一步。前端 `taskState.ts` 的 `stageKey()` 认得 `success` / `failed`，认不出返回 `null` 由调用方回落状态文案。 |
+| 任务卡片只有 legacy 徽标（工单 08 缺陷 4） | 新增 `ember/features/workspace/TaskCard.tsx`，卡片上渲染阶段、阶段进度与详情计数；`TaskList.tsx` 改用它。 |
+| 设置页无 Prompt 页面（工单 11 残余） | 后端：`general_settings` 新增 `base_prompt_override` 列 + `normalize_base_prompt_override()`（必须含 `video_title` / `segment_text` / `tags` 三个占位符、上限 20000 字符，否则判无效回落空串）+ `routers/general.py` 的字段透传；`runtime_limits.base_prompt_override()` 走 5 秒缓存读取，`gpt/prompt_builder.py` 的 `resolve_base_prompt()` 统一对外。**五个消费者**（`generate_base_prompt` 与 `deepseek_gpt.py` / `openai_gpt.py` / `qwen_gpt.py` 三个适配器）全部改为 `resolve_base_prompt().format(...)`，否则改设置页只对三分之一 provider 生效。前端：新增 `ember/pages/settings/sections/PromptSection.tsx` 并挂进 `SettingsPage.tsx` 的 `prompt` 路由。 |
+| 前端回归测试几乎空白（工单 12） | `BillNote_frontend/tests/005-modern-dark-ui/` 现有 `taskStatus.test.ts`（两套命名双写、`toDetailPayload` 拒收非 dict）、`taskState.test.ts`（未知阶段回退、`progress === null` 不伪造）、`taskProgressCard.test.tsx`（进度卡五种渲染）、`taskCard.test.tsx`（列表卡）；后端 `tests/005-modern-dark-ui-and-task-progress/` 补 `test_terminal_stage_attribution.py` 与 `test_base_prompt_override.py`。 |
+
+同时清理的死代码：`routers/note.py` 的 `/delete_task` 空壳路由与 `RecordRequest`；非 B 站 downloader（`youtube` / `douyin` / `kuaishou` / `xiaoyuzhoufm` / `local`）连同 helper 目录一并删除，`SUPPORT_PLATFORM_MAP` 只剩 B 站。
+
+闸门实测（2026-10-05）：后端 `pytest` **952 passed**（收口前 934，新增 18 条全是本批用例）；前端 `pnpm test` 14 文件 / 78 用例、`tsc -b`、`pnpm lint`、`pnpm build` 全部 exit 0；`scripts/i18n-contract.cjs` 报 "501 keys, zh-CN and en-US aligned"。
