@@ -16,8 +16,13 @@ import { Input } from '@/ember/ui/Input'
 import { Spinner } from '@/ember/ui/Spinner'
 import { LanguageSwitcher } from '@/ember/shell/LanguageSwitcher'
 import { useI18n } from '@/ember/i18n/context'
-import type { MessageKey } from '@/ember/i18n/strings'
 import { ONBOARDING_STORAGE_KEY } from '@/ember/pages/onboardingStorage'
+import {
+  buildOnboardingTranscriberPayload,
+  DEFAULT_ONBOARDING_TRANSCRIBER,
+  ONBOARDING_TRANSCRIBERS,
+  type TranscriberType,
+} from '@/ember/pages/onboardingTranscriber'
 
 /**
  * Desktop first-run setup.
@@ -65,12 +70,7 @@ function errorReason(error: unknown): string {
   return shaped?.data?.reason || ''
 }
 
-const TRANSCRIBERS: { value: string; title: MessageKey; description: MessageKey }[] = [
-  { value: 'groq', title: 'onboarding.transcriber.groq', description: 'onboarding.transcriber.groqDesc' },
-  { value: 'bcut', title: 'onboarding.transcriber.bcut', description: 'onboarding.transcriber.bcutDesc' },
-  { value: 'kuaishou', title: 'onboarding.transcriber.kuaishou', description: 'onboarding.transcriber.kuaishouDesc' },
-  { value: 'fast-whisper', title: 'onboarding.transcriber.local', description: 'onboarding.transcriber.localDesc' },
-]
+const TRANSCRIBERS = ONBOARDING_TRANSCRIBERS
 
 export function OnboardingPage() {
   const { t } = useI18n()
@@ -88,7 +88,7 @@ export function OnboardingPage() {
   const [modelName, setModelName] = useState('gpt-4o-mini')
   const [savingProvider, setSavingProvider] = useState(false)
 
-  const [transcriberType, setTranscriberType] = useState('groq')
+  const [transcriberType, setTranscriberType] = useState<TranscriberType>(DEFAULT_ONBOARDING_TRANSCRIBER)
   const [savingTranscriber, setSavingTranscriber] = useState(false)
 
   const probe = useCallback(async () => {
@@ -160,13 +160,14 @@ export function OnboardingPage() {
 
   async function saveTranscriber() {
     setError('')
+    const payload = buildOnboardingTranscriberPayload(transcriberType)
+    if (!payload) {
+      setError(t('onboarding.error.unknown'))
+      return
+    }
     setSavingTranscriber(true)
     try {
-      const needsSize = transcriberType === 'fast-whisper' || transcriberType === 'mlx-whisper'
-      await updateTranscriberConfig({
-        transcriber_type: transcriberType,
-        ...(needsSize ? { whisper_model_size: 'tiny' } : {}),
-      })
+      await updateTranscriberConfig(payload)
       next()
     } catch (saveError) {
       setError(t('onboarding.error.save', { detail: errorText(saveError) || t('onboarding.error.unknown') }))
@@ -313,7 +314,10 @@ export function OnboardingPage() {
                         name="onboarding-transcriber"
                         value={option.value}
                         checked={active}
-                        onChange={event => setTranscriberType(event.target.value)}
+                        onChange={event => {
+                          const value = event.currentTarget.value
+                          if (value === 'fast-whisper' || value === 'openai-asr') setTranscriberType(value)
+                        }}
                         className="mt-1 accent-[var(--color-ember)]"
                       />
                       <span className="flex flex-col gap-0.5">
