@@ -1,24 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isTaskTerminal, normalizeTaskStatus, shouldPollTaskStatus, toDetailPayload } from '../../src/utils/taskStatus'
 
-describe('terminal task status polling', () => {
-  it.each(['SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED'])('recognizes %s as terminal', status => {
-    expect(isTaskTerminal(status)).toBe(true)
-  })
-
-  it('keeps successful tasks pollable only while markdown needs rehydration', () => {
-    expect(shouldPollTaskStatus('SUCCESS', false)).toBe(true)
-    expect(shouldPollTaskStatus('SUCCESS', true)).toBe(false)
-  })
-
-  it('stops cancelled and failed tasks while retaining active polling', () => {
-    expect(shouldPollTaskStatus('CANCELLED', false)).toBe(false)
-    expect(shouldPollTaskStatus('CANCELED', false)).toBe(false)
-    expect(shouldPollTaskStatus('FAILED', false)).toBe(false)
-    expect(shouldPollTaskStatus('PENDING', false)).toBe(true)
-  })
-})
-
 /**
  * spec 005 ticket 12 第 1 条：轻量状态适配。
  *
@@ -26,6 +8,24 @@ describe('terminal task status polling', () => {
  * read model 用驼峰），前端必须两套都吃 —— 认错一套的表现是整片字段变 null，
  * 界面上就是"任务在跑但阶段、进度、详情全空"。
  */
+describe('task terminal and polling status', () => {
+  it.each(['SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED'])('recognizes %s as terminal', status => {
+    expect(isTaskTerminal(status)).toBe(true)
+  })
+
+  it('keeps successful tasks pollable only when markdown is missing', () => {
+    expect(shouldPollTaskStatus('SUCCESS', false)).toBe(true)
+    expect(shouldPollTaskStatus('SUCCESS', true)).toBe(false)
+  })
+
+  it('does not poll cancelled tasks and continues polling active tasks', () => {
+    expect(shouldPollTaskStatus('CANCELLED', false)).toBe(false)
+    expect(shouldPollTaskStatus('CANCELED', false)).toBe(false)
+    expect(shouldPollTaskStatus('PENDING', false)).toBe(true)
+    expect(shouldPollTaskStatus('FAILED', false)).toBe(false)
+  })
+})
+
 describe('normalizeTaskStatus', () => {
   it('reads the snake_case shape written by /task_status/batch', () => {
     const result = normalizeTaskStatus({
