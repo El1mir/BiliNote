@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import toast from 'react-hot-toast'
 import { CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
 import { useTaskStore, type Task } from '@/store/taskStore'
 import { useI18n } from '@/ember/i18n/context'
@@ -11,7 +12,9 @@ import { cn } from '@/ember/lib/cn'
 import { taskTitle } from '@/ember/features/workspace/taskState'
 import { TaskCard } from '@/ember/features/workspace/TaskCard'
 import { Dialog } from '@/ember/ui/Dialog'
+import { retryFailedTasks } from '@/services/note'
 import { UNGROUPED_ID } from '@/services/noteGroup'
+import { failedTasksInScope, retryFailedTasksInScope } from '@/ember/features/workspace/taskRetry'
 
 type Filter = 'all' | 'ready' | 'running' | 'failed'
 
@@ -59,6 +62,7 @@ export function TaskList({
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [moving, setMoving] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -104,6 +108,30 @@ export function TaskList({
     exitSelection()
   }
 
+  const retryFailures = async () => {
+    if (retrying) return
+    setRetrying(true)
+    try {
+      await retryFailedTasksInScope(
+        tasks,
+        activeGroupId,
+        retryFailedTasks,
+        () => useTaskStore.getState().loadTasks(),
+        feedback => {
+          if (feedback.kind === 'empty') {
+            toast(t('history.retryFailed.empty'))
+          } else if (feedback.kind === 'failure') {
+            toast.error(t('history.retryFailed.error'))
+          } else {
+            toast.success(t('history.retryFailed.submitted', { count: feedback.result.requeued.length }))
+          }
+        }
+      )
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   const filters: { id: Filter; label: string }[] = [
     { id: 'all', label: t('history.filter.all') },
     { id: 'running', label: t('history.filter.running') },
@@ -116,6 +144,17 @@ export function TaskList({
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-display text-subhead">{t('history.title')}</h2>
         <div className="flex items-center gap-1">
+          {filter === 'failed' ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={retrying || failedTasksInScope(tasks, activeGroupId).length === 0}
+              loading={retrying}
+              onClick={() => void retryFailures()}
+            >
+              {t('history.retryFailed.action')}
+            </Button>
+          ) : null}
           {selecting ? (
             <>
               <Button size="sm" variant="ghost" onClick={exitSelection}>
