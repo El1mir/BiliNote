@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeTaskStatus, toDetailPayload } from '../../src/utils/taskStatus'
+import { isTaskTerminal, normalizeTaskStatus, shouldPollTaskStatus, toDetailPayload } from '../../src/utils/taskStatus'
+
+describe('terminal task status polling', () => {
+  it.each(['SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED'])('recognizes %s as terminal', status => {
+    expect(isTaskTerminal(status)).toBe(true)
+  })
+
+  it('keeps successful tasks pollable only while markdown needs rehydration', () => {
+    expect(shouldPollTaskStatus('SUCCESS', false)).toBe(true)
+    expect(shouldPollTaskStatus('SUCCESS', true)).toBe(false)
+  })
+
+  it('stops cancelled and failed tasks while retaining active polling', () => {
+    expect(shouldPollTaskStatus('CANCELLED', false)).toBe(false)
+    expect(shouldPollTaskStatus('CANCELED', false)).toBe(false)
+    expect(shouldPollTaskStatus('FAILED', false)).toBe(false)
+    expect(shouldPollTaskStatus('PENDING', false)).toBe(true)
+  })
+})
 
 /**
  * spec 005 ticket 12 第 1 条：轻量状态适配。

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { translate } from '@/ember/i18n/locale'
 import { useTaskStore, readLatestMarkdown, type Task } from '@/store/taskStore'
 import { getTaskReadModelSnapshot, subscribeTaskReadModel, type TaskStatusLite, type TaskReadModelSnapshot } from '@/services/note.ts'
-import { normalizeTaskStatus } from '@/utils/taskStatus'
+import { isTaskTerminal, normalizeTaskStatus, shouldPollTaskStatus } from '@/utils/taskStatus'
 import toast from 'react-hot-toast'
 
 /**
@@ -51,7 +51,7 @@ export const useTaskPolling = (interval = 3000) => {
    * request workers. The id set only changes when a task actually starts or finishes.
    */
   const pendingKey = tasks
-    .filter(task => task.status !== 'SUCCESS' && task.status !== 'FAILED')
+    .filter(task => !isTaskTerminal(task.status))
     .map(task => task.id)
     .sort()
     .join(',')
@@ -96,11 +96,8 @@ export const useTaskPolling = (interval = 3000) => {
 
   useEffect(() => {
     const timer = setInterval(async () => {
-      const pendingTasks = tasksRef.current.filter(
-        task =>
-          (task.status != 'SUCCESS' && task.status != 'FAILED') ||
-          // 兼容旧 bug：已经 SUCCESS 但没有 markdown 内容，补拉一次结果。
-          (task.status === 'SUCCESS' && !hasMarkdownContent(task))
+      const pendingTasks = tasksRef.current.filter(task =>
+        shouldPollTaskStatus(task.status, hasMarkdownContent(task)),
       )
 
       // 无活跃任务或上一轮尚未完成时跳过轮询，避免慢请求叠加。

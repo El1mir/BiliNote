@@ -7,6 +7,14 @@
  */
 export const FINISHED_TASK_STATUSES = ['SUCCESS', 'FAILED'] as const
 
+/** Terminal statuses no longer need SSE subscriptions or status polling. */
+export const isTaskTerminal = (status: string | null | undefined): boolean =>
+  status != null && ['SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED'].includes(status)
+
+/** Keep successful tasks eligible for one-off rehydration when their note is missing. */
+export const shouldPollTaskStatus = (status: string, hasMarkdown: boolean): boolean =>
+  !isTaskTerminal(status) || (status === 'SUCCESS' && !hasMarkdown)
+
 /** 已知的「还在跑」状态（与后端 TaskStatus 一致，另加前端的 RUNNING）。 */
 const IN_FLIGHT_STATUSES = [
   'PENDING',
