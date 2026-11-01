@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { FileText, Settings } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useTaskStore } from '@/store/taskStore'
+import { retryFailedTasks } from '@/services/note'
+import { retryResultKind, retrySelectedFailedTasks } from '@/ember/features/workspace/retryFailed'
 import { useTaskPolling } from '@/hooks/useTaskPolling'
 import { useI18n } from '@/ember/i18n/context'
 import { AppShell } from '@/ember/shell/AppShell'
@@ -41,6 +44,45 @@ export function WorkspacePage() {
 
   const currentTask = tasks.find(task => task.id === currentTaskId)
 
+  const retryFailedInScope = async (
+    selectedIds: string[],
+    scope: 'all' | 'group',
+    groupId: string | null,
+  ) => {
+    try {
+      const result = await retrySelectedFailedTasks(
+        tasks,
+        selectedIds,
+        scope,
+        groupId,
+        retryFailedTasks,
+        loadTasks,
+      )
+      if (!result) return
+      const skipped = result.skipped.length + result.missing.length
+      const scopeLabel =
+        scope === 'all'
+          ? t('history.retryScopeAll')
+          : groupId
+            ? noteGroups.groups.find(group => group.id === groupId)?.name ?? t('history.retryScopeGroup')
+            : t('history.retryScopeUngrouped')
+      const kind = retryResultKind(result)
+      if (kind === 'none') {
+        toast(t('history.retryNone', { scope: scopeLabel, skipped }))
+      } else if (kind === 'partial') {
+        toast.success(t('history.retryPartial', { scope: scopeLabel, requeued: result.requeued.length, skipped }))
+      } else {
+        toast.success(t('history.retryDone', { scope: scopeLabel, requeued: result.requeued.length }))
+      }
+    } catch (error) {
+      toast.error(
+        t('history.retryFailedError', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
+    }
+  }
+
   return (
     <AppShell
       nav={[
@@ -58,6 +100,7 @@ export function WorkspacePage() {
             onDragEnd={() => noteGroups.setDropTargetId(null)}
             groups={noteGroups.groups}
             onMoveTasks={(ids, groupId) => void noteGroups.moveTasks(ids, groupId)}
+            onRetryFailedTasks={retryFailedInScope}
           />
         </div>
       }

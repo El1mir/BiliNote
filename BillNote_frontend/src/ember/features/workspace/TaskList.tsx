@@ -12,6 +12,8 @@ import { taskTitle } from '@/ember/features/workspace/taskState'
 import { TaskCard } from '@/ember/features/workspace/TaskCard'
 import { Dialog } from '@/ember/ui/Dialog'
 import { UNGROUPED_ID } from '@/services/noteGroup'
+import { retryScopeForGroup } from '@/ember/features/workspace/retryFailed'
+import { RetryFailedAction } from '@/ember/features/workspace/RetryFailedAction'
 
 type Filter = 'all' | 'ready' | 'running' | 'failed'
 
@@ -27,6 +29,7 @@ type TaskListProps = {
   /** Real groups, offered as a keyboard/touch alternative to dragging. */
   groups?: { id: string; name: string }[]
   onMoveTasks?: (ids: string[], groupId: string | null) => void
+  onRetryFailedTasks?: (selectedIds: string[], scope: 'all' | 'group', groupId: string | null) => Promise<void>
 }
 
 const isReady = (task: Task) => String(task.status) === 'SUCCESS'
@@ -47,18 +50,25 @@ export function TaskList({
   onDragEnd,
   groups = [],
   onMoveTasks,
+  onRetryFailedTasks,
 }: TaskListProps) {
   const { t } = useI18n()
   const tasks = useTaskStore(state => state.tasks)
   const currentTaskId = useTaskStore(state => state.currentTaskId)
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
   const removeTasks = useTaskStore(state => state.removeTasks)
-
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [moving, setMoving] = useState(false)
+  const selectedFailedCount = selected.filter(id => {
+    const task = tasks.find(item => item.id === id)
+    if (!task || !isFailed(task)) return false
+    if (activeGroupId === null) return true
+    if (activeGroupId === UNGROUPED_ID) return !task.groupId
+    return task.groupId === activeGroupId
+  }).length
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -104,6 +114,13 @@ export function TaskList({
     exitSelection()
   }
 
+  const retryFailedInScope = async () => {
+    if (!onRetryFailedTasks || filter !== 'failed' || selectedFailedCount === 0) return
+    const { scope, groupId } = retryScopeForGroup(activeGroupId)
+    await onRetryFailedTasks(selected, scope, groupId)
+    exitSelection()
+  }
+
   const filters: { id: Filter; label: string }[] = [
     { id: 'all', label: t('history.filter.all') },
     { id: 'running', label: t('history.filter.running') },
@@ -126,6 +143,14 @@ export function TaskList({
                   <FolderInput className="size-3.5" />
                   {t('group.move')}
                 </Button>
+              ) : null}
+              {onRetryFailedTasks ? (
+                <RetryFailedAction
+                  disabled={selectedFailedCount === 0}
+                  failedFilterActive={filter === 'failed'}
+                  scope={activeGroupId ? 'group' : 'all'}
+                  onRetry={() => void retryFailedInScope()}
+                />
               ) : null}
               <Button
                 size="sm"
