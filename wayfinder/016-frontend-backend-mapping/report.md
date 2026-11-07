@@ -1028,6 +1028,8 @@ run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend exist
 
 run_073 started from HEAD d7fbe319 (master base c011bbdf). The corrected TS 5.7.3 import-use scan used tsconfig.app.json (see §3F); the root-project-config attempt returned zero files and is discarded. run_073 did not run tests, typecheck, lint, build or browser actions. Browser evidence is inherited from run_060/067; product source/master DB untouched.
 
+run_075 route-source follow-up: CodeGraph/source review rechecked task-groups SSE (`GET /api/v1/task-groups/events`) and snapshot (`GET /api/v1/task-groups/snapshot`) against `services/note.ts:449,462`, plus task status/list wrappers. `GET /api/media/cache/limit` and `POST /api/media/cache/enforce` remain backend operational APIs with no current Web caller; specs 007/009 mention the backend capability, so this is an uncalled API classification rather than a dead-code finding. `/api/image_proxy` has an extension caller only (`BillNote_extension/src/logic/api.ts:195-204`, out of scope); Web Markdown assets resolve local `/static/screenshots`, so the Web image-proxy relation remains UNVERIFIED without a real external-image reader fixture. No product source or database was changed.
+
 
 Inventory reconciliation: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique export pairs including named re-exports/defaults. §2B caller sets remain file-level inheritance and are not per-symbol invocation proof. Active AST routes=65; raw decorator text hits=66 including commented provider.py:75.
 
