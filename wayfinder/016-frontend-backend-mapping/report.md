@@ -1032,6 +1032,8 @@ run_075 route-source follow-up: CodeGraph/source review rechecked task-groups SS
 
 run_076 wrapper verification: `services/proxy.ts:getProxyConfig/updateProxyConfig`, `services/upload.ts:uploadFile`, and `services/note.ts:getTaskStatusBatch` remain wrapper-only in the main Web source search. No active `BillNote_frontend/src` importer was found for these three routes; task polling uses task-group SSE/snapshot instead. This confirms the existing UNVERIFIED/legacy-wrapper classification and does not establish dead code.
 
+run_077 verification commands (executed in the T-046 worktree): `pnpm exec vitest run` in `BillNote_frontend` exited 0 with 17 files/100 tests passed; `pnpm exec tsc -b` exited 0; `pnpm lint` exited 0; `pnpm build` exited 0 (Vite emitted existing chunk-size and Browserslist freshness warnings). `backend/.venv/Scripts/python.exe -m pytest backend/tests` exited 2 during collection with 91 errors, so no backend test pass count is claimed for this run. These are current run_077 results, separate from inherited run_060 evidence.
+
 
 Inventory reconciliation: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique export pairs including named re-exports/defaults. §2B caller sets remain file-level inheritance and are not per-symbol invocation proof. Active AST routes=65; raw decorator text hits=66 including commented provider.py:75.
 
