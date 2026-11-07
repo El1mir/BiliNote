@@ -12,7 +12,7 @@
 ## 0. 进度
 | 节 | 状态 |
 |---|---|
-| 1 文件清单 / §2A模块 / §2B导出符号 / route计数 | VERIFIED_SOURCE（master src100/100；95 runtime TS/TSX；tracked TS/TSX97含2 d.ts；exports278；UI primitive files18；有效route65/raw text66含注释） |
+| 1 文件清单 / §2A模块 / §2B导出符号 / route计数 | VERIFIED_SOURCE（master src100/100；95 runtime TS/TSX；tracked TS/TSX97含2 d.ts；exports280；UI primitive files18；有效route65/raw text66含注释） |
 | 4 route→service→Web 双向映射 | PARTIAL：活动AST route/handler清单65/65；调用入口类别及完整状态/错误/test闭环仍有缺口。早先52/65 caller不是逐route验收分母。 |
 | 5 spec矩阵 | PARTIAL：20行来源/测试映射补充见§5B，部分连接未核 |
 | 6 门禁 | VERIFIED_RUN（执行的指定suite/gates全部exit0，覆盖不等于spec完成） |
@@ -23,7 +23,7 @@
 | 项 | 数 | 口径 |
 |---|---|---|
 | src tracked files | 100（97 TS/TSX=42 .ts +55 .tsx，其中2 d.ts，95 runtime；另3 CSS） | master snapshot `git ls-files`，既有路径逐行对账100/100 |
-| 导出符号 | 278 | 正则：export 声明 + export {} + export default |
+| 导出符号 | 280 | TypeScript AST：运行时导出、默认导出及命名 re-export 的唯一 (path,symbol) 对 |
 | ember/ui 原语 | 18 文件 | |
 | 前端测试文件 | 17（16 个在 NNN 目录 + tests/onboardingTranscriber.test.ts） | git ls-files |
 | 后端测试 .py | 111（test_*.py 107） | git ls-files；主调度给的 92 口径待对齐 |
@@ -56,7 +56,7 @@
 | ember/features/workspace/taskState.ts | 业务组件 | TaskTone, statusTone, statusKey, isTaskActive, taskProgress, stageKey, detailSummary, taskTitle | ember/features/workspace/TaskCard.tsx<br>ember/features/workspace/TaskList.tsx<br>ember/features/workspace/TaskProgressCard.tsx |
 | ember/features/workspace/useNoteGroups.ts | 业务组件 | GroupFilter, useNoteGroups | ember/features/workspace/GroupPanel.tsx<br>ember/pages/WorkspacePage.tsx |
 | ember/i18n/context.ts | i18n | I18nValue, I18nContext, useI18n | ember/features/reader/NotePanel.tsx<br>ember/features/reader/TranscriptView.tsx<br>ember/features/workspace/BatchImportPanel.tsx<br>ember/features/workspace/GenerationOptions.tsx<br>ember/features/workspace/GroupPanel.tsx<br>ember/features/workspace/IntakeForm.tsx<br>ember/features/workspace/IntakePanel.tsx<br>ember/features/workspace/RetryFailedAction.tsx<br>ember/features/workspace/TaskCard.tsx<br>ember/features/workspace/TaskList.tsx<br>ember/features/workspace/TaskProgressCard.tsx<br>ember/features/workspace/useNoteGroups.ts<br>ember/i18n/index.tsx<br>ember/pages/NotFoundPage.tsx<br>ember/pages/OnboardingPage.tsx<br>ember/pages/WorkspacePage.tsx<br>ember/pages/settings/SettingsPage.tsx<br>ember/pages/settings/sections/AboutSection.tsx<br>ember/pages/settings/sections/DownloadSection.tsx<br>ember/pages/settings/sections/GeneralSection.tsx<br>ember/pages/settings/sections/GlobalModelPicker.tsx<br>ember/pages/settings/sections/MediaSection.tsx<br>ember/pages/settings/sections/ModelSection.tsx<br>ember/pages/settings/sections/MonitorSection.tsx<br>ember/pages/settings/sections/OcrSection.tsx<br>ember/pages/settings/sections/PromptSection.tsx<br>ember/pages/settings/sections/ProviderDialog.tsx<br>ember/pages/settings/sections/ProviderModels.tsx<br>ember/pages/settings/sections/TranscriberSection.tsx<br>ember/shell/LanguageSwitcher.tsx<br>ember/shell/useEmberNav.ts<br>ember/startup/StartupNotice.tsx<br>ember/startup/StartupScreen.tsx<br>ember/ui/Dialog.tsx<br>ember/ui/Drawer.tsx |
-| ember/i18n/index.tsx | i18n | EmberI18nProvider, LOCALES | main.tsx |
+| ember/i18n/index.tsx | i18n | EmberI18nProvider, LOCALES, Locale, MessageKey | main.tsx |
 | ember/i18n/locale.ts | i18n | LOCALE_STORAGE_KEY, readStoredLocale, translate | ember/i18n/index.tsx<br>hooks/useTaskPolling.ts<br>services/note.ts<br>utils/request.ts |
 | ember/i18n/strings.ts | i18n | Locale, LOCALES, MessageKey, Dictionary, dictionaries, format | ember/features/workspace/GenerationOptions.tsx<br>ember/features/workspace/IntakeForm.tsx<br>ember/features/workspace/taskState.ts<br>ember/i18n/context.ts<br>ember/i18n/index.tsx<br>ember/i18n/index.tsx<br>ember/i18n/index.tsx<br>ember/i18n/locale.ts<br>ember/pages/onboardingTranscriber.ts<br>ember/pages/settings/SettingsPage.tsx<br>ember/pages/settings/sections/TranscriberSection.tsx<br>utils/request.ts |
 | ember/lib/assets.ts | 工具 | ASSET_ORIGIN, resolveAssetUrl | ember/features/reader/MarkdownNote.tsx |
@@ -548,16 +548,16 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
-| 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（55 TSX+40 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 278 exports。 | run_063 fresh inventory counted 97 unique rows (55 TSX, 42 TS including 2 declarations) and 278 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
+| 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（55 TSX+40 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 280 exports。 | run_063 fresh inventory counted 97 unique rows (55 TSX, 42 TS including 2 declarations) and 280 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
 | 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
-| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 278 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 278符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
+| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 280 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 280符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4有65 active AST route rows；§4.3/§4.4更新caller分类和证据。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry、delete。 | 65条完整route→service→Web entry/state/error/test闭环仍欠；proxy/upload/image_proxy及batch wrapper按§4.4标为未调用/extension-only/未验证。 |
 | 5. Specs 001–020 矩阵 | PARTIAL | §5B逐项列当前实现候选、backend contract与具名test paths，并标historical/inferred gaps。 | FE 17 files/100 tests、BE 875+1 subtest aggregate目录集合通过；非逐spec测试结果。 | 逐验收点symbol→route/service/contract→test links未全部直接证明；006/013/014/016关联尤其薄弱，013 exact tests absent。 |
 | 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11列路由/动作和历史只读结果。 | run_060真实实测workspace、group CRUD、failed fixture retry-safe-skip、empty reader tabs、general settings save/restore。 | 单/批外部生成、成功reader、model/transcriber/OCR/prompt/media/download/monitor/about主要动作、Onboarding主动作与NotFound未运行，故未满足每用户可达页面主路径要求。 |
 | 7. 运行可用专项测试与静态门禁 | PARTIAL | §6列明本轮精确命令和exit。 | FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0、1 warning。 | 聚合suite不证明每项spec完整，另有无专属目录/未归属测试需单独核对。 |
 | 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8保持发现分级。 | run_060测试用例路径按预期工作，未发现spec违规。 | 无新增可复现spec违例，不创建修复票；静态候选不定为死代码。 |
 | 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源未改；唯一待交付文件为report.md；隔离业务fixtures/状态文件/.env.local均已清理。 | 本轮报告修订在提交前完成；SQLite media_cleanup_runs=4是启动自动审计记录，零资源删除，保留。 | 提交后需再次确认clean和branch commits；PR pr_008不合并。 |
-| 10. 报告、评论和计数一致 | PARTIAL | report有100 tracked src、97 TS/TSX file rows、278 symbol rows、18 primitive files、65 active routes、20 specs及README §6矩阵。 | run_063重新核对计数与门禁；本轮报告修改待提交。 | 全量双向route/spec与逐符号行为/test链仍不完整；pr_008 needs_work且不得合并。 |
+| 10. 报告、评论和计数一致 | PARTIAL | report有100 tracked src、97 TS/TSX file rows、280 symbol rows、18 primitive files、65 active routes、20 specs及README §6矩阵。 | run_063重新核对计数与门禁；本轮报告修改待提交。 | 全量双向route/spec与逐符号行为/test链仍不完整；pr_008 needs_work且不得合并。 |
 
 ## 11. 浏览器用户路径清单（操作与结果状态）
 
@@ -739,6 +739,8 @@ run_060 browser integration used `T-046/backend/bili_note.db` only (backend 8484
 | ember/i18n/context.ts | 壳层/启动/i18n/工具模块 | 跨域国际化 | useI18n | ember/features/reader/NotePanel.tsx<br>ember/features/reader/TranscriptView.tsx<br>ember/features/workspace/BatchImportPanel.tsx<br>ember/features/workspace/GenerationOptions.tsx<br>ember/features/workspace/GroupPanel.tsx<br>ember/features/workspace/IntakeForm.tsx<br>ember/features/workspace/IntakePanel.tsx<br>ember/features/workspace/RetryFailedAction.tsx<br>ember/features/workspace/TaskCard.tsx<br>ember/features/workspace/TaskList.tsx<br>ember/features/workspace/TaskProgressCard.tsx<br>ember/features/workspace/useNoteGroups.ts<br>ember/i18n/index.tsx<br>ember/pages/NotFoundPage.tsx<br>ember/pages/OnboardingPage.tsx<br>ember/pages/WorkspacePage.tsx<br>ember/pages/settings/SettingsPage.tsx<br>ember/pages/settings/sections/AboutSection.tsx<br>ember/pages/settings/sections/DownloadSection.tsx<br>ember/pages/settings/sections/GeneralSection.tsx<br>ember/pages/settings/sections/GlobalModelPicker.tsx<br>ember/pages/settings/sections/MediaSection.tsx<br>ember/pages/settings/sections/ModelSection.tsx<br>ember/pages/settings/sections/MonitorSection.tsx<br>ember/pages/settings/sections/OcrSection.tsx<br>ember/pages/settings/sections/PromptSection.tsx<br>ember/pages/settings/sections/ProviderDialog.tsx<br>ember/pages/settings/sections/ProviderModels.tsx<br>ember/pages/settings/sections/TranscriberSection.tsx<br>ember/shell/LanguageSwitcher.tsx<br>ember/shell/useEmberNav.ts<br>ember/startup/StartupNotice.tsx<br>ember/startup/StartupScreen.tsx<br>ember/ui/Dialog.tsx<br>ember/ui/Drawer.tsx | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
 | ember/i18n/index.tsx | 壳层/启动/i18n/工具模块 | 跨域国际化 | EmberI18nProvider | main.tsx | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
 | ember/i18n/index.tsx | 壳层/启动/i18n/工具模块 | 跨域国际化 | LOCALES | main.tsx | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
+| ember/i18n/index.tsx | 壳层/启动/i18n/工具模块 | 跨域国际化 | Locale | main.tsx type path via EmberI18nProvider | UNVERIFIED：type-only named re-export from strings.ts |
+| ember/i18n/index.tsx | 壳层/启动/i18n/工具模块 | 跨域国际化 | MessageKey | main.tsx type path via EmberI18nProvider | UNVERIFIED：type-only named re-export from strings.ts |
 | ember/i18n/locale.ts | 壳层/启动/i18n/工具模块 | 跨域国际化 | LOCALE_STORAGE_KEY | ember/i18n/index.tsx<br>hooks/useTaskPolling.ts<br>services/note.ts<br>utils/request.ts | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
 | ember/i18n/locale.ts | 壳层/启动/i18n/工具模块 | 跨域国际化 | readStoredLocale | ember/i18n/index.tsx<br>hooks/useTaskPolling.ts<br>services/note.ts<br>utils/request.ts | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
 | ember/i18n/locale.ts | 壳层/启动/i18n/工具模块 | 跨域国际化 | translate | ember/i18n/index.tsx<br>hooks/useTaskPolling.ts<br>services/note.ts<br>utils/request.ts | UNVERIFIED：见§2/§9及§5的逐链/测试缺口 |
@@ -1006,7 +1008,7 @@ run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend exist
 
 run_066 began from HEAD 726ef9cceed2aa04fe600fd04432c094b3ecbd20; master snapshot c011bbdf80f604fb1adc0a5030575c237c6d3568. Only report.md had an uncommitted diff at the last check, and git diff --check passed. This run did not modify product source and did not execute tests, typecheck, lint, build or browser flows. Latest run evidence remains from run_060 and is recorded separately above.
 
-Inventory reconciliation against committed report tables: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 278 named export rows. Caller sets in §2B are inherited at file level and are not per-symbol invocation proof. Active AST route declarations are 65; raw text decorator hits are 66 because provider.py:75 is commented.
+Inventory reconciliation against committed report tables: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique exported symbols including named re-exports and defaults. Caller sets in §2B are inherited at file level and are not per-symbol invocation proof. Active AST route declarations are 65; raw text decorator hits are 66 because provider.py:75 is commented.
 
 run_060 gates, not rerun in run_066: frontend spec-directory Vitest 17 files/100 tests exit 0; pnpm exec tsc -b exit 0; pnpm lint exit 0; pnpm build exit 0 (3158 modules, chunk/tooling warnings). Backend available spec-directory pytest exit 0 (875 passed + 1 subtest, one pkg_resources warning). run_060 isolated browser paths include group CRUD, reversible General setting save, invalid-platform FAILED retry skip, and empty reader tabs; fixture rows/files were cleaned and isolated DB business tables returned to zero. The master DB was not accessed.
 
