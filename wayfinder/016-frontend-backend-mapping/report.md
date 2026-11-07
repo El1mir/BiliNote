@@ -2,7 +2,7 @@
 
 - 执行：工人2 ag_020 · T-046 · flow/T-046 · HEAD `c011bbdf`（= master），开审时 git status 0 行
 - CodeGraph（本轮 codegraph_status）：489 files / 7,174 nodes / 16,044 edges，pending=0，index complete。
-- 计划：主仓库未跟踪的 wayfinder/016-frontend-backend-mapping/README.md；工作树报告遵照它的范围。
+- 计划/验收来源：任务卡提供的 `wayfinder/016-frontend-backend-mapping/README.md`；该 README 在本 worktree 与主仓库当前快照均不存在（已用路径存在性检查确认），因此本报告按任务卡中复述的十项验收标题执行，并将其缺失列为 provenance 限制。
 - 图例：VERIFIED_SOURCE=静态源码证据；VERIFIED_RUN=本轮命令/浏览器；PARTIAL；PENDING；NOT RUN。不得混用。
 - spec逐项矩阵列出代表性源码契约与具名测试文件；run_060聚合目录集合和逐验收点映射分列，聚合suite pass不推出逐spec验收通过。详见§5B和§6。
 - 早先完整前端门禁（此前运行）：Vitest17/100、tsc/lint/build exit0。run_060执行前端spec目录命令：`pnpm exec vitest run tests/001-bilibili-batch-import tests/004-note-math-rendering tests/005-modern-dark-ui tests/010-group-and-note-deletion tests/015-note-preset-scene-and-detail tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options tests/onboardingTranscriber.test.ts` exit0（17 files/100 tests）；另一次定向子集exit0（8 files/42）。run_060 `pnpm exec tsc -b` exit0；`pnpm lint`（eslint .）exit0；`pnpm build` exit0（3158 modules；large chunk、Browserslist、Node hook warnings）。
@@ -13,7 +13,7 @@
 | 节 | 状态 |
 |---|---|
 | 1 文件清单 / §2A模块 / §2B导出符号 / route计数 | VERIFIED_SOURCE（master src100/100；95 runtime TS/TSX；tracked TS/TSX97含2 d.ts；exports278；UI primitive files18；有效route65/raw text66含注释） |
-| 4 route→service→Web 双向映射 | PARTIAL：活动AST routes 65/65；纯文本decorator hit 66（provider.py:75注释）。早先52/65 caller不是逐route验收分母；完整65条service→Web入口/状态/错误链仍未完成。 |
+| 4 route→service→Web 双向映射 | PARTIAL：活动AST route/handler清单65/65；调用入口类别及完整状态/错误/test闭环仍有缺口。早先52/65 caller不是逐route验收分母。 |
 | 5 spec矩阵 | PARTIAL：20行来源/测试映射补充见§5B，部分连接未核 |
 | 6 门禁 | VERIFIED_RUN（执行的指定suite/gates全部exit0，覆盖不等于spec完成） |
 | 7 浏览器路径 | PARTIAL：run_060隔离3017→8484覆盖workspace/group CRUD/general setting reversible save/FAILED retry safe-skip/empty reader tabs；真实intake生成、成功reader、其它settings写入仍NOT RUN |
@@ -22,7 +22,7 @@
 ## 1. 计数（VERIFIED）
 | 项 | 数 | 口径 |
 |---|---|---|
-| src tracked files | 100（97 TS/TSX=41 .ts +56 .tsx，其中2 d.ts，95 runtime；另3 CSS） | master snapshot `git ls-files`，既有路径逐行对账100/100 |
+| src tracked files | 100（97 TS/TSX=42 .ts +55 .tsx，其中2 d.ts，95 runtime；另3 CSS） | master snapshot `git ls-files`，既有路径逐行对账100/100 |
 | 导出符号 | 278 | 正则：export 声明 + export {} + export default |
 | ember/ui 原语 | 18 文件 | |
 | 前端测试文件 | 17（16 个在 NNN 目录 + tests/onboardingTranscriber.test.ts） | git ls-files |
@@ -138,6 +138,8 @@
 路由：/onboarding（lazy）、/（WorkspacePage + OnboardingGuard）、/settings/{general,model,transcriber,ocr,prompt,media,download,monitor,about}（lazy）、* NotFoundPage。
 
 ## 3. UI 原语调用者（VERIFIED，静态）
+
+说明：§2A/§2B与本节调用者单元格按源码引用/符号出现记录；同一文件因引用多个导出符号而重复出现时，重复项表示引用出现，不表示额外调用文件。验收中的“调用者”按去重文件集合理解，具体用途另见§3A/§3C。
 | 文件 | 导出 | 调用文件数 | 调用者（JSX 使用次数） |
 |---|---|---|---|
 | ember/ui/Badge.tsx | Badge | 11 | ember/features/workspace/TaskCard.tsx (Badge×1)<br>ember/features/workspace/TaskProgressCard.tsx (Badge×1)<br>ember/pages/settings/sections/AboutSection.tsx (Badge×2)<br>ember/pages/settings/sections/DownloadSection.tsx (Badge×1)<br>ember/pages/settings/sections/GlobalModelPicker.tsx (Badge×1)<br>ember/pages/settings/sections/ModelSection.tsx (Badge×1)<br>ember/pages/settings/sections/MonitorSection.tsx (Badge×1)<br>ember/pages/settings/sections/OcrSection.tsx (Badge×3)<br>ember/pages/settings/sections/PromptSection.tsx (Badge×4)<br>ember/pages/settings/sections/ProviderModels.tsx (Badge×1)<br>ember/pages/settings/sections/TranscriberSection.tsx (Badge×2) |
@@ -161,7 +163,7 @@
 
 ## 4. 后端 route（65条method/path源码枚举完整；调用链映射 PARTIAL）
 
-覆盖口径：活动route 65/65 method/path/handler已与AST对账；纯文本装饰器搜索66命中，其中provider.py:75为注释。早先52/65 caller统计非逐route/符号验收分母，不据此宣称其余route完整映射。
+覆盖口径：活动route 65/65 method/path/handler已与AST对账；纯文本装饰器搜索66命中，其中provider.py:75为注释。route→service→caller 分类（按§4表“Web调用者”列复核）：58条有 main-Web 静态调用链/包装引用记录，7条无 active main-Web importer（其中4条仅有未引用 service wrapper：proxy GET/POST、upload、task_status/batch；2条 media cache 运维route；1条 image_proxy 有 extension resolver 而无 main-Web caller）。这只统计caller类别，不等于逐条 state/error/test 端到端闭环；请求/响应和 handler 摘要见65行表。早先52/65 caller统计非逐route/符号验收分母。13条复核项只是历史正则漏报/疑点子集，不是13/65完成度，也不是13条未解决route。
 | Method | Path | 位置 | 参数 | 响应 | 显式错误 | service | Web 调用者 |
 |---|---|---|---|---|---|---|---|
 | GET | /api/get_downloader_cookie/{platform} | config.py:31 get_cookie | platform:str | R.success | — | 内联/模块级实例 | services/downloader.ts:4 getDownloaderCookie |
@@ -492,11 +494,13 @@ These corrections are source-only and do not complete the full 65-route service-
 
 ## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
 
+验收汇总：README §6 当前为 **0/10 PASS、10/10 PARTIAL、无已关闭验收项**；测试门禁通过不改变该汇总。
+
 证据口径：静态源码/清单证据与真实run_060命令或浏览器证据分列。README §6实际10项；PASS仅适用于其独立标准已全部证实。run_060有隔离库seed/清理与浏览器CRUD/retry-safe-skip证据，但不等于整卡通过。
 
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
-| 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（56 TSX+39 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 278 exports。 | run_060 counted 97 unique rows (56 TSX, 41 TS including 2 declarations) and 278 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
+| 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（55 TSX+40 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 278 exports。 | run_063 fresh inventory counted 97 unique rows (55 TSX, 42 TS including 2 declarations) and 278 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
 | 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
 | 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 278 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 278符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4列65条活动route及method/path/contract摘要，§4.3标明13个历史疑点。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry和delete。 | 65条完整route→service→UI/state/error链仍欠；proxy/upload/image_proxy无入口/动态路径待核，task_status/batch当前调用条件待核。 |
@@ -504,8 +508,8 @@ These corrections are source-only and do not complete the full 65-route service-
 | 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11列路由/动作和历史只读结果。 | run_060真实实测workspace、group CRUD、failed fixture retry-safe-skip、empty reader tabs、general settings save/restore。 | 单/批外部生成、成功reader、model/transcriber/OCR/prompt/media/download/monitor/about主要动作、Onboarding主动作与NotFound未运行，故未满足每用户可达页面主路径要求。 |
 | 7. 运行可用专项测试与静态门禁 | PARTIAL | §6列明本轮精确命令和exit。 | FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0、1 warning。 | 聚合suite不证明每项spec完整，另有无专属目录/未归属测试需单独核对。 |
 | 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8保持发现分级。 | run_060测试用例路径按预期工作，未发现spec违规。 | 无新增可复现spec违例，不创建修复票；静态候选不定为死代码。 |
-| 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源未改；唯一待交付文件为report.md；隔离业务fixtures/状态文件/.env.local均已清理。 | commit前worktree modified，最终diff-check和commit待做。SQLite media_cleanup_runs=4是启动自动审计记录，零资源删除，保留。 | commit后确认clean和branch commits；PR pr_008不合并。 |
-| 10. 报告、评论和计数一致 | PARTIAL | report有100 tracked src、97 TS/TSX file rows、278 symbol rows、18 primitive files、65 active routes、20 specs及README §6矩阵。 | run_060证据评论待追加；当前report-only变更尚未commit。 | 全量双向route/spec与逐符号行为/test链仍不完整；pr_008 needs_work且不得合并。 |
+| 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源未改；唯一待交付文件为report.md；隔离业务fixtures/状态文件/.env.local均已清理。 | 本轮报告修订在提交前完成；SQLite media_cleanup_runs=4是启动自动审计记录，零资源删除，保留。 | 提交后需再次确认clean和branch commits；PR pr_008不合并。 |
+| 10. 报告、评论和计数一致 | PARTIAL | report有100 tracked src、97 TS/TSX file rows、278 symbol rows、18 primitive files、65 active routes、20 specs及README §6矩阵。 | run_063重新核对计数与门禁；本轮报告修改待提交。 | 全量双向route/spec与逐符号行为/test链仍不完整；pr_008 needs_work且不得合并。 |
 
 ## 11. 浏览器用户路径清单（操作与结果状态）
 
@@ -952,8 +956,8 @@ run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend exist
 
 ## 12. run_063 current worktree verification
 
-The current T-046 worktree is based on master `c011bbdf80f604fb1adc0a5030575c237c6d3568`. This round made no product-source changes. `git ls-files BillNote_frontend/src` returned 100 paths; TS/TSX returned 95 paths (55 `.tsx`, 40 `.ts` by shell glob plus declaration files counted by the report inventory), and CSS returned 2 paths. The raw decorator search returned 66 textual hits; the report route table uses 65 active AST routes because `backend/app/routers/provider.py:75` is commented.
+The current T-046 worktree is based on master `c011bbdf80f604fb1adc0a5030575c237c6d3568`. This round made no product-source changes. `git ls-files BillNote_frontend/src` returned 100 paths: 42 `.ts` (including 2 declaration files), 55 `.tsx`, 97 TS/TSX total, 95 runtime TS/TSX after excluding declarations, and 3 CSS files (`index.css`, `ember/tokens.css`, `ember/motion.css`). The raw decorator search returned 66 textual hits; the report route table uses 65 active AST routes because `backend/app/routers/provider.py:75` is commented.
 
-Fresh commands in this round, all from the T-046 worktree: `pnpm exec vitest run tests/001-bilibili-batch-import tests/004-note-math-rendering tests/005-modern-dark-ui tests/010-group-and-note-deletion tests/015-note-preset-scene-and-detail tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options tests/onboardingTranscriber.test.ts` exit 0 (17 files/100 tests); `pnpm exec tsc -b` exit 0; `pnpm lint` exit 0; `pnpm build` exit 0 (3158 modules, chunk-size/Browserslist warnings); `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/001-bilibili-batch-import tests/002-video-understanding-sampling tests/003-openai-compatible-asr tests/005-modern-dark-ui-and-task-progress tests/006-note-pipeline-performance tests/007-note-archive-and-media-cache tests/008-ocr-assist-and-legacy-cleanup tests/009-batch-grouping-and-long-run-robustness tests/010-group-and-note-deletion tests/011-failed-task-retry tests/012-rate-limit-backoff tests/013-global-active-model tests/014-backend-cache-optimization tests/015-note-preset-scene-and-detail tests/017-web-rebuild-and-architecture tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options` exit 0 (875 passed, 1 subtest passed, 1 pkg_resources warning). `git diff --check` exit 0 before commit.
+Fresh commands in this round, all from the T-046 worktree: `pnpm exec vitest run tests/001-bilibili-batch-import tests/004-note-math-rendering tests/005-modern-dark-ui tests/010-group-and-note-deletion tests/015-note-preset-scene-and-detail tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options tests/onboardingTranscriber.test.ts` exit 0 (17 files/100 tests); `pnpm exec tsc -b` exit 0; `pnpm lint` exit 0; `pnpm build` exit 0 (3158 modules; chunk-size, Browserslist, and Node deprecation warnings); `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/001-bilibili-batch-import tests/002-video-understanding-sampling tests/003-openai-compatible-asr tests/005-modern-dark-ui-and-task-progress tests/006-note-pipeline-performance tests/007-note-archive-and-media-cache tests/008-ocr-assist-and-legacy-cleanup tests/009-batch-grouping-and-long-run-robustness tests/010-group-and-note-deletion tests/011-failed-task-retry tests/012-rate-limit-backoff tests/013-global-active-model tests/014-backend-cache-optimization tests/015-note-preset-scene-and-detail tests/017-web-rebuild-and-architecture tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options` exit 0 (875 passed, 1 warning, 1 subtest passed in 63.54s). `git diff --check` exit 0 before commit. Browser: no additional path was run in this round; the previous isolated run_060 evidence remains explicitly limited to the paths documented in §11.
 
 The ten README acceptance items remain PARTIAL. This round confirms executable gates and source-count consistency only; it does not close the report’s documented gaps in per-symbol behavior/state/test rows, all 65 route-to-Web chains, per-acceptance-point spec links, or every user-reachable browser write/read path. No reproducible existing-spec violation was established and no repair task was created.
