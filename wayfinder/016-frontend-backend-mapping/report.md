@@ -374,4 +374,4 @@
 | Onboarding | /onboarding | 旧报告记录 backend ready；dispatcher 评论 c_mw6b5js11okyoi 记载页面及连接状态可见 | 检测/继续配置/写入动作 NOT RUN。 |
 | NotFound | 任意未知路径 → fallback | 静态路由 EmberApp.tsx 与 NotFoundPage | 本轮无真实浏览器访问，NOT RUN。 |
 
-隔离写入授权只限定 T-046 worktree 的临时 SQLite/隔离服务。尽管授权有效，本轮未做写路径验证：没有验证 seed/cleanup 对每类记录和文件的完整可逆性，也没有实际记录写前写后计数，因此不得报告已测试或声称完成清理。报告现存 backend/bili_note.db 的存在/大小本身不等于验证其数据状态；本轮不读取或修改数据库。
+隔离写入授权只限定 T-046 worktree 的临时 SQLite/隔离服务。服务启动已确认 DATABASE_URL 指向 `C:/Users/Administrator/Desktop/prjs/.flow-worktrees/BiliNote/T-046/backend/bili_note.db`，`BACKEND_HOST=127.0.0.1`、`BACKEND_PORT=8484`；数据库为 worktree 独立文件。启动 lifespan 的内置 media cleanup loop 自动新增 `media_cleanup_runs.id=3`（类型 screenshot,video,audio；expired_only=1；requested/deleted/missing/failed/bytes_freed 全 0），基线该表原有 2 行；`video_tasks/note_groups/providers/models/media_resources` 前后均为 0。该自动产生的审计行予以保留，不删改数据库记录。前端在 3016 启动，但 Vite 客户端未读取环境变量注入，浏览器 `/sys_check` 请求落到 Vite 本地并 404，最终显示后端启动失败；虽由代理直请求 `http://127.0.0.1:3016/api/sys_check` 和 `/api/note_group` 均返回隔离后端 200，页面应用未进入工作区。已停止 8484 后端及 3016 Vite。没有执行 seed、业务写入或任何浏览器 mutation。故本轮未完成授权的分组 CRUD、设置保存、batch、retry、reader 路径；这些全部保持 NOT RUN。
