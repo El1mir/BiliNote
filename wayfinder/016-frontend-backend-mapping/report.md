@@ -540,6 +540,26 @@ These additions are source-only. “Purpose” describes the visible callsite ro
 Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol-call proof. Direct UI tests were not found for most of these symbols in the caller-hop searches; section 11 records the limited browser-run evidence.
 
 
+
+## 3F. run_073 compiler-resolved export reference classification (lower-bound, not a caller verdict)
+
+The first scan used the root project-reference tsconfig (empty files list) and returned 0 files; that failed scan is discarded. A corrected temporary read-only TypeScript 5.7.3 scan used BillNote_frontend/tsconfig.app.json and resolved 95 runtime TS/TSX files. It enumerated 280 exported path-symbol pairs. The scan checks aliased symbols against import bindings and identifier/JSX references; this is an index aid, not a complete dynamic call graph.
+
+| Class | Count | Meaning / limits |
+|---|---:|---|
+| External value/JSX import-use evidence | 159 | Compiler-resolved imports with a referenced local binding or JSX tag; candidate caller edges require per-edge review. |
+| Type-only external imports | 30 | Types are consumed in signatures/contracts; these do not represent runtime UI entry. |
+| Same-file-only use / no external value import in scan | 91 | Includes local helpers/types plus re-export/route-entry candidates; do not call these dead code. Requires same-file/dynamic/lazy/route/re-export classification. |
+| Total exported path-symbol pairs | 280 | Matches report inventory; includes named re-exports and defaults. |
+
+The scan does not claim 159 is the final caller graph: namespace/property references, reflective/config-driven dispatch, JSX/router lazy entries, re-export alias identity and type/value merges need manual/source-specific reconciliation. Symbols with no direct import edge need classification as entry module, route lazy import, re-export, same-file helper, type-only contract, metadata value or unresolved candidate before any dead-code conclusion. Temporary scanner files were removed after analysis. The root-tsconfig false-zero attempt is not counted as a test or audit result.
+
+
+## 3F. run_073 TypeScript compiler import-use classification (lower-bound)
+
+The first attempt used the root project-reference tsconfig, whose files list is empty; it returned zero source files and is discarded. The corrected scan used BillNote_frontend/tsconfig.app.json with TypeScript 5.7.3; it resolved 95 runtime source files and enumerated 280 export pairs. Its identifier/import analysis classified 159 pairs with an external value/JSX reference, 30 with type-only external imports, and 91 as same-file-use/no external value import under that scan. This is a lower-bound callsite index, not the complete runtime caller graph: alias/re-export identity, JSX/router lazy entries, namespace/property access, entry modules and dynamic/config dispatch need separate resolution. Do not classify the 91 as dead code. Temporary scanner files were removed.
+
+
 ## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
 
 验收汇总：截至run_067，README §6十项均为PARTIAL，未有整项PASS。局部主路径/门禁有run evidence，但每项完整标准仍有未闭合子项。
@@ -985,7 +1005,7 @@ This matrix links current source anchors and named tracked tests. Historical pre
 | 002 sampling | IntakeForm, GenerationOptions, BatchImportPanel, generation fields | generate_note(s), VideoReader/frame_sampler/NoteGenerator | BE 002 test_frame_sampler, test_video_reader_sampling, test_frame_plan_fallback, test_hybrid_sampling, test_partial_grid, test_smart_real_video | suite pass; no FE 002 suite; live generation NOT RUN |
 | 003 ASR | services/transcriber, TranscriberSection | config transcriber_config/openai_asr, manager/transcriber/provider factory | BE 003 test_config_manager, test_openai_asr_transcriber, test_provider_dispatch, test_routes, test_speech_slicing, test_split_audio, test_transcript_helper | suite pass; external endpoint test NOT RUN |
 | 004 math | utils/markdown, MarkdownNote/NotePanel | no backend route | FE 004 math.test.ts; FE 020 markdown.test.ts regression | suite pass |
-| 005 progress | useTaskPolling, taskStore, TaskProgressCard/TaskCard/TaskList/taskState, status utils | task_list/task_status/task-groups snapshot/events; TaskReadModel | BE 005 test_task_stage_model, test_terminal_stage_attribution, test_real_task_id_threading, test_transcriber_progress_wiring, test_video_progress_callback; FE 005 progress, retryFailed, taskCard, taskProgressCard, taskState, taskStatus, taskStore tests | suites pass; isolated retry-safe-skip run; success reader NOT RUN |
+| 005 progress | useTaskPolling, taskStore, TaskProgressCard/TaskCard/TaskList/taskState, status utils | task_list/task_status/task-groups snapshot/events; TaskReadModel | BE 005 test_task_stage_model, test_terminal_stage_attribution, test_real_task_id_threading, test_transcriber_progress_wiring, test_video_progress_callback; FE 005 progress, retryFailed, taskCard, taskProgressCard, taskState, taskStatus, taskStore tests | run_060 suites pass; retry-safe-skip run; run_067 synthetic SUCCESS reader run; real generated task NOT RUN |
 | 006 performance | NoteGenerator/transcribers/VideoReader; exact Web link weak | internal pipeline | BE 006 test_asr_chunk_concurrency, test_downloader_skip_download, test_local_audio_from_video, test_screenshot_concurrency, test_video_reader_parallel | suite pass; live benchmark NOT RUN |
 | 007 archive/cache | archive.ts; media/note/noteGroup services; MediaSection | media settings/cleanup/archive; cache-limit backend candidate | BE 007 test_note_archive, test_media_resources, test_note_group_api, test_video_reader_cache, test_batch_archive_router, test_batch_archive_skip_missing | suite pass; live archive/cleanup NOT RUN; stress gaps remain |
 | 008 OCR | services/ocr, OcrSection | ocr_config get/update/test; OcrConfigManager/OcrClient | BE 008 test_candidate_frame_snap, test_judge_batch_split, test_ocr_assist, test_ocr_config_and_client, test_ticket02_flow | suite pass; UI save/test NOT RUN |
@@ -1004,9 +1024,9 @@ This matrix links current source anchors and named tracked tests. Historical pre
 
 run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend existing spec-directory suite (001–015 except absent 016, plus 017–020): 875 passed + 1 subtest passed, exit 0, one pkg_resources warning. These aggregate results do not prove each spec requirement complete.
 
-## 12. run_072 current verification status
+## 12. run_073 current verification status
 
-run_072 continued from commit 411ad12 (master base c011bbdf) and changed only report.md. No tests/typecheck/lint/build/browser actions were run in run_072. Browser evidence for Settings routes, NotFound and synthetic SUCCESS reader is from run_067; run_060 gate results are inherited. Product source/master DB untouched.
+run_073 started from HEAD d7fbe319 (master base c011bbdf). The corrected TS 5.7.3 import-use scan used tsconfig.app.json (see §3F); the root-project-config attempt returned zero files and is discarded. run_073 did not run tests, typecheck, lint, build or browser actions. Browser evidence is inherited from run_060/067; product source/master DB untouched.
 
 
 Inventory reconciliation: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique export pairs including named re-exports/defaults. §2B caller sets remain file-level inheritance and are not per-symbol invocation proof. Active AST routes=65; raw decorator text hits=66 including commented provider.py:75.
