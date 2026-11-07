@@ -1,9 +1,13 @@
 # 016 审计报告：Web 前端 ↔ 后端逐符号映射（增量）
 
 - 执行：工人2 ag_020 · T-046 · flow/T-046 · HEAD `c011bbdf`（= master），开审时 git status 0 行
-- CodeGraph：并行代理报告 489 files / 7,174 nodes / 16,041 edges（引用，未复核）
-- 计划：主仓库未跟踪的 wayfinder/016-frontend-backend-mapping/README.md（本分支不提交它）
-- 图例：VERIFIED 本轮实测 · PARTIAL · PENDING · NOT RUN
+- CodeGraph（本轮 codegraph_status）：489 files / 7,174 nodes / 16,044 edges，pending=0，index complete。
+- 计划：主仓库未跟踪的 wayfinder/016-frontend-backend-mapping/README.md；工作树报告遵照它的范围。
+- 图例：VERIFIED_SOURCE=静态源码证据；VERIFIED_RUN=本轮命令/浏览器；PARTIAL；PENDING；NOT RUN。不得混用。
+- 本次校正：spec矩阵逐项测试全部标为「单项套件 NOT RUN」，全量覆盖只能参见§6，不能推出逐spec通过。
+- 本轮前端门禁：BillNote_frontend 下 pnpm exec vitest run exit 0（17 files/100 tests）；pnpm exec tsc -b exit 0；pnpm lint (eslint .) exit 0；pnpm build exit 0（3158 modules，bundle size warnings）。
+- 本轮后端门禁：backend 下 .venv/bin/python -m pytest -q -p no:cacheprovider exit 0（953 passed、15 subtests、1 warning）。初试 .venv/Scripts/python.exe 于 Bash 中 exit 127；改用存在的 POSIX venv 后通过。
+- 本轮 AST 计数（仓库根执行）：解析 backend/app/routers/*.py 装饰器，exit 0；config 18/general 4/media 7/model 5/note 16/note_group 7/ocr 3/provider 5，总计65。
 
 ## 0. 进度
 | 节 | 状态 |
@@ -12,7 +16,7 @@
 | 4 双向映射 | route↔service↔Web service 函数 VERIFIED；组件行为级映射 PENDING |
 | 5 spec 矩阵 | PARTIAL |
 | 6 门禁 | VERIFIED |
-| 7 浏览器路径 | PENDING（T-046 自起服务：前端 http://127.0.0.1:3015，后端 :8483） |
+| 7 浏览器路径 | PARTIAL：workspace/settings/general/onboarding 已实测；所有编辑/生成类真实业务提交未执行 |
 | 8 发现分级 | PARTIAL |
 
 ## 1. 计数（VERIFIED）
@@ -238,40 +242,43 @@
 ## 5. spec 矩阵（PARTIAL）
 | spec | 状态 | 前端测试（数） | 后端测试（数） | 本轮 | 符号链接 |
 |---|---|---|---|---|---|
-| 001-bilibili-batch-import | 未标注 | BillNote_frontend/tests/001-bilibili-batch-import (11) | backend/tests/001-bilibili-batch-import (60) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 002-video-understanding-sampling | 未标注 | 无 | backend/tests/002-video-understanding-sampling (47) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 003-openai-compatible-asr | 未标注 | 无 | backend/tests/003-openai-compatible-asr (46) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 004-note-math-rendering | 未标注 | BillNote_frontend/tests/004-note-math-rendering (7) | 无同号目录 | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 005-modern-dark-ui-and-task-progress | 未标注 | BillNote_frontend/tests/005-modern-dark-ui (46) | backend/tests/005-modern-dark-ui-and-task-progress (48) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 006-note-pipeline-performance | 未标注 | 无 | backend/tests/006-note-pipeline-performance (27) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 007-note-archive-and-media-cache | 未标注 | 无 | backend/tests/007-note-archive-and-media-cache (69) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 008-ocr-assist-and-legacy-cleanup | 未标注 | 无 | backend/tests/008-ocr-assist-and-legacy-cleanup (145) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 009-batch-grouping-and-long-run-robustness | 未标注 | 无 | backend/tests/009-batch-grouping-and-long-run-robustness (97) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 010-group-and-note-deletion | 未标注 | BillNote_frontend/tests/010-group-and-note-deletion (3) | backend/tests/010-group-and-note-deletion (24) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 011-failed-task-retry | 未标注 | 无 | backend/tests/011-failed-task-retry (17) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 012-rate-limit-backoff | implemented | 无 | backend/tests/012-rate-limit-backoff (29) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 013-local-transcriber-hardware-acceleration | implemented | 无 | backend/tests/013-global-active-model (4) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 014-backend-cache-optimization | implemented | 无 | backend/tests/014-backend-cache-optimization (97) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 015-note-preset-scene-and-detail | implemented | BillNote_frontend/tests/015-note-preset-scene-and-detail (6) | backend/tests/015-note-preset-scene-and-detail (54) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 001-bilibili-batch-import | 未标注 | BillNote_frontend/tests/001-bilibili-batch-import (11) | backend/tests/001-bilibili-batch-import (60) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 002-video-understanding-sampling | 未标注 | 无 | backend/tests/002-video-understanding-sampling (47) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 003-openai-compatible-asr | 未标注 | 无 | backend/tests/003-openai-compatible-asr (46) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 004-note-math-rendering | 未标注 | BillNote_frontend/tests/004-note-math-rendering (7) | 无同号目录 | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 005-modern-dark-ui-and-task-progress | 未标注 | BillNote_frontend/tests/005-modern-dark-ui (46) | backend/tests/005-modern-dark-ui-and-task-progress (48) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 006-note-pipeline-performance | 未标注 | 无 | backend/tests/006-note-pipeline-performance (27) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 007-note-archive-and-media-cache | 未标注 | 无 | backend/tests/007-note-archive-and-media-cache (69) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 008-ocr-assist-and-legacy-cleanup | 未标注 | 无 | backend/tests/008-ocr-assist-and-legacy-cleanup (145) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 009-batch-grouping-and-long-run-robustness | 未标注 | 无 | backend/tests/009-batch-grouping-and-long-run-robustness (97) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 010-group-and-note-deletion | 未标注 | BillNote_frontend/tests/010-group-and-note-deletion (3) | backend/tests/010-group-and-note-deletion (24) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 011-failed-task-retry | 未标注 | 无 | backend/tests/011-failed-task-retry (17) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 012-rate-limit-backoff | implemented | 无 | backend/tests/012-rate-limit-backoff (29) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 013-local-transcriber-hardware-acceleration | implemented | 无 | backend/tests/013-global-active-model (4) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 014-backend-cache-optimization | implemented | 无 | backend/tests/014-backend-cache-optimization (97) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 015-note-preset-scene-and-detail | implemented | BillNote_frontend/tests/015-note-preset-scene-and-detail (6) | backend/tests/015-note-preset-scene-and-detail (54) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
 | 016-web-startup-optimization | 未标注 | 无 | 无同号目录 | NOT RUN：无同号测试 | UNVERIFIED_LINK（逐符号链接 pending） |
-| 017-web-rebuild-and-architecture | implemented | 无 | backend/tests/017-web-rebuild-and-architecture (76) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 018-single-batch-and-merged-note | implemented | BillNote_frontend/tests/018-single-batch-and-merged-note (4) | backend/tests/018-single-batch-and-merged-note (25) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 019-global-model-in-provider-section | implemented | BillNote_frontend/tests/019-global-model-in-provider-section (4) | backend/tests/019-global-model-in-provider-section (6) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
-| 020-note-rendering-and-batch-options | implemented | BillNote_frontend/tests/020-note-rendering-and-batch-options (10) | backend/tests/020-note-rendering-and-batch-options (4) | 本轮执行，通过（整套 vitest/pytest exit 0） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 017-web-rebuild-and-architecture | implemented | 无 | backend/tests/017-web-rebuild-and-architecture (76) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 018-single-batch-and-merged-note | implemented | BillNote_frontend/tests/018-single-batch-and-merged-note (4) | backend/tests/018-single-batch-and-merged-note (25) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 019-global-model-in-provider-section | implemented | BillNote_frontend/tests/019-global-model-in-provider-section (4) | backend/tests/019-global-model-in-provider-section (6) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
+| 020-note-rendering-and-batch-options | implemented | BillNote_frontend/tests/020-note-rendering-and-batch-options (10) | backend/tests/020-note-rendering-and-batch-options (4) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
 
 测试数来源：后端用 pytest --collect-only，前端用 vitest json。另有前端 onboardingTranscriber（9）和后端顶层 test_*.py（78）未归属任何 spec。backend/tests/013-global-active-model 与 specs/013-local-transcriber-hardware-acceleration 命名不一致，待核实。
 
-## 6. 门禁（VERIFIED，本轮执行）
-| 命令 | exit | 汇总 |
+## 6. 门禁（VERIFIED_RUN，本轮执行）
+工作目录均为 T-046 专属 worktree。
+| 命令（相对目录） | exit | 汇总 |
 |---|---|---|
-| vitest run（BillNote_frontend） | 0 | 17 个文件 / 100 个测试通过 |
-| node scripts/i18n-contract.cjs | 0 | 507 个 key 对齐 |
-| tsc -b | 0 | — |
-| eslint . | 0 | — |
-| vite build --outDir（worktree 外） | 0 | 有两个 chunk >500kB 警告 |
-| backend: python -m pytest -q -p no:cacheprovider | 0 | 953 passed，15 subtests，1 个 warning |
+| BillNote_frontend: pnpm exec vitest run | 0 | 17 个文件 / 100 个测试通过 |
+| BillNote_frontend: pnpm exec tsc -b | 0 | 类型检查完成，无输出 |
+| BillNote_frontend: pnpm lint（脚本实际 eslint .） | 0 | 无 lint 错误 |
+| BillNote_frontend: pnpm build | 0 | 3158 modules；两个 chunk >500kB 警告 |
+| backend: .venv/bin/python -m pytest -q -p no:cacheprovider | 0 | 953 passed，15 subtests，1 个 pkg_resources warning |
+| backend 首次尝试 .venv/Scripts/python.exe -m pytest --collect-only -q -p no:cacheprovider（Bash） | 127 | 路径不存在；后续改用POSIX虚拟环境并运行全套，见上 |
 
-## 7. 浏览器主路径（PENDING）
+## 7. 浏览器主路径（PARTIAL）
+实际操作：通过 dsh_browser_open 打开 http://127.0.0.1:3015/；页面标题 BiliNote - 强大的AI视频笔记神器，文本含工作区、单集/批量入口、空任务列表、分组空态；确认后端通过前端状态可响应。点击「设置」时当前浏览器状态先因首次启动 guard 重定向至 /onboarding；直接打开该路径看到「首次启动 / 欢迎使用 BiliNote / 后端连通性 / 后端已就绪，可以继续」。该路由页面 DOM 内容可见，但 dsh_browser_snapshot 在部分路由未稳定时曾返回零节点；dsh_browser_execute 确认 onboarding 按钮存在。重新直接打开 /settings/general 后读取页面：设置导航含通用、模型、转写、OCR、提示词、媒体、下载、部署、关于；通用设置字段可见、保存按钮因无改动 disabled。
+本轮真实主路径证据：工作区只读加载与空态 VERIFIED_RUN；设置 /settings/general 只读加载与通用设置列表 VERIFIED_RUN；首次启动 /onboarding 连通性步骤 VERIFIED_RUN（未提交设置）。尚未验证生成笔记、成功笔记阅读、失败/重试、批量分组、设置写入、未知路由；原因：这些会写任务/配置数据，当前没有获准的隔离测试数据/清理流程。故第6条验收未满足，不能将 UI 全路径写成通过。
 
 ## 8. 发现分级（PARTIAL）
 - 现有 spec 违规：暂无已复现
