@@ -364,7 +364,7 @@ run_060 executed available frontend spec dirs: 17 files/100 tests exit 0. Backen
 ## 7. 浏览器主路径（PARTIAL；run_060隔离路径见§11）
 run_060使用隔离前端http://127.0.0.1:3017与T-046后端8484；Vite代理到8484经后端access log确认。首页显示Workspace/单批入口/空状态。Settings浏览器执行见§11。
 历史dispatcher的Settings九子路由/onboarding只读复验作为补充，不当作run_060通过证据。
-run_060 actual path outcomes are recorded in §11. Synthetic fixture rows/files were isolated to T-046, safe-skip retry avoided external generation dispatch, and cleanup was verified. Successful reader, live single/batch generation and remaining settings actions remain NOT RUN.
+run_060/run_067 browser outcomes are recorded in §11. Synthetic success reader and retry-skip fixtures were isolated and cleaned. Real single/batch generation and remaining settings write actions remain NOT RUN.
 
 
 ## 9. Route→service→Web UI 静态交叉索引（PARTIAL；静态路径 + run_060有限runtime证据）
@@ -542,9 +542,9 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 
 ## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
 
-验收汇总：README §6 当前为 **0/10 PASS、10/10 PARTIAL、无已关闭验收项**；测试门禁通过不改变该汇总。
+验收汇总：截至run_067，README §6十项均为PARTIAL，未有整项PASS。局部主路径/门禁有run evidence，但每项完整标准仍有未闭合子项。
 
-证据口径：静态源码/清单证据与真实run_060命令或浏览器证据分列。README §6实际10项；PASS仅适用于其独立标准已全部证实。run_060有隔离库seed/清理与浏览器CRUD/retry-safe-skip证据，但不等于整卡通过。
+证据口径：区分run_060/067浏览器与门禁证据及run_071 report-only更新；README §6实际10项，只有整项全部达标才可标PASS。
 
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
@@ -552,12 +552,12 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
 | 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 280 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 280符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4有65 active AST route rows；§4.3/§4.4更新caller分类和证据。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry、delete。 | 65条完整route→service→Web entry/state/error/test闭环仍欠；proxy/upload/image_proxy及batch wrapper按§4.4标为未调用/extension-only/未验证。 |
-| 5. Specs 001–020 矩阵 | PARTIAL | §5B列代表性当前源码/contract/test links与历史/推断边界。 | run_060聚合FE/BE suites通过；run_067没有测试运行。 | 逐spec验收点symbol→route/service/contract→test proof仍不完整；006/013/014/016证据弱。 |
-| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11按路由区分run_060与run_067证据。 | run_060 workspace/group CRUD/retry safe-skip/general save+restore/empty reader；run_067 settings/model/transcriber/OCR/prompt/media/download/monitor/about只读加载、NotFound fallback、synthetic successful markdown/transcript reader。 | real single/batch intake/generation、model/transcriber/OCR/prompt/media/download写动作、onboarding wizard action仍未验证，故未覆盖所有用户可达页面主路径。 |
+| 5. Specs 001–020 矩阵 | PARTIAL | §5B列当前源码/contract/test代表项与历史/推断界限。 | run_060聚合FE/BE suites pass；run_067与071未运行测试。 | 逐spec acceptance点symbol→route/service/contract→test proof不全；006/013/014/016仍弱。 |
+| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11区分run_060和run_067隔离浏览器证据。 | run_060 Workspace/group CRUD/retry safe-skip/General save-restore；run_067 settings read routes、NotFound、synthetic SUCCESS Markdown/transcript reader。 | real single/batch generation、provider/transcriber/OCR/prompt/media/download writes、Onboarding mutations仍未验证。 |
 | 7. 运行可用专项测试与静态门禁 | PARTIAL | §6列明本轮精确命令和exit。 | FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0、1 warning。 | 聚合suite不证明每项spec完整，另有无专属目录/未归属测试需单独核对。 |
-| 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8保持发现分级。 | run_060测试用例路径按预期工作，未发现spec违规。 | 无新增可复现spec违例，不创建修复票；静态候选不定为死代码。 |
-| 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源未改；唯一待交付文件为report.md；隔离业务fixtures/状态文件/.env.local均已清理。 | 本轮报告修订在提交前完成；SQLite media_cleanup_runs=4是启动自动审计记录，零资源删除，保留。 | 提交后需再次确认clean和branch commits；PR pr_008不合并。 |
-| 10. 报告、评论和计数一致 | PARTIAL | report有100 tracked src、97 TS/TSX file rows、280 symbol rows、18 primitive files、65 active routes、20 specs及README §6矩阵。 | run_063重新核对计数与门禁；本轮报告修改待提交。 | 全量双向route/spec与逐符号行为/test链仍不完整；pr_008 needs_work且不得合并。 |
+| 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8分列可复现违规、验证不足、无入口候选、范围外和产品决策。 | run_060测试及run_060/run_067隔离浏览器路径中未复现spec违规。 | 无需决定的已复现缺陷则无修复票；无入口项保持候选，未判dead code。 |
+| 9. worktree clean、只读审计、修复另卡 | PARTIAL | run_067清理完成且master/product源未触；当前report.md仅有本轮report-only修改。 | run_071开始HEAD a1209ce；最终run_067 business table counts=0，cleanup_runs=5保留startup audits。 | 提交后仍需验证clean；pr_008不合并。 |
+| 10. 报告、评论和计数一致 | PARTIAL | report reconciles 100 src paths, 97 TS/TSX modules, 280 exports, 18 primitives, 65 routes, 20 specs and §10/§11 tables. | run_066/067 evidence and gates are documented; run_071 report-only correction pending. | Full route/symbol/spec behavior trace remains incomplete; PR pr_008 needs_work and unmerged. |
 
 ## 11. 浏览器用户路径清单（操作与结果状态）
 
@@ -568,7 +568,7 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | 工作台/单集 intake | http://127.0.0.1:3017/ | 进入隔离backend-ready的Workspace，单集输入与空状态可见 | 未提交真实B站链接，生成流程NOT RUN。 |
 | 批量 intake | 3017/ → 批量Tab | 批量入口可见，静态resolve/expand链列于§4 | 无外部Bilibili intake/parse及批量提交，NOT RUN。 |
 | 任务选择/失败重试 | 3017 failed filter → More → select fixture → retry → TaskList delete | POST retry HTTP200；candidates1/requeued0/skipped1（invalid platform不会重建URL、不入队）；TaskList UI删除调用delete_task_records，backend确认删1 DB row/status file。 | 真实Bilibili retry NOT RUN；隔离fixture清理已验证。 |
-| 笔记/转录阅读 | 3017 `/` → synthetic FAILED row，后另seed SUCCESS reader fixture → 笔记/转写tabs | run_060 FAILED fixture：失败进度/empty tab可见。run_067 SUCCESS fixture：Markdown标题、heading、正文、section anchor及transcript segment `Synthetic transcript sentence...`可见；由TaskList UI删除。 | 成功内容主路径已用synthetic fixture验证；真实生成的Markdown、截图资产与outline/copy/download端到端仍未验证。 |
+| 笔记/转录阅读 | 3017 `/` → synthetic FAILED then SUCCESS fixtures → note/transcript tabs | run_060 FAILED fixture showed failure/progress and empty tabs. run_067 SUCCESS fixture rendered Markdown title/headings/body/section anchor and transcript segment; TaskList UI deleted the task/result/status fixtures. | Synthetic successful reader path verified; real generated markdown/screenshots plus outline/copy/download against a generated task remain unverified. |
 | 分组动作 | 3017 GroupPanel create/rename/delete dialogs | run_060两组fixture创建/重命名/删除；backend endpoints确认HTTP200，最终note_groups=0。 | task assignment/drag/archive download NOT RUN。 |
 | Settings: general | 3017/settings/general | max_parallel_notes从原值3改4后保存并DB核对4，恢复3后再次保存并核对3；clean/save disabled状态显示。 | success+restore通过；服务端失败toast NOT RUN。 |
 | Settings: model | /settings/model | run_067只读显示provider空态、global model empty prompt；GET providers/options均200 | 未建provider/model或连接外部模型，写路径NOT RUN。 |
@@ -580,9 +580,9 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | Settings: monitor | /settings/monitor | run_067显示backend port8484/FFmpeg/SQLite/Whisper正常及CUDA `torch not installed`异常；sys_health/deploy GET 200 | 只读健康诊断主路径已加载；未触发修复动作。 |
 | Settings: about | /settings/about | run_067显示版本v1.0.0及React19/TS/Vite6/Tailwind4/FastAPI/SQLite/faster-whisper栈 | 静态内容主路径已加载。 |
 | Onboarding | /onboarding | run_060历史read-only显示backend ready；run_067已有本地onboarding完成状态直接落Workspace | 向导重置/继续/保存未运行。 |
-| NotFound | 3017/not-a-real-route | run_067显示“页面不存在”及“返回工作区”链接，可见fallback主体 | fallback主路径已实际浏览。 |
+| NotFound | 3017/not-a-real-route | run_067 showed the “页面不存在” fallback and “返回工作区” link. | Fallback route visited; no additional action beyond return affordance. |
 
-run_060/run_067 used only T-046/backend/bili_note.db, Vite3017→backend8484; master DB not opened. Before fixtures, task/group/provider/model/media_resource=0, cleanup audit=4. run_060 synthetic invalid-platform FAILED fixture produced retry candidates1/requeued0/skipped1/no dispatch and was deleted through TaskList with status file. run_067 synthetic SUCCESS task/result/status files rendered Markdown heading/body and transcript segment in reader; TaskList UI delete removed DB row and both JSON files. Group CRUD fixtures deleted; General max_parallel_notes restored to3. Final business counts all0; cleanup_runs=5 includes zero-delete server startup audits retained. .env.local removed; services stopped.
+run_060/run_067 used only T-046/backend/bili_note.db; master DB not accessed. Before run_067 reader fixture: business tables (tasks/groups/providers/models/media_resources)=0, cleanup_runs=4. run_067 seeded one synthetic SUCCESS task, one matching result JSON and status JSON; selected-task reader showed Markdown title/heading/body/timestamp and transcript segment. TaskList UI deletion logged removal of one task row plus both files. run_060 failed-task fixture returned candidates1/requeued0/skipped1/no dispatch and was also deleted. Group fixtures removed; General max_parallel_notes restored3. Final isolated business counts=0, cleanup_runs=5 including retained zero-delete startup audit; .env.local absent and services stopped.
 
 ## 2A. 运行时 TS/TSX 模块逐文件业务域补充（source inventory overlay）
 
@@ -1004,12 +1004,12 @@ This matrix links current source anchors and named tracked tests. Historical pre
 
 run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend existing spec-directory suite (001–015 except absent 016, plus 017–020): 875 passed + 1 subtest passed, exit 0, one pkg_resources warning. These aggregate results do not prove each spec requirement complete.
 
-## 12. run_066 current worktree verification
+## 12. run_067/071 current verification status
 
-run_066 began from HEAD 726ef9cceed2aa04fe600fd04432c094b3ecbd20; master snapshot c011bbdf80f604fb1adc0a5030575c237c6d3568. Only report.md had an uncommitted diff at the last check, and git diff --check passed. This run did not modify product source and did not execute tests, typecheck, lint, build or browser flows. Latest run evidence remains from run_060 and is recorded separately above.
+run_071 current continuation starts from report commit a1209ce (master base c011bbdf). This run made report-only source-evidence corrections; it did not run browser paths, tests, typecheck, lint or build. run_060/run_067 evidence below is inherited and is not run_071 execution. Product source/master DB untouched.
 
-Inventory reconciliation against committed report tables: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique exported symbols including named re-exports and defaults. Caller sets in §2B are inherited at file level and are not per-symbol invocation proof. Active AST route declarations are 65; raw text decorator hits are 66 because provider.py:75 is commented.
+Inventory reconciliation: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique export pairs including named re-exports/defaults. §2B caller sets remain file-level inheritance and are not per-symbol invocation proof. Active AST routes=65; raw decorator text hits=66 including commented provider.py:75.
 
-run_060 gates, not rerun in run_066: frontend spec-directory Vitest 17 files/100 tests exit 0; pnpm exec tsc -b exit 0; pnpm lint exit 0; pnpm build exit 0 (3158 modules, chunk/tooling warnings). Backend available spec-directory pytest exit 0 (875 passed + 1 subtest, one pkg_resources warning). run_060 isolated browser paths include group CRUD, reversible General setting save, invalid-platform FAILED retry skip, and empty reader tabs; fixture rows/files were cleaned and isolated DB business tables returned to zero. The master DB was not accessed.
+Inherited run_060 gates (not rerun in run_067/071): FE Vitest17 files/100 tests, tsc/lint/build exit0; BE spec dirs875 passed+1 subtest exit0, one warning. Browser run_060: group CRUD/General reversible save/FAILED retry safe-skip/empty reader. Browser run_067: Settings/model-through-about read paths, NotFound, synthetic SUCCESS Markdown/transcript reader. Isolated fixtures removed; final business tables task/group/provider/model/resource=0, cleanup_runs=5 retained automatic startup audits, max_parallel_notes=3; master DB untouched, ports closed, temp env absent.
 
-Full acceptance remains PARTIAL: per-symbol state/API/no-API/error/empty/loading/disabled/success/test links are incomplete; all 65 route-to-service/Web behavior chains are not closed; the 20-spec matrix has representative links and explicit unverified areas rather than complete acceptance-point proof; run_060 did not exercise every reachable page main path (real intake/generation, successful reader, most settings actions, onboarding actions, NotFound remain NOT RUN). No reproducible existing-spec violation was established, so no fix task was created. Do not accept or merge pr_008.
+Full acceptance remains PARTIAL: per-symbol exact caller/state/API/error/empty/loading/disabled/success/test links remain incomplete; all 65 route service/Web/state/error chains and 20-spec acceptance-point links are not closed. Browser gaps include real single/batch generation, successful reader from generated output, settings writes, and onboarding actions; synthetic SUCCESS reader and NotFound were verified in run_067. No existing-spec violation was reproduced; no fix task created. Do not accept/merge pr_008.
