@@ -475,7 +475,7 @@ Each row records state ownership and code-supported branches. SOURCE_ONLY is not
 | MonitorSection | Settings /monitor | independent sys_health/deploy queries | loading until data; health error shown; deploy-only error branch needs review | main path NOT RUN |
 | AboutSection | Settings /about | static/i18n; no API/state | static; other states N/A | historical visit only |
 
-Most symbols lack direct UI tests in the searched caller hops. This is source evidence, not completed per-symbol acceptance.
+Direct UI tests were not found in the searched caller hops for most listed components. This SOURCE_ONLY matrix is representative and does not complete the per-export test mapping or every state branch.
 
 ## 4.4 run_062 route-caller corrections
 
@@ -549,14 +549,14 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
 | 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（55 TSX+40 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 280 exports。 | run_063 fresh inventory counted 97 unique rows (55 TSX, 42 TS including 2 declarations) and 280 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
-| 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
-| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 280 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 280符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
+| 2. 每个 UI 原语静态调用者 | PARTIAL | §3/§3D列18原语的静态caller与具体用途；Tooltip零caller；BilibiliMark仅元数据注册、无consumer/render found。 | run_060若干caller路径实际可见，但非全18原语全caller浏览器测试。 | 仍需每个callsite用途与动态caller逐个对账，primitive行为/test与browser覆盖不完整。 |
+| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2B有280 exports；§3E为主要页面/组件source-state摘要。 | run_060 workspace/group/retry/empty reader/general save；run_067 synthetic SUCCESS reader与Settings只读；run_072未跑browser。 | §2B caller仍file-level inherited；逐export入口/state/API/error/empty/loading/disabled/success/direct-test未完成，3E也仅代表symbol集合。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4有65 active AST route rows；§4.3/§4.4更新caller分类和证据。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry、delete。 | 65条完整route→service→Web entry/state/error/test闭环仍欠；proxy/upload/image_proxy及batch wrapper按§4.4标为未调用/extension-only/未验证。 |
 | 5. Specs 001–020 矩阵 | PARTIAL | §5B列当前源码/contract/test代表项与历史/推断界限。 | run_060聚合FE/BE suites pass；run_067与071未运行测试。 | 逐spec acceptance点symbol→route/service/contract→test proof不全；006/013/014/016仍弱。 |
 | 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11区分run_060和run_067隔离浏览器证据。 | run_060 Workspace/group CRUD/retry safe-skip/General save-restore；run_067 settings read routes、NotFound、synthetic SUCCESS Markdown/transcript reader。 | real single/batch generation、provider/transcriber/OCR/prompt/media/download writes、Onboarding mutations仍未验证。 |
-| 7. 运行可用专项测试与静态门禁 | PARTIAL | §6列明本轮精确命令和exit。 | FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0、1 warning。 | 聚合suite不证明每项spec完整，另有无专属目录/未归属测试需单独核对。 |
+| 7. 运行可用专项测试与静态门禁 | PARTIAL | §6记录run_060实际命令/exit；§12标注继承证据。 | run_060 FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0/1 warning；run_072 tests NOT RUN。 | 全验收点/route行为覆盖不能由aggregate tests推出；run_072未重跑测试。 |
 | 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8分列可复现违规、验证不足、无入口候选、范围外和产品决策。 | run_060测试及run_060/run_067隔离浏览器路径中未复现spec违规。 | 无需决定的已复现缺陷则无修复票；无入口项保持候选，未判dead code。 |
-| 9. worktree clean、只读审计、修复另卡 | PARTIAL | run_067清理完成且master/product源未触；当前report.md仅有本轮report-only修改。 | run_071开始HEAD a1209ce；最终run_067 business table counts=0，cleanup_runs=5保留startup audits。 | 提交后仍需验证clean；pr_008不合并。 |
+| 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源/master DB未改；run_067 fixtures和temp env已清；当前report.md唯一diff。 | run_072起点HEAD411ad12；DB business rows=0, cleanup_runs=5 retained startup audits; final commit/clean待完成。 | 提交后验证clean与branch delta；pr_008不合并。 |
 | 10. 报告、评论和计数一致 | PARTIAL | report reconciles 100 src paths, 97 TS/TSX modules, 280 exports, 18 primitives, 65 routes, 20 specs and §10/§11 tables. | run_066/067 evidence and gates are documented; run_071 report-only correction pending. | Full route/symbol/spec behavior trace remains incomplete; PR pr_008 needs_work and unmerged. |
 
 ## 11. 浏览器用户路径清单（操作与结果状态）
@@ -1004,12 +1004,13 @@ This matrix links current source anchors and named tracked tests. Historical pre
 
 run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend existing spec-directory suite (001–015 except absent 016, plus 017–020): 875 passed + 1 subtest passed, exit 0, one pkg_resources warning. These aggregate results do not prove each spec requirement complete.
 
-## 12. run_067/071 current verification status
+## 12. run_072 current verification status
 
-run_071 current continuation starts from report commit a1209ce (master base c011bbdf). This run made report-only source-evidence corrections; it did not run browser paths, tests, typecheck, lint or build. run_060/run_067 evidence below is inherited and is not run_071 execution. Product source/master DB untouched.
+run_072 continued from commit 411ad12 (master base c011bbdf) and changed only report.md. No tests/typecheck/lint/build/browser actions were run in run_072. Browser evidence for Settings routes, NotFound and synthetic SUCCESS reader is from run_067; run_060 gate results are inherited. Product source/master DB untouched.
+
 
 Inventory reconciliation: §2 lists 100 unique tracked BillNote_frontend/src paths; §2A lists 97 unique TS/TSX paths (56 .tsx + 41 .ts including two .d.ts); §2B lists 280 unique export pairs including named re-exports/defaults. §2B caller sets remain file-level inheritance and are not per-symbol invocation proof. Active AST routes=65; raw decorator text hits=66 including commented provider.py:75.
 
 Inherited run_060 gates (not rerun in run_067/071): FE Vitest17 files/100 tests, tsc/lint/build exit0; BE spec dirs875 passed+1 subtest exit0, one warning. Browser run_060: group CRUD/General reversible save/FAILED retry safe-skip/empty reader. Browser run_067: Settings/model-through-about read paths, NotFound, synthetic SUCCESS Markdown/transcript reader. Isolated fixtures removed; final business tables task/group/provider/model/resource=0, cleanup_runs=5 retained automatic startup audits, max_parallel_notes=3; master DB untouched, ports closed, temp env absent.
 
-Full acceptance remains PARTIAL: per-symbol exact caller/state/API/error/empty/loading/disabled/success/test links remain incomplete; all 65 route service/Web/state/error chains and 20-spec acceptance-point links are not closed. Browser gaps include real single/batch generation, successful reader from generated output, settings writes, and onboarding actions; synthetic SUCCESS reader and NotFound were verified in run_067. No existing-spec violation was reproduced; no fix task created. Do not accept/merge pr_008.
+Full acceptance remains PARTIAL: per-symbol caller/state/API/error/empty/loading/disabled/success/test links remain incomplete; all 65 route service/Web/state/error chains and 20-spec acceptance-point links are not closed. Browser gaps include real single/batch generation, generated-content reader, settings writes and onboarding actions; a synthetic SUCCESS reader and NotFound were verified in run_067. No existing-spec violation was reproduced; no fix task created. Do not accept/merge pr_008.
