@@ -22,7 +22,7 @@
 ## 1. 计数（VERIFIED）
 | 项 | 数 | 口径 |
 |---|---|---|
-| src 跟踪文件 | 100（97 ts/tsx = 41+56，含 2 个 .d.ts；3 css） | git ls-files |
+| src 跟踪文件 | 100（97 ts/tsx = 41+56，其中39个运行时 .ts + 56个 .tsx = 95；2个 .d.ts；3 css） | git ls-files（与报告文件表逐路径比对：100/100，无缺项、无额外） |
 | 导出符号 | 278 | 正则：export 声明 + export {} + export default |
 | ember/ui 原语 | 18 文件 | |
 | 前端测试文件 | 17（16 个在 NNN 目录 + tests/onboardingTranscriber.test.ts） | git ls-files |
