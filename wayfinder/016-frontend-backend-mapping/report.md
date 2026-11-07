@@ -16,7 +16,7 @@
 | 4 route→service→Web 双向映射 | PARTIAL：活动AST route/handler清单65/65；调用入口类别及完整状态/错误/test闭环仍有缺口。早先52/65 caller不是逐route验收分母。 |
 | 5 spec矩阵 | PARTIAL：20行来源/测试映射补充见§5B，部分连接未核 |
 | 6 门禁 | VERIFIED_RUN（执行的指定suite/gates全部exit0，覆盖不等于spec完成） |
-| 7 浏览器路径 | PARTIAL：run_060隔离3017→8484覆盖workspace/group CRUD/general setting reversible save/FAILED retry safe-skip/empty reader tabs；真实intake生成、成功reader、其它settings写入仍NOT RUN |
+| 7 浏览器路径 | PARTIAL：run_060覆盖workspace/group CRUD/general reversible save/FAILED retry safe-skip/empty reader；run_067覆盖settings/model–about read paths、NotFound及synthetic SUCCESS reader；真实生成与设置写入仍有缺口 |
 | 8 发现分级 | PARTIAL |
 
 ## 1. 计数（VERIFIED）
@@ -271,7 +271,7 @@
 | 002-video-understanding-sampling | 有候选Web符号 | 无专属FE 002 test dir | backend/tests/002-video-understanding-sampling | run_060后端聚合suite pass；live generation NOT RUN | 精确实现/契约映射见§5B，仍部分间接 |
 | 003-openai-compatible-asr | 未标注 | 无 | backend/tests/003-openai-compatible-asr (46) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
 | 004-note-math-rendering | utils/markdown/MarkdownNote | FE tests/004-note-math-rendering | 无backend route/test | run_060 FE suite pass | render-only；见§5B |
-| 005-modern-dark-ui-and-task-progress | task progress/workspace/reader symbols | FE tests/005-modern-dark-ui | backend/tests/005-modern-dark-ui-and-task-progress | run_060 FE+BE suites pass；synthetic retry-safe-skip/empty reader exercised | detailed links见§5B；成功reader NOT RUN |
+| 005-modern-dark-ui-and-task-progress | task progress/workspace/reader symbols | FE tests/005-modern-dark-ui | backend/tests/005-modern-dark-ui-and-task-progress | run_060 FE+BE suites pass；synthetic retry-safe-skip/empty reader exercised | detailed links见§5B；synthetic成功reader已运行；真实生成reader NOT RUN |
 | 006-note-pipeline-performance | pipeline backend symbols；Web link weak | 无FE suite | backend/tests/006-note-pipeline-performance | run_060 suite pass；benchmark NOT RUN | 精确链见§5B，性能工作负载边界仍缺 |
 | 007-note-archive-and-media-cache | archive/media sections/services | 无FE suite | backend/tests/007-note-archive-and-media-cache | run_060 suite pass；live archive/cleanup NOT RUN | cache-limit无Web caller；benchmark/stress缺口见§5B |
 | 008-ocr-assist-and-legacy-cleanup | 未标注 | 无 | backend/tests/008-ocr-assist-and-legacy-cleanup (145) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
@@ -552,8 +552,8 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
 | 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 280 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 280符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4有65 active AST route rows；§4.3/§4.4更新caller分类和证据。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry、delete。 | 65条完整route→service→Web entry/state/error/test闭环仍欠；proxy/upload/image_proxy及batch wrapper按§4.4标为未调用/extension-only/未验证。 |
-| 5. Specs 001–020 矩阵 | PARTIAL | §5B逐项列当前实现候选、backend contract与具名test paths，并标historical/inferred gaps。 | FE 17 files/100 tests、BE 875+1 subtest aggregate目录集合通过；非逐spec测试结果。 | 逐验收点symbol→route/service/contract→test links未全部直接证明；006/013/014/016关联尤其薄弱，013 exact tests absent。 |
-| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11列路由/动作和历史只读结果。 | run_060真实实测workspace、group CRUD、failed fixture retry-safe-skip、empty reader tabs、general settings save/restore。 | 单/批外部生成、成功reader、model/transcriber/OCR/prompt/media/download/monitor/about主要动作、Onboarding主动作与NotFound未运行，故未满足每用户可达页面主路径要求。 |
+| 5. Specs 001–020 矩阵 | PARTIAL | §5B列代表性当前源码/contract/test links与历史/推断边界。 | run_060聚合FE/BE suites通过；run_067没有测试运行。 | 逐spec验收点symbol→route/service/contract→test proof仍不完整；006/013/014/016证据弱。 |
+| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11按路由区分run_060与run_067证据。 | run_060 workspace/group CRUD/retry safe-skip/general save+restore/empty reader；run_067 settings/model/transcriber/OCR/prompt/media/download/monitor/about只读加载、NotFound fallback、synthetic successful markdown/transcript reader。 | real single/batch intake/generation、model/transcriber/OCR/prompt/media/download写动作、onboarding wizard action仍未验证，故未覆盖所有用户可达页面主路径。 |
 | 7. 运行可用专项测试与静态门禁 | PARTIAL | §6列明本轮精确命令和exit。 | FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0、1 warning。 | 聚合suite不证明每项spec完整，另有无专属目录/未归属测试需单独核对。 |
 | 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8保持发现分级。 | run_060测试用例路径按预期工作，未发现spec违规。 | 无新增可复现spec违例，不创建修复票；静态候选不定为死代码。 |
 | 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源未改；唯一待交付文件为report.md；隔离业务fixtures/状态文件/.env.local均已清理。 | 本轮报告修订在提交前完成；SQLite media_cleanup_runs=4是启动自动审计记录，零资源删除，保留。 | 提交后需再次确认clean和branch commits；PR pr_008不合并。 |
@@ -568,21 +568,21 @@ Per-symbol caller inheritance in §2B remains a navigation aid, not exact symbol
 | 工作台/单集 intake | http://127.0.0.1:3017/ | 进入隔离backend-ready的Workspace，单集输入与空状态可见 | 未提交真实B站链接，生成流程NOT RUN。 |
 | 批量 intake | 3017/ → 批量Tab | 批量入口可见，静态resolve/expand链列于§4 | 无外部Bilibili intake/parse及批量提交，NOT RUN。 |
 | 任务选择/失败重试 | 3017 failed filter → More → select fixture → retry → TaskList delete | POST retry HTTP200；candidates1/requeued0/skipped1（invalid platform不会重建URL、不入队）；TaskList UI删除调用delete_task_records，backend确认删1 DB row/status file。 | 真实Bilibili retry NOT RUN；隔离fixture清理已验证。 |
-| 笔记/转录阅读 | 3017 `/` → synthetic FAILED row → 笔记/转写tabs | 两tab可用；empty markdown与transcript状态呈现，失败进度及fixture message visible。 | successful markdown/transcript reader、outline/copy/download NOT RUN。 |
+| 笔记/转录阅读 | 3017 `/` → synthetic FAILED row，后另seed SUCCESS reader fixture → 笔记/转写tabs | run_060 FAILED fixture：失败进度/empty tab可见。run_067 SUCCESS fixture：Markdown标题、heading、正文、section anchor及transcript segment `Synthetic transcript sentence...`可见；由TaskList UI删除。 | 成功内容主路径已用synthetic fixture验证；真实生成的Markdown、截图资产与outline/copy/download端到端仍未验证。 |
 | 分组动作 | 3017 GroupPanel create/rename/delete dialogs | run_060两组fixture创建/重命名/删除；backend endpoints确认HTTP200，最终note_groups=0。 | task assignment/drag/archive download NOT RUN。 |
 | Settings: general | 3017/settings/general | max_parallel_notes从原值3改4后保存并DB核对4，恢复3后再次保存并核对3；clean/save disabled状态显示。 | success+restore通过；服务端失败toast NOT RUN。 |
-| Settings: model | /settings/model | 旧dispatcher只读页面复验（见既有评论） | run_060未重复加载/保存、连接外部模型NOT RUN。 |
-| Settings: transcriber | /settings/transcriber | 旧dispatcher只读页面复验 | run_060未重复加载/写入/下载/外部端点测试NOT RUN。 |
-| Settings: OCR | /settings/ocr | 旧dispatcher只读页面复验 | run_060保存及连接探测NOT RUN。 |
-| Settings: prompt | /settings/prompt | 旧dispatcher只读页面复验 | run_060保存/恢复NOT RUN。 |
-| Settings: media | /settings/media | 旧dispatcher只读页面复验 | run_060设置保存/资源cleanup未触发。 |
-| Settings: download | /settings/download | 旧dispatcher只读页面复验 | run_060 cookie读取/写入未触发。 |
-| Settings: monitor | /settings/monitor | 历史dispatcher只读页面复验 | run_060未重新加载/验证健康状态页NOT RUN。 |
-| Settings: about | /settings/about | 历史dispatcher只读页面复验 | run_060未重访NOT RUN。 |
-| Onboarding | /onboarding | 旧报告及dispatcher提供只读backend-ready证据；本轮应用从完成过的startup直接到Workspace | run_060未重访 onboarding wizard或写入配置NOT RUN。 |
-| NotFound | 3017任意未知路径 → fallback | 静态EmberApp route与NotFoundPage | run_060没有真实浏览器打开未知路径，NOT RUN。 |
+| Settings: model | /settings/model | run_067只读显示provider空态、global model empty prompt；GET providers/options均200 | 未建provider/model或连接外部模型，写路径NOT RUN。 |
+| Settings: transcriber | /settings/transcriber | run_067只读页显示Faster Whisper/tiny、模型规格和无ASR endpoints；GET config/models-status均200 | 保存、端点写入、下载和外部端点test NOT RUN。 |
+| Settings: OCR | /settings/ocr | run_067只读页显示disabled、地址/API key/model与Test/Save控件；GET /api/ocr_config HTTP200 | 未点测试/保存，NOT RUN。 |
+| Settings: prompt | /settings/prompt | run_067只读显示builtin template、0/20000 chars、缺required placeholders提示、Restore/Save | 未编辑/保存/恢复，NOT RUN。 |
+| Settings: media | /settings/media | run_067显示保留7/3天、expiry preview/cleanup/force controls与history；settings/recent GET 200 | 未保存或触发预览/清理，NOT RUN。 |
+| Settings: download | /settings/download | run_067只读显示Bilibili cookie field/Save；GET cookie HTTP200 | 未写cookie，NOT RUN。 |
+| Settings: monitor | /settings/monitor | run_067显示backend port8484/FFmpeg/SQLite/Whisper正常及CUDA `torch not installed`异常；sys_health/deploy GET 200 | 只读健康诊断主路径已加载；未触发修复动作。 |
+| Settings: about | /settings/about | run_067显示版本v1.0.0及React19/TS/Vite6/Tailwind4/FastAPI/SQLite/faster-whisper栈 | 静态内容主路径已加载。 |
+| Onboarding | /onboarding | run_060历史read-only显示backend ready；run_067已有本地onboarding完成状态直接落Workspace | 向导重置/继续/保存未运行。 |
+| NotFound | 3017/not-a-real-route | run_067显示“页面不存在”及“返回工作区”链接，可见fallback主体 | fallback主路径已实际浏览。 |
 
-run_060 browser integration used `T-046/backend/bili_note.db` only (backend 8484, Vite 3017); master DB never opened. Before fixtures: task/group/provider/model/resource=0, cleanup audit rows=4. The temporary `T046-fixture-failed` task/status JSON (platform `test-platform`) and temporary groups supported the UI retry skip and CRUD tests; retry candidates=1/requeued=0/skipped=1, no dispatch. General `max_parallel_notes` changed 3→4 and restored 4→3 through UI. TaskList delete removed task row/status file; groups removed. Final business counts all 0, cleanup audit remains 4, each auto startup record had zero resources requested/deleted. Temporary `.env.local` removed; backend/Vite stopped.
+run_060/run_067 used only T-046/backend/bili_note.db, Vite3017→backend8484; master DB not opened. Before fixtures, task/group/provider/model/media_resource=0, cleanup audit=4. run_060 synthetic invalid-platform FAILED fixture produced retry candidates1/requeued0/skipped1/no dispatch and was deleted through TaskList with status file. run_067 synthetic SUCCESS task/result/status files rendered Markdown heading/body and transcript segment in reader; TaskList UI delete removed DB row and both JSON files. Group CRUD fixtures deleted; General max_parallel_notes restored to3. Final business counts all0; cleanup_runs=5 includes zero-delete server startup audits retained. .env.local removed; services stopped.
 
 ## 2A. 运行时 TS/TSX 模块逐文件业务域补充（source inventory overlay）
 
