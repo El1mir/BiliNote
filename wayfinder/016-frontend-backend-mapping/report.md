@@ -235,6 +235,30 @@
 - 当前 Web (`BillNote_frontend`) 未发现调用的 backend routes：`GET /api/media/cache/limit`（media.py:94）、`POST /api/media/cache/enforce`（media.py:106）。spec 007:158 与 009:136 将 media/cache 能力列为后端验收接口；归类为无 Web caller 的运维/后端 API，非死代码结论。
 - `/api/image_proxy` 的 extension caller 已确认（BillNote_extension/src/logic/api.ts:195–204），但扩展逐组件映射属范围外。Web 本地截图由 backend 写为根相对 `/static/screenshots/...`；MarkdownNote→resolveAssetUrl 将根路径映射到 ASSET_ORIGIN，不经过image_proxy。没有真实外链Markdown笔记验证模型输出图片是否进入Web reader，因此Web image_proxy caller状态为UNVERIFIED，非已确认无caller。
 
+
+
+### 4.3 当前 13-route 声明复核（逐项证据校正）
+
+复核方法：在 T-046 worktree 根目录以 Python `ast` 遍历 `backend/app/routers/*.py` 中 `.get/.post/.put/.delete/.patch` 装饰器，得到 65 个 `(method,path)` rows；另将 §4 表逐行与 AST 对照（65/65 rows）。对前端先检查服务包装，再继续追 JSX、hook、store、路由或动态注册，不能仅凭包装函数存在判为有用户入口。
+
+| Route | Web 调用/用户入口及证据 | 结论 |
+|---|---|---|
+| `POST /api/openai_asr/{endpoint_id}/test` | `services/transcriber.ts:testOpenaiAsr:134–141` → `TranscriberSection.tsx` 的端点测试动作；backend `config.py:test_openai_asr:270–312` 以临时 WAV 探测 endpoint。原 §4 仅因正则未命中标疑；本轮 CodeGraph/source 核实了静态调用链。未实际执行外部 ASR 请求。 | 静态 caller 已证；运行验证未做 |
+| `GET /api/sys_check` | `hooks/useCheckBackend.ts:51–76` 请求 health probe，`useCheckBackend:141–159` 轮询和更新启动状态；`EmberApp.tsx:24–41` 用 hook 决定启动屏/重试。 | 静态 caller 已证 |
+| `GET /api/media/cache/limit` | 前端全 `src` URL/callsite 搜索未发现；backend `media.py:94` 是运维 API，底层 cache service 另由内部清理流程使用。 | 无 Web caller 证据；保留为 backend 运维能力，非死代码结论 |
+| `POST /api/media/cache/enforce` | 同上，`media.py:106`；前端无 route URL/callsite，底层 `enforce_cache_limit` 有内部调度/调用。 | 无 Web caller 证据；backend-only/运维边界待 spec 确认 |
+| `POST /api/v1/intake/resolve` | `services/note.ts:43–52 resolveIntake` → `BatchImportPanel.tsx:209–238` 的解析/提交步骤；backend `note.py:88–93` 调 `resolve_bilibili_inputs`。 | 静态 caller 已证（旧正则漏报）；真实浏览器批量路径待跑 |
+| `GET /api/v1/task-groups/snapshot` | `services/note.ts:445–452 getTaskReadModelSnapshot` → `hooks/useTaskPolling.ts:97–117` 的 SSE 断开 fallback / 轮询 → taskStore 状态更新；backend `note.py:2326` 构造快照。 | 静态 caller 已证（旧正则漏报） |
+| `GET /api/image_proxy` | BillNote Web reader 本地截图路径是 `MarkdownNote.tsx` → `resolveAssetUrl` (`assets.ts:25–29`) → `/static/screenshots`；Web `src` 未找到 `/api/image_proxy` URL 构造。扩展 caller 已核实但扩展组件映射范围外。尚无真实 external-image Markdown 样本。 | Web 静态 caller 未发现；运行时外链样本待核，不能断言无动态 caller |
+| `GET /api/proxy_config` | `services/proxy.ts:getProxyConfig` 有包装，但整个 `BillNote_frontend/src` 无 importer/组件调用者；backend handler读 `ProxyConfigManager`。 | 包装无 UI 入口；静态未引用候选，动态/外部消费待核 |
+| `POST /api/proxy_config` | `services/proxy.ts:updateProxyConfig` 有包装，但整个 `src` 无 importer/用户入口；backend handler写 `config/proxy.json`。 | 包装无 UI 入口；静态未引用候选，动态/外部消费待核 |
+| `POST /api/upload` | `services/upload.ts:uploadFile` 有包装，但 `BillNote_frontend/src` 无 importer/调用者；backend `note.py:1593` 写上传文件。 | 包装无 UI 入口；动态/外部消费待核 |
+| `POST /api/task_status/batch` | `services/note.ts:410–412 getTaskStatusBatch` 包装存在，但当前 `useTaskPolling.ts` 的 SSE 断开 fallback 实际调用 `getTaskReadModelSnapshot`，不是此包装；未找到当前 Web runtime importer。旧 report §9 将它按 service 包装列入端到端 polling 链，证据过强。 | 当前用户流程调用未证；不能计作明确 caller，需继续查 legacy/runtime consumer |
+| `GET /api/task_status/{task_id}` | `services/note.ts:244–252 get_task_status` → `store/taskStore/index.ts` 的 `rehydrateTask` 详情内容加载路径；用于成功状态后读取完整 markdown/transcript，而当前进度轮询由 SSE/snapshot 承担。 | 静态 caller 已证（详情 rehydrate，不是主轮询） |
+| `POST /api/task_archives` | `services/note.ts:99` 的批量归档下载包装 → `useNoteGroups.ts:167–188 downloadCheckedGroups` → `GroupPanel/Workspace` 分组选中已完成任务后下载。 | 静态 caller 已证；真实下载路径待浏览器验证 |
+
+计数处理：原 §0/§4 将“52/65明确 caller、13/65待核”作为汇总，但没有列出 13 条确切 route 集合，不能将其当作可复现 row set。本轮发现此前 caller 证据评级有误：至少 `/task_status/batch` 虽有包装函数，当前无 importer；另有数条旧 regex miss 实际有明确 caller。因而本表把明确链、无 Web caller、包装未消费和运行时待核分别列出；全 65 条 route 的逐行 UI 行为仍须完成后，才可给新的完整分母。此 13-row 复核表不是声称其余 52 条已完成逐符号验收。
+
 ### 4.2 Web 模块无入口
 - `services/proxy.ts`（/proxy_config）、`services/upload.ts`（/upload）、`ember/ui/Tooltip.tsx`：整个 BillNote_frontend/src 中未找到静态导入/组件caller，标记静态未引用候选；动态导入/外部使用待核。此处不推断删除或新增接线。
 
@@ -287,7 +311,7 @@
 |---|---|---|---|
 | 单条 intake/generate | POST /api/v1/intake/resolve; POST /api/generate_note | services/note.ts:resolveIntake/generateNote → ember/features/workspace/IntakeForm.tsx → IntakePanel.tsx → WorkspacePage.tsx → EmberApp.tsx / | IntakeForm 本地 react-hook-form 状态、URL 校验、提交/loading 与 toast；成功先 addPendingTask 并进入 taskStore。无本轮真实提交；错误状态依 service/global request interceptor 与 catch/toast。 |
 | 批量展开/提交 | POST /api/expand; POST /api/generate_notes | services/note.ts:expandUrl/generateNotes → BatchImportPanel.tsx → IntakePanel.tsx → WorkspacePage.tsx → / | BatchImportPanel local stage input/picking、resolving、videos/selected/groupName/merge/submitting；全 URL 失败 toast、逐 URL null 部分失败、提交成功回调由 store刷新。无浏览器主路径运行；静态链证据。 |
-| 任务列表/详情状态 | GET /api/task_list; GET /api/task_status/{task_id}; POST /api/task_status/batch; GET /api/v1/task-groups/snapshot; GET /api/v1/task-groups/events | services/note.ts:listTasks/get_task_status/getTaskStatusBatch/getTaskReadModelSnapshot/subscribeTaskReadModel → taskStore/index.ts → WorkspacePage/TaskList/TaskCard/TaskProgressCard/NotePanel → EmberApp:/ | WorkspacePage listLoading 初始 true，loadTasks.finally 关闭；TaskList loading Skeleton / 空态 EmptyState / 筛选与搜索；poll hook SSE优先并 fallback batch。reader 以 task.markdown 状态显示 empty/markdown/transcript。无带真实task的浏览器运行。 |
+| 任务列表/详情状态 | GET /api/task_list; GET /api/task_status/{task_id}; POST /api/task_status/batch; GET /api/v1/task-groups/snapshot; GET /api/v1/task-groups/events | services/note.ts:listTasks/get_task_status/getTaskStatusBatch/getTaskReadModelSnapshot/subscribeTaskReadModel → taskStore/index.ts → WorkspacePage/TaskList/TaskCard/TaskProgressCard/NotePanel → EmberApp:/ | WorkspacePage listLoading 初始 true，loadTasks.finally 关闭；TaskList loading Skeleton / 空态 EmptyState / 筛选与搜索；poll hook 当前使用 SSE 与 snapshot fallback。getTaskStatusBatch 有 service wrapper，但未找到当前 Web runtime importer，不计作明确 caller。reader 以 task.markdown 状态显示 empty/markdown/transcript。无带真实task的浏览器运行。 |
 | 单条删除/批量删除/归档 | POST /api/delete_task_record; POST /api/delete_task_records; GET /api/task_archive/{task_id}; POST /api/task_archives | services/note.ts:deleteTaskRecord/deleteTaskRecords/downloadNoteArchive(s) → TaskList/useNoteGroups/NotePanel 调用链 | delete busy/选择与服务错误由调用UI处理；archive 判断 HTTP及Content-Type，JSON错误转可读异常。没有本轮实际删除/下载验证。 |
 | 失败重试 | POST /api/retry_failed_tasks | services/note.ts:retryFailedTasks → retryFailed.ts:retrySelectedFailedTasks → WorkspacePage.retryFailedInScope → TaskList/RetryFailedAction | 空选择 helper 不调用；none/partial/done toast；catch错误 toast；成功 reload。当前 DB 空，没有失败任务，未实际选中或执行。 |
 | 任务分组 | GET/POST /api/note_group; POST /api/note_group/rename,/delete,/assign,/assign_batch; GET /api/note_group/tasks | services/noteGroup.ts → useNoteGroups.ts → WorkspacePage → GroupPanel/TaskList | useNoteGroups loading/busy/downloading 状态、refresh catch console.warn、create/rename mutation catch toast、assignment 后 reload；GroupPanel空组与TaskList空态可达。浏览器本轮只见空组/空任务；CRUD及drag未运行。 |
@@ -309,3 +333,45 @@
 - 无 UI 入口候选（不判死代码）：`services/proxy.ts` 的 getProxyConfig/updateProxyConfig 与 `/proxy_config` routes 有服务封装但全 src 无 importer；`services/upload.ts` 的 uploadFile 与 `/upload` route 无 importer；`ember/ui/Tooltip.tsx` 无组件 caller。动态注册/外部调用仍待核实。
 - 范围外：media/cache/limit、media/cache/enforce
 - 待核实：proxy/upload 是否由运行时动态导入或未来入口消费；013 测试目录命名。
+
+## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
+
+证据口径：静态源码/清单证据与真实本轮命令或浏览器运行证据分列。下表“PASS”只表示该具体子项有完整证据，不表示整卡通过。README §6 实际包含 10 项（第 1–10 条）；另有任务卡验收标准，未以此表替代。写路径隔离 SQLite 获授权 hi_mw6cc3rl5pom9z，但本轮没有 seed 或写入；不得把授权当作验证结果。
+
+| README §6 | 状态 | 静态/文件证据 | 实际运行/浏览器证据 | 剩余差距 |
+|---|---|---|---|---|
+| 1. 全量枚举与组件/导出符号 | PARTIAL | §1–2：master 基线 c011bbdf 的 src 清单 100/100 与 git ls-files 对账；97 TS/TSX（95 runtime + 2 declaration）、3 CSS；导出符号计数 278。 | 这轮未重新枚举磁盘树；此前报告记录命令 exit 0、清单与基线对账。 | 逐运行时模块及符号仍未逐条补齐业务域、入口、状态、API/无 API、行为、测试和浏览器证据。 |
+| 2. 每个 UI 原语静态调用者 | PARTIAL | §3 按 18 个 ember/ui 文件分别列 caller；Tooltip 标静态零 caller/动态待核。 | 本轮未运行页面以核实动态消费。 | caller 清单有，但多数行没有逐 caller 的具体使用用途及对应状态/测试证据。 |
+| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2、§9 列出若干符号和业务链；§4.3 更正 route caller 证据等级。 | 当前报告记录的浏览器只读路径仅覆盖若干页面，见 §11；本轮没有新增浏览器操作。 | 仍非每一页面、业务组件和模块逐符号的完整矩阵；组件状态与所有错误/空/加载/禁用/成功行为未全覆盖。 |
+| 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4 的 65 条 method/path/handler 行与 AST 65/65 对账；请求、响应、错误和 service 摘要已列。§4.3 新增 13 条逐项复核；52/65 原 caller 统计不再代表逐链完成。 | 本轮静态核查补明旧正则漏报和过度评级；没有对 route 做运行请求。 | 13-route 表仍有包装未消费、无 caller 和 runtime 待核；65 条完整 service→Web 入口→行为链未完成。task_status/batch 当前 importer 未找到；image_proxy Web 外链 Markdown runtime 未验证。 |
+| 5. Specs 001–020 矩阵 | PARTIAL | §5 有 20 个独立 spec 行及测试路径/链接状态。 | 报告将单项 spec 套件标 NOT RUN；此前全套测试记录不能推出每个 spec 通过。本轮未运行测试。 | 各行的实现符号→契约→具体测试关联仍有 UNVERIFIED_LINK，且没有逐 spec 本轮结果。 |
+| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §7、§9 列出当前入口和部分页面链。 | 历史本轮证据：报告记载 worker 曾读取 / 空工作区、/onboarding backend ready、/settings/general。另有 dispatcher 评论 c_mw6b3gen1nvuje / c_mw6b5js11okyoi 记录 Settings 九个子路由和 onboarding 的只读复验；不是当前 resumed run 重做。详见 §11。 | 单/批提交、批量选择、失败重试、真实 reader、分组 mutation、设置保存/清理等未完成；仅“页面打开”也不能证明该页面的主动作已验证。 |
+| 7. 运行可用专项测试与静态门禁 | PARTIAL | §6 原测试表保存精确命令与汇总。 | **此前报告记录，不是本轮重跑**：前端 pnpm exec vitest run exit 0（17 files/100 tests）、pnpm exec tsc -b exit 0、pnpm lint exit 0、pnpm build exit 0（3158 modules，bundle warnings）；backend .venv/bin/python -m pytest -q -p no:cacheprovider exit 0（953 passed、15 subtests、1 warning）。**本轮**实际命令只有 git diff --check（exit 0，提交前）；另一次 shell 检查因把 cmd.exe if exist 语法用于 Bash 而 exit 2，未改变文件。 | 本轮未重跑前后端测试、tsc、lint 或 build；专项测试本轮 NOT RUN。 |
+| 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8 暂无已复现 spec 违规；明确列实现验证不足、未引用候选、范围外与待确认。 | 本轮没有复现产品缺陷。 | 没有可复现违规就不伪造修复票；候选项缺少复现/spec 冲突证据，不能定为缺陷。后续核实发现违规时需另建票。 |
+| 9. worktree clean、只读审计、修复另卡 | PARTIAL | 本轮改动限于此报告；未编辑产品源。 | git diff --check exit 0；当前待提交报告差异尚未 clean。此前提交有 clean 记录，但不能替代本次最终提交后检查。 | 提交后再核验 clean 与分支提交；本轮无业务修复，也未创建修复卡。 |
+| 10. 报告、评论和计数一致 | PARTIAL | 报告包含 100 个 src 路径、18 个 UI 原语、65 条 route 和 20 个 spec 行；本表逐条映射 README §6。 | 本轮 Flow 检查点已记录评论 c_mw6czc947xxnnc；本轮提交与 clean 检查待完成。 | 全量逐符号、逐 route 链和逐 spec 关联尚不足以宣称计数/映射验收；PR pr_006 不合并。 |
+
+## 11. 浏览器用户路径清单（操作与结果状态）
+
+下表区别页面加载证据与主路径动作证据。页面访问记录来自本报告已有记录或明确注明的 Flow dispatcher 评论；不是本次恢复运行的新操作。没有记录的页面操作保持 NOT RUN。
+
+| 用户路径 | URL / 操作 | 已记录结果 | 状态与未执行原因 |
+|---|---|---|---|
+| 工作台/单集 intake | http://127.0.0.1:3015/；打开首页并查看单集入口、空任务态 | 旧报告记载 UI/空态可见 | 页面只读访问；未输入/提交 URL，生成路径 NOT RUN。 |
+| 批量 intake | / → 批量入口 | 可见入口；POST /api/v1/intake/resolve caller 静态链在 §4.3 | 未实际解析、选择视频或提交；NOT RUN。 |
+| 任务选择/失败重试 | / → 任务列表选择失败项并重试 | 静态链在 §9；隔离 DB 先前记为无任务，且本轮未 seed | 无失败任务样本，选择/重试动作 NOT RUN。 |
+| 笔记/转录阅读 | / → 选择已完成任务 → reader tabs | reader 静态链在 §9；无真实任务样本证据 | 带真实 Markdown/transcript 的主路径 NOT RUN。 |
+| 分组动作 | / → GroupPanel 创建/重命名/删除/分配/归档 | 旧报告只读观察分组空态；静态链 §9 | 所有 mutation/下载 NOT RUN；隔离 DB 未 seed/写入。 |
+| Settings: general | /settings/general | 旧报告记录字段可见、未改值时 Save disabled | 加载可见；保存成功/失败未执行。 |
+| Settings: model | /settings/model | dispatcher 评论 c_mw6b3gen1nvuje 记录只读复验 | 保存 provider/model、连接测试等 NOT RUN。 |
+| Settings: transcriber | /settings/transcriber | 同上：只读页面复验 | 保存端点/模型和下载/测试 NOT RUN。 |
+| Settings: OCR | /settings/ocr | 同上：只读页面复验 | 保存与连接测试 NOT RUN。 |
+| Settings: prompt | /settings/prompt | 同上：只读页面复验 | 保存/恢复动作 NOT RUN。 |
+| Settings: media | /settings/media | 同上：只读页面复验 | 保存保留策略与运行 cleanup（删除资源）NOT RUN。 |
+| Settings: download | /settings/download | 同上：只读页面复验 | cookie 写入 NOT RUN。 |
+| Settings: monitor | /settings/monitor | 同上：只读页面复验 | 当前 resumed run 未重复加载；历史记录不作本轮通过。 |
+| Settings: about | /settings/about | 同上：只读页面复验 | 当前 resumed run 未重复加载；历史记录不作本轮通过。 |
+| Onboarding | /onboarding | 旧报告记录 backend ready；dispatcher 评论 c_mw6b5js11okyoi 记载页面及连接状态可见 | 检测/继续配置/写入动作 NOT RUN。 |
+| NotFound | 任意未知路径 → fallback | 静态路由 EmberApp.tsx 与 NotFoundPage | 本轮无真实浏览器访问，NOT RUN。 |
+
+隔离写入授权只限定 T-046 worktree 的临时 SQLite/隔离服务。尽管授权有效，本轮未做写路径验证：没有验证 seed/cleanup 对每类记录和文件的完整可逆性，也没有实际记录写前写后计数，因此不得报告已测试或声称完成清理。报告现存 backend/bili_note.db 的存在/大小本身不等于验证其数据状态；本轮不读取或修改数据库。
