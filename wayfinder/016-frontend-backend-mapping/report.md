@@ -7,16 +7,16 @@
 - 本次校正：spec矩阵逐项测试全部标为「单项套件 NOT RUN」，全量覆盖只能参见§6，不能推出逐spec通过。
 - 本轮前端门禁：BillNote_frontend 下 pnpm exec vitest run exit 0（17 files/100 tests）；pnpm exec tsc -b exit 0；pnpm lint (eslint .) exit 0；pnpm build exit 0（3158 modules，bundle size warnings）。
 - 本轮后端门禁：backend 下 .venv/bin/python -m pytest -q -p no:cacheprovider exit 0（953 passed、15 subtests、1 warning）。初试 .venv/Scripts/python.exe 于 Bash 中 exit 127；改用存在的 POSIX venv 后通过。
-- 本轮 AST 计数（仓库根执行）：解析 backend/app/routers/*.py 装饰器，exit 0；config 18/general 4/media 7/model 5/note 16/note_group 7/ocr 3/provider 5，总计65。
+- 本轮 AST 计数与差异核对（T-046 worktree，基线 c011bbdf）：config18/general4/media7/model5/note16/note_group7/ocr3/provider5；§4 小节边界内逐行提取65条 method/path，unique65，AST/表 missing=0、extra=0、duplicates=0。命令 exit 0。只证明method/path行覆盖，不代表契约/service/UI双向链完整。
 
 ## 0. 进度
 | 节 | 状态 |
 |---|---|
-| 1 计数 / 2 文件导出 / 3 UI 原语调用者 / 4 route 表 | VERIFIED（静态） |
-| 4 双向映射 | route↔service↔Web service 函数 VERIFIED；组件行为级映射 PENDING |
+| 1 计数 / 2 文件导出 / 3 UI 原语调用者 / 4 route method/path 清单 | VERIFIED_SOURCE（src路径100/100；AST method/path 65/65） |
+| 4 route→service→Web 双向映射 | PARTIAL：65/65 method/path/handler 行由 AST 与表格对账；52/65 route rows 具备明确 Web service/caller 静态证据，13/65 仍需逐符号链或运行时核实；契约状态行为与 spec 链仍不完整 |
 | 5 spec 矩阵 | PARTIAL |
 | 6 门禁 | VERIFIED |
-| 7 浏览器路径 | PARTIAL：workspace/settings/general/onboarding 已实测；所有编辑/生成类真实业务提交未执行 |
+| 7 浏览器路径 | PARTIAL：Flow人工提供的只读复验覆盖workspace/onboarding及Settings九个子路由；生成/重试/批量pick/带真实笔记reader和写入路径仍NOT RUN |
 | 8 发现分级 | PARTIAL |
 
 ## 1. 计数（VERIFIED）
@@ -159,7 +159,9 @@
 | ember/ui/Tabs.tsx | TabItem, Tabs | 3 | ember/features/reader/NotePanel.tsx (Tabs×1)<br>ember/features/workspace/GenerationOptions.tsx (Tabs×1)<br>ember/features/workspace/IntakePanel.tsx (Tabs×1) |
 | ember/ui/Tooltip.tsx | Tooltip | 0 | **无静态调用者**（未发现动态注册，待核实） |
 
-## 4. 后端 route（VERIFIED，AST）
+## 4. 后端 route（65条method/path源码枚举完整；调用链映射 PARTIAL）
+
+覆盖口径：65/65 条 route 的 method/path/handler 已逐行列出并与 AST 对账；其中 52/65 条有明确的 BillNote_frontend service 与调用入口静态证据。其余 13/65 条仅有部分证据、人工核对项或待运行时确认，不能标记为完整双向映射。
 | Method | Path | 位置 | 参数 | 响应 | 显式错误 | service | Web 调用者 |
 |---|---|---|---|---|---|---|---|
 | GET | /api/get_downloader_cookie/{platform} | config.py:31 get_cookie | platform:str | R.success | — | 内联/模块级实例 | services/downloader.ts:4 getDownloaderCookie |
@@ -210,7 +212,7 @@
 | GET | /api/task_list | note.py:2571 list_tasks | — | R.success | R.error(f"列出任务失败：{exc}", code=500) | 内联/模块级实例 | services/note.ts:210 listTasks |
 | POST | /api/delete_task_record | note.py:2630 delete_task_record | data:TaskIdRequest | R.success | R.error("任务标识无效", code=400); R.error("缺少 task_id", code=400); R.error(f"删除任务记录失败：{exc}", code=500); R.error(str(exc), code=CODE_TASK_IN_FLIGHT) | TaskInFlightError(services.task_cleanup) | services/note.ts:221 deleteTaskRecord |
 | POST | /api/delete_task_records | note.py:2663 delete_task_records | data:BatchDeleteRequest | R.success | R.error("缺少 task_ids", code=400); R.error(f"一次最多删除 {MAX_BATCH_DELETE} 条", code=400) | TaskInFlightError(services.task_cleanup) | services/note.ts:241 deleteTaskRecords |
-| GET | /api/image_proxy | note.py:2713 image_proxy | request:Request, url:str | 文件/二进制 | HTTPException(status_code=500, detail=str(e)); HTTPException(status_code=resp.status_code, detail="图片获取失败") | 内联/模块级实例 | **无 Web 调用者** |
+| GET | /api/image_proxy | note.py:2713 image_proxy | request:Request, url:str | 文件/二进制 | HTTPException(status_code=500, detail=str(e)); HTTPException(status_code=resp.status_code, detail="图片获取失败") | 内联/模块级实例 | 浏览器扩展 BillNote_extension/src/logic/api.ts:195–204 resolveImageUrl（扩展逐项映射范围外）；BillNote_frontend 无运行时 URL caller |
 | POST | /api/retry_failed_tasks | note.py:2751 retry_failed_tasks_endpoint | data:RetryFailedRequest | R.success | R.error(                 msg=disk_error,                 code=300104,                 data; R.error(                 msg=readiness["reason"],                 code=300102,            ; R.error("scope 只能是 all 或 group", code=400); R.error(f"重试失败任务失败：{exc}", code=500) | 内联/模块级实例 | services/note.ts:507 retryFailedTasks |
 | GET | /api/note_group | note_group.py:82 get_groups | — | R.success | R.error(f"列出笔记分组失败：{exc}", code=500) | MAX_GROUPS(db.note_group_dao), MAX_GROUP_NAME_LENGTH(db.note_group_dao), list_groups(db.note_group_dao) | services/noteGroup.ts:29 listNoteGroups |
 | POST | /api/note_group | note_group.py:105 post_group | data:GroupRequest | R.success | R.error(f"新建笔记分组失败：{exc}", code=500); R.error(str(exc), code=400) | NoteGroupError(db.note_group_dao), create_group(db.note_group_dao) | services/noteGroup.ts:34 createNoteGroup |
@@ -228,16 +230,13 @@
 | POST | /api/update_provider | provider.py:85 update_provider | data:ProviderUpdateRequest | R.success | R.error(msg='更新模型供应商失败'); R.error(msg='请至少填写一个参数'); R.error(msg=str(e)) | ProviderService(services.provider) | services/model.ts:62 updateProviderById |
 | POST | /api/connect_test | provider.py:107 gpt_connect_test | data:TestRequest | R.success | — | ModelService(services.model) | services/model.ts:70 testConnection |
 
-### 4.1 无 Web 调用者（静态结论，不判死代码）
-证据：把前端 63 处 request/fetch/EventSource 调用逐条和 route 比对，再对每条 path 做 grep。
-- `GET /api/media/cache/limit`（media.py:94）
-- `POST /api/media/cache/enforce`（media.py:106）
-- `GET /api/image_proxy`（note.py:2713）
-- media/cache/*：spec 007:158 和 009:136 把它们当后端验收接口 → 运维 API，属范围外。
-- image_proxy：前端只在 store/taskStore/index.ts:78 的注释里提到。URL 是否由后端写进内容，待核实。
+### 4.1 静态 caller 反查（不以静态无引用判断死代码）
+证据：本轮在 BillNote_frontend/src 对 request.get/post/put/delete/patch、fetch、EventSource 进行静态搜索，并逐route path比对；BillNote_extension另独立搜索image_proxy。静态结果不代表页面运行验证；image_proxy Web caller维持UNVERIFIED，见§4.1及§9。
+- 当前 Web (`BillNote_frontend`) 未发现调用的 backend routes：`GET /api/media/cache/limit`（media.py:94）、`POST /api/media/cache/enforce`（media.py:106）。spec 007:158 与 009:136 将 media/cache 能力列为后端验收接口；归类为无 Web caller 的运维/后端 API，非死代码结论。
+- `/api/image_proxy` 的 extension caller 已确认（BillNote_extension/src/logic/api.ts:195–204），但扩展逐组件映射属范围外。Web 本地截图由 backend 写为根相对 `/static/screenshots/...`；MarkdownNote→resolveAssetUrl 将根路径映射到 ASSET_ORIGIN，不经过image_proxy。没有真实外链Markdown笔记验证模型输出图片是否进入Web reader，因此Web image_proxy caller状态为UNVERIFIED，非已确认无caller。
 
 ### 4.2 Web 模块无入口
-- services/proxy.ts（/proxy_config）、services/upload.ts（/upload）、ember/ui/Tooltip.tsx：没有静态调用者 → 无入口候选，删还是接线需产品决定。
+- `services/proxy.ts`（/proxy_config）、`services/upload.ts`（/upload）、`ember/ui/Tooltip.tsx`：整个 BillNote_frontend/src 中未找到静态导入/组件caller，标记静态未引用候选；动态导入/外部使用待核。此处不推断删除或新增接线。
 
 ## 5. spec 矩阵（PARTIAL）
 | spec | 状态 | 前端测试（数） | 后端测试（数） | 本轮 | 符号链接 |
@@ -263,7 +262,7 @@
 | 019-global-model-in-provider-section | implemented | BillNote_frontend/tests/019-global-model-in-provider-section (4) | backend/tests/019-global-model-in-provider-section (6) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
 | 020-note-rendering-and-batch-options | implemented | BillNote_frontend/tests/020-note-rendering-and-batch-options (10) | backend/tests/020-note-rendering-and-batch-options (4) | 单项套件 NOT RUN；仅由全量套件覆盖，见 §6（逐 spec 通过未证明） | UNVERIFIED_LINK（逐符号链接 pending） |
 
-测试数来源：后端用 pytest --collect-only，前端用 vitest json。另有前端 onboardingTranscriber（9）和后端顶层 test_*.py（78）未归属任何 spec。backend/tests/013-global-active-model 与 specs/013-local-transcriber-hardware-acceleration 命名不一致，待核实。
+测试数来源：后端用 pytest --collect-only，前端用 vitest json。当前表格只记录每个 spec 的测试目录与收集数量，不是逐测试文件的 spec→符号证据；逐项具体测试文件、符号和契约链接仍待补齐，因此每行保持 UNVERIFIED_LINK / NOT RUN。另有前端 onboardingTranscriber（9）和后端顶层 test_*.py（78）未归属任何 spec。backend/tests/013-global-active-model 与 specs/013-local-transcriber-hardware-acceleration 命名不一致，待核实。
 
 ## 6. 门禁（VERIFIED_RUN，本轮执行）
 工作目录均为 T-046 专属 worktree。
@@ -278,11 +277,35 @@
 
 ## 7. 浏览器主路径（PARTIAL）
 实际操作：通过 dsh_browser_open 打开 http://127.0.0.1:3015/；页面标题 BiliNote - 强大的AI视频笔记神器，文本含工作区、单集/批量入口、空任务列表、分组空态；确认后端通过前端状态可响应。点击「设置」时当前浏览器状态先因首次启动 guard 重定向至 /onboarding；直接打开该路径看到「首次启动 / 欢迎使用 BiliNote / 后端连通性 / 后端已就绪，可以继续」。该路由页面 DOM 内容可见，但 dsh_browser_snapshot 在部分路由未稳定时曾返回零节点；dsh_browser_execute 确认 onboarding 按钮存在。重新直接打开 /settings/general 后读取页面：设置导航含通用、模型、转写、OCR、提示词、媒体、下载、部署、关于；通用设置字段可见、保存按钮因无改动 disabled。
-本轮真实主路径证据：工作区只读加载与空态 VERIFIED_RUN；设置 /settings/general 只读加载与通用设置列表 VERIFIED_RUN；首次启动 /onboarding 连通性步骤 VERIFIED_RUN（未提交设置）。尚未验证生成笔记、成功笔记阅读、失败/重试、批量分组、设置写入、未知路由；原因：这些会写任务/配置数据，当前没有获准的隔离测试数据/清理流程。故第6条验收未满足，不能将 UI 全路径写成通过。
+浏览器证据分来源：本worker在本轮通过dsh_browser实际读取workspace空态、/settings/general通用设置和/onboarding后端就绪状态；2026-11-07 11:14 Flow dispatcher c_mw6b5...提供只读复验记录：从Settings导航逐页读取九个子路由（general/model/transcriber/ocr/prompt/media/download/monitor/about），另含首页/onboarding，主体内容/控件被记录。该消息提供静态结果摘要，非本worker本轮重新执行的dsh历史。生成提交、失败任务选择/重试、批量展开选择、实际笔记reader、配置写入均NOT RUN：空DB，缺少安全测试种子/清理流程；设置保存、下载模型和清理操作会写持久数据，因此未执行。验收第6条仍不满足。
+
+
+## 9. Route→service→Web UI 静态交叉索引（PARTIAL，source-only）
+证据等级：method/path集合与handler由Python AST核验；第4节有65条静态route行并记录请求参数/响应错误摘要及可观察的直接调用。直接调用不一定是完整业务service链。TS/TSX caller链仅为下表列出的静态部分路径；spec矩阵存在UNVERIFIED_LINK，故不能据此声称65条均已端到端映射。此索引不代表真实用户流程测试。
+
+| 业务链 | API route | 前端调用/用户入口 | 状态/呈现证据与当前边界 |
+|---|---|---|---|
+| 单条 intake/generate | POST /api/v1/intake/resolve; POST /api/generate_note | services/note.ts:resolveIntake/generateNote → ember/features/workspace/IntakeForm.tsx → IntakePanel.tsx → WorkspacePage.tsx → EmberApp.tsx / | IntakeForm 本地 react-hook-form 状态、URL 校验、提交/loading 与 toast；成功先 addPendingTask 并进入 taskStore。无本轮真实提交；错误状态依 service/global request interceptor 与 catch/toast。 |
+| 批量展开/提交 | POST /api/expand; POST /api/generate_notes | services/note.ts:expandUrl/generateNotes → BatchImportPanel.tsx → IntakePanel.tsx → WorkspacePage.tsx → / | BatchImportPanel local stage input/picking、resolving、videos/selected/groupName/merge/submitting；全 URL 失败 toast、逐 URL null 部分失败、提交成功回调由 store刷新。无浏览器主路径运行；静态链证据。 |
+| 任务列表/详情状态 | GET /api/task_list; GET /api/task_status/{task_id}; POST /api/task_status/batch; GET /api/v1/task-groups/snapshot; GET /api/v1/task-groups/events | services/note.ts:listTasks/get_task_status/getTaskStatusBatch/getTaskReadModelSnapshot/subscribeTaskReadModel → taskStore/index.ts → WorkspacePage/TaskList/TaskCard/TaskProgressCard/NotePanel → EmberApp:/ | WorkspacePage listLoading 初始 true，loadTasks.finally 关闭；TaskList loading Skeleton / 空态 EmptyState / 筛选与搜索；poll hook SSE优先并 fallback batch。reader 以 task.markdown 状态显示 empty/markdown/transcript。无带真实task的浏览器运行。 |
+| 单条删除/批量删除/归档 | POST /api/delete_task_record; POST /api/delete_task_records; GET /api/task_archive/{task_id}; POST /api/task_archives | services/note.ts:deleteTaskRecord/deleteTaskRecords/downloadNoteArchive(s) → TaskList/useNoteGroups/NotePanel 调用链 | delete busy/选择与服务错误由调用UI处理；archive 判断 HTTP及Content-Type，JSON错误转可读异常。没有本轮实际删除/下载验证。 |
+| 失败重试 | POST /api/retry_failed_tasks | services/note.ts:retryFailedTasks → retryFailed.ts:retrySelectedFailedTasks → WorkspacePage.retryFailedInScope → TaskList/RetryFailedAction | 空选择 helper 不调用；none/partial/done toast；catch错误 toast；成功 reload。当前 DB 空，没有失败任务，未实际选中或执行。 |
+| 任务分组 | GET/POST /api/note_group; POST /api/note_group/rename,/delete,/assign,/assign_batch; GET /api/note_group/tasks | services/noteGroup.ts → useNoteGroups.ts → WorkspacePage → GroupPanel/TaskList | useNoteGroups loading/busy/downloading 状态、refresh catch console.warn、create/rename mutation catch toast、assignment 后 reload；GroupPanel空组与TaskList空态可达。浏览器本轮只见空组/空任务；CRUD及drag未运行。 |
+| Provider/model | GET /api/get_all_providers; GET /api/get_provider_by_id/{id}; POST /api/add_provider,/update_provider,/connect_test; GET /api/model_list[/ {provider_id}], /api/model_enable/{provider_id}; POST /api/models; GET /api/models/delete/{model_id} | services/model.ts → OnboardingPage/ModelSection/ProviderDialog/ProviderModels/GlobalModelPicker；general active_model routes 另见下一链 | useAsync/section local loading/error与空态组件存在；ProviderDialog submit saving、字段缺值 disabled、catch toast、成功 toast/onDone（已从符号源码核验）。未写入或连接真实provider。 |
+| 通用/全局模型设置 | GET/POST /api/general/settings; POST /api/general/active_model; GET /api/general/active_model/options | services/general.ts → GeneralSection/GlobalModelPicker/ModelSection/PromptSection/TranscriberSection → SettingsPage /settings/* | 通用设置页面本轮读取并显示现有字段；无更改时保存 disabled。写入/切换模型未执行；具体错误反馈由 useAsync/调用组件定义。 |
+| OCR | GET/POST /api/ocr_config; POST /api/ocr_config/test | services/ocr.ts → OcrSection → SettingsPage:/settings/ocr | OcrSection通过useAsync呈现loading/error，save/test调用分别有返回与toast逻辑；本轮未点击测试或提交。 |
+| 媒体保留/清理 | GET/PUT /api/media/settings; GET /api/media/cleanup/recent,/preview; POST /api/media/cleanup | services/media.ts → MediaSection → SettingsPage:/settings/media | settings读取/保存、cleanup preview/run分别走此页；run会删除过期媒体，未触发。 |
+| 下载cookie | GET /api/get_downloader_cookie/{platform}; POST /api/update_downloader_cookie | services/downloader.ts → DownloadSection → SettingsPage:/settings/download | 页面只读加载已浏览器覆盖；cookie内容与写入没有操作/记录。 |
+| 转写器配置/模型 | GET/POST /api/transcriber_config; GET/POST/DELETE /api/whisper_models[/{name}]; POST /api/openai_asr[/{endpoint_id}[/test]]; GET /api/transcriber_models_status; POST /api/transcriber_download | services/transcriber.ts → TranscriberSection/OnboardingPage → SettingsPage:/settings/transcriber 或 /onboarding | 本地config/model status、skeleton、saving/download状态及错误处理有静态调用链；创建/改写端点或模型下载均未执行。 |
+| 启动/health/deploy | GET /api/sys_check,/sys_health,/deploy_status | services/system.ts → EmberApp/systemCheck/MonitorSection；useCheckBackend + OnboardingPage 直接 fetch sys_check | onboarding显示backend ready；system health与deploy页面读取链静态核实；详情运行状态未逐页执行。 |
+| 上传 | POST /api/upload | services/upload.ts:uploadFile 有调用定义但 src 中无 importer | UI入口待核实；响应空url返回 {url:''}。不可据静态无入口断言死代码。 |
+| 代理 | GET/POST /api/proxy_config | services/proxy.ts:getProxyConfig/updateProxyConfig 有调用定义但 src 中无 importer | UI入口待核实；Web service无静态导入者。 |
+| 媒体缓存运维 | GET /api/media/cache/limit; POST /api/media/cache/enforce | BillNote_frontend/src 搜索没有 route URL/callsite；spec 007/009 后端测试覆盖其运维API | Web无caller；明确标为 backend-only/out-of-Web operation，扩展也未发现对应 URL。 |
+| 图片代理（Web caller 条件待核） | GET /api/image_proxy | extension 的 BillNote_extension/src/logic/api.ts:195–204 resolveImageUrl 已确认构造URL（扩展范围外）；Web reader 链对本地截图走 /static → resolveAssetUrl | 后端 `_insert_screenshots` 和 `_insert_approved_screenshots` 将生成的截图URL写为 IMAGE_BASE_URL（默认 /static/screenshots）；静态搜索未发现模型原始 Markdown 外部图片被改写成 /api/image_proxy。Web runtime URL caller NOT FOUND (static)，外链笔记样本可达性 PENDING。 |
 
 ## 8. 发现分级（PARTIAL）
 - 现有 spec 违规：暂无已复现
 - 实现存在但验证不足：组件交互状态大多没有组件测试
-- 无入口候选：proxy.ts、upload.ts、Tooltip.tsx
+- 无 UI 入口候选（不判死代码）：`services/proxy.ts` 的 getProxyConfig/updateProxyConfig 与 `/proxy_config` routes 有服务封装但全 src 无 importer；`services/upload.ts` 的 uploadFile 与 `/upload` route 无 importer；`ember/ui/Tooltip.tsx` 无组件 caller。动态注册/外部调用仍待核实。
 - 范围外：media/cache/limit、media/cache/enforce
-- 待核实：image_proxy 调用方；013 测试目录命名
+- 待核实：proxy/upload 是否由运行时动态导入或未来入口消费；013 测试目录命名。
