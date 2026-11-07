@@ -207,7 +207,7 @@
 | GET | /api/task_archive/{task_id} | note.py:2066 download_task_archive | task_id:str | 文件/二进制 | R.error("任务标识无效", code=400); R.error("笔记不存在或尚未生成", code=404); R.error("笔记内容为空，无法导出", code=404); R.error(f"笔记归档导出失败：{exc}", code=500); R.error(str(exc), code=400) | NoteArchiveError(utils.note_archive) | services/note.ts:79 downloadNoteArchive |
 | GET | /api/v1/task-groups/events | note.py:2268 get_task_groups_events | request:Request, task_ids:list[str], source:str, since:int | SSE | R.error("一次最多订阅 1000 个任务", code=400) | 内联/模块级实例 | services/note.ts:462 subscribeTaskReadModel |
 | GET | /api/v1/task-groups/snapshot | note.py:2326 get_task_groups_snapshot | task_ids:list[str], source:str | R.success | — | 内联/模块级实例 | services/note.ts:449（正则未命中，人工核对） |
-| POST | /api/task_status/batch | note.py:2352 get_task_status_batch | data:BatchStatusRequest（ids去重，≤1000） | R.success | 超限code400；异常code500 | 内联/模块级实例 | services/note.ts:410–412 getTaskStatusBatch；CodeGraph引用图将useTaskPolling与batch service关联，但当前可见interval循环直接调用snapshot，route的选择条件未实证 |
+| POST | /api/task_status/batch | note.py:2352 get_task_status_batch | data:BatchStatusRequest, trims/dedupes, max 1000 | R.success(states) | over-limit code400; exception code500; unknown/deleted=null; known without status=PENDING | module level | services/note.ts:410–412 wrapper only; no active main-Web importer found in full src search; polling uses snapshot/SSE |
 | GET | /api/task_status/{task_id} | note.py:2385 get_task_status | task_id:str | R.success | R.error(                 message or "任务失败",                 code=500,                 data | TaskStatus(enmus.task_status_enums) | services/note.ts:248 get_task_status |
 | GET | /api/task_list | note.py:2571 list_tasks | — | R.success | R.error(f"列出任务失败：{exc}", code=500) | 内联/模块级实例 | services/note.ts:210 listTasks |
 | POST | /api/delete_task_record | note.py:2630 delete_task_record | data:TaskIdRequest | R.success | R.error("任务标识无效", code=400); R.error("缺少 task_id", code=400); R.error(f"删除任务记录失败：{exc}", code=500); R.error(str(exc), code=CODE_TASK_IN_FLIGHT) | TaskInFlightError(services.task_cleanup) | services/note.ts:221 deleteTaskRecord |
@@ -244,20 +244,20 @@
 | Route | Web 调用/用户入口及证据 | 结论 |
 |---|---|---|
 | `POST /api/openai_asr/{endpoint_id}/test` | `services/transcriber.ts:testOpenaiAsr:134–141` → `TranscriberSection.tsx` 的端点测试动作；backend `config.py:test_openai_asr:270–312` 以临时 WAV 探测 endpoint。原 §4 仅因正则未命中标疑；本轮 CodeGraph/source 核实了静态调用链。未实际执行外部 ASR 请求。 | 静态 caller 已证；运行验证未做 |
-| `GET /api/sys_check` | `hooks/useCheckBackend.ts:51–76` 请求 health probe，`useCheckBackend:141–159` 轮询和更新启动状态；`EmberApp.tsx:24–41` 用 hook 决定启动屏/重试。 | 静态 caller 已证 |
+| `GET /api/sys_check` | Main Web: `useCheckBackend.ts:51–76,141–159` probes `${VITE_API_BASE_URL||/api}/sys_check`, any HTTP 2xx is online, retries every2s up to60s; `EmberApp` gates startup. `OnboardingPage.tsx:44` also fetches `/sys_check` on mount. Detailed monitor uses `/sys_health`. | Main-Web caller confirmed, including onboarding probe; run_060 isolated startup health path confirms proxy reached 8484. |
 | `GET /api/media/cache/limit` | 前端全 `src` URL/callsite 搜索未发现；backend `media.py:94` 是运维 API，底层 cache service 另由内部清理流程使用。 | 无 Web caller 证据；保留为 backend 运维能力，非死代码结论 |
 | `POST /api/media/cache/enforce` | 同上，`media.py:106`；前端无 route URL/callsite，底层 `enforce_cache_limit` 有内部调度/调用。 | 无 Web caller 证据；backend-only/运维边界待 spec 确认 |
 | `POST /api/v1/intake/resolve` | `services/note.ts:43–52 resolveIntake` → `BatchImportPanel.tsx:209–238` 的解析/提交步骤；backend `note.py:88–93` 调 `resolve_bilibili_inputs`。 | 静态 caller 已证（旧正则漏报）；真实浏览器批量路径待跑 |
 | `GET /api/v1/task-groups/snapshot` | `services/note.ts:445–452 getTaskReadModelSnapshot` → `hooks/useTaskPolling.ts:97–117` 的 SSE 断开 fallback / 轮询 → taskStore 状态更新；backend `note.py:2326` 构造快照。 | 静态 caller 已证（旧正则漏报） |
-| `GET /api/image_proxy` | BillNote Web reader 本地截图路径是 `MarkdownNote.tsx` → `resolveAssetUrl` (`assets.ts:25–29`) → `/static/screenshots`；Web `src` 未找到 `/api/image_proxy` URL 构造。扩展 caller 已核实但扩展组件映射范围外。尚无真实 external-image Markdown 样本。 | Web 静态 caller 未发现；运行时外链样本待核，不能断言无动态 caller |
+| `GET /api/image_proxy` | No main-Web `/api/image_proxy` caller found. Web local screenshots use MarkdownNote → resolveAssetUrl → `/static/screenshots`. Extension-only consumer is `BillNote_extension/src/logic/api.ts:resolveImageUrl` for allowlisted domains; extension components excluded. | No Web caller located; Web external-Markdown runtime remains unverified. |
 | `GET /api/proxy_config` | `services/proxy.ts:getProxyConfig` 有包装，但整个 `BillNote_frontend/src` 无 importer/组件调用者；backend handler读 `ProxyConfigManager`。 | 包装无 UI 入口；静态未引用候选，动态/外部消费待核 |
 | `POST /api/proxy_config` | `services/proxy.ts:updateProxyConfig` 有包装，但整个 `src` 无 importer/用户入口；backend handler写 `config/proxy.json`。 | 包装无 UI 入口；静态未引用候选，动态/外部消费待核 |
 | `POST /api/upload` | `services/upload.ts:uploadFile` 有包装，但 `BillNote_frontend/src` 无 importer/调用者；backend `note.py:1593` 写上传文件。 | 包装无 UI 入口；动态/外部消费待核 |
-| `POST /api/task_status/batch` | `services/note.ts:410–412 getTaskStatusBatch`；CodeGraph把`useTaskPolling`列入batch接口调用图，但hook当前可见的轮询循环在97–116行实际请求`getTaskReadModelSnapshot`，SSE失败fallback条件未在读取范围完整核实。 | 模块调用关联有证；确切活跃route invocation条件待核，不标无caller，也不声称此route为当前主轮询 |
+| `POST /api/task_status/batch` | `services/note.ts:410–412 getTaskStatusBatch` is a service wrapper only. Full frontend src importer search found no active caller. `useTaskPolling.ts:72–95` uses SSE; interval loop `97–116` calls snapshot. Extension callers use single-task status. | No active main-Web importer. Wrapper/comment retained as legacy/unused candidate; unknown external or dynamic consumer not ruled out. |
 | `GET /api/task_status/{task_id}` | `services/note.ts:244–252 get_task_status` → `store/taskStore/index.ts` 的 `rehydrateTask` 详情内容加载路径；用于成功状态后读取完整 markdown/transcript，而当前进度轮询由 SSE/snapshot 承担。 | 静态 caller 已证（详情 rehydrate，不是主轮询） |
 | `POST /api/task_archives` | `services/note.ts:99` 的批量归档下载包装 → `useNoteGroups.ts:167–188 downloadCheckedGroups` → `GroupPanel/Workspace` 分组选中已完成任务后下载。 | 静态 caller 已证；真实下载路径待浏览器验证 |
 
-计数处理：13条为疑似route复核集合，不是65条完整caller链的完成/缺失分母。cache limit/enforce、upload与image_proxy没有明确Web caller；proxy_config服务包装存在但入口静态调用待核。openai_asr test、sys_check、intake resolve、task-groups snapshot、task_status detail与task_archives有静态caller。task_status/batch有服务符号且被调用图联系到useTaskPolling，但当前可见轮询体调用snapshot，精确route选择条件待核。65条逐route UI行为链未完成。
+13条仅为疑似route复核集合，不是完整caller链分母。batch status wrapper无当前前端importer；proxy GET/POST和upload wrapper无main-Web caller；image_proxy只由扩展的allowlisted image resolver消费，当前Web本地assets走/static/screenshots；cache limit/enforce无UI caller，enforce有cleanup loop和terminal-task内部调用。sys_check由useCheckBackend及OnboardingPage调用，sys_health才是详细Monitor API。65条逐route UI行为/error链仍未完成。
 
 ### 4.2 Web 模块无入口
 - `services/proxy.ts`（/proxy_config）、`services/upload.ts`（/upload）、`ember/ui/Tooltip.tsx`：整个 BillNote_frontend/src 中未找到静态导入/组件caller，标记静态未引用候选；动态导入/外部使用待核。此处不推断删除或新增接线。
@@ -395,6 +395,101 @@ run_060 actual path outcomes are recorded in §11. Synthetic fixture rows/files 
 - 范围外：media/cache/limit、media/cache/enforce
 - 待核实：proxy/upload 是否由运行时动态导入或未来入口消费；013 测试目录命名。
 
+## 3A. Primitive caller purposes and source-derived state/API evidence
+
+Purpose descriptions below come from inspected call sites. They are static-source evidence, not browser verification. BilibiliMark is registered as videoPlatforms[0].logo in constant/note.ts; no frontend consumer/render of videoPlatforms/logo was found. Tooltip has no static caller or dynamic registry found.
+
+| Primitive | Caller purpose |
+|---|---|
+| Badge | TaskCard/TaskProgressCard status; About version/stack; Download platform; GlobalModelPicker active model; Model provider; Monitor health; OCR result; Prompt state; ProviderModels model; Transcriber engine/model. |
+| Button | Reader copy/download; intake/batch actions; group operations; retry/task selection; onboarding; settings save/test/refresh/provider/model/cookie actions; mobile navigation, locale, startup retry; Dialog/Drawer controls. |
+| Card | Intake/batch/task progress/onboarding surfaces and settings content surfaces. CardBody is used in OnboardingPage; CardHeader/CardTitle/CardFooter have no external callers. |
+| Checkbox | Batch part selection; GroupPanel group selection. |
+| Chip | Batch selections; generation format toggles; TaskList filters. |
+| Dialog | Group CRUD; TaskList bulk delete; provider editor; transcriber endpoint editor. |
+| Drawer | AppShell mobile navigation. |
+| EmptyState | Empty note/transcript/history/workspace; NotFound; no providers/models. |
+| Field | Intake/batch/options/onboarding forms; cookie, OCR, prompt, provider, transcriber fields. |
+| Input/Textarea | Transcript/task search; URLs/selections/options; group name; onboarding credentials; cookie; General/Media/OCR/Prompt/Provider/Model/Transcriber fields. |
+| Progress | TaskCard compact and TaskProgressCard detailed progress. |
+| Select | Generation options; active global model; provider type; transcriber engine/model. |
+| Skeleton | TaskList and initial loading in settings sections. |
+| Spinner | Lazy fallback; batch resolve; active task; onboarding/startup; Button loading. |
+| Switch | Batch/generation options; general boolean; OCR/transcriber toggles. |
+| Tabs | Note/transcript reader; sampling mode; single/batch intake. |
+| Tooltip | No static caller/dynamic registration found; unresolved candidate, not dead-code proof. |
+
+Source-derived component state/API summary (browser execution is separate): WorkspacePage uses Zustand tasks plus useNoteGroups/useTaskPolling; initial list loading ends when loadTasks settles and retry errors toast. IntakeForm uses react-hook-form and task store; multipart probe delays and silently catches, while full submit state needs follow-up. BatchImportPanel owns local stage/resolve/selection/group/merge/submitting; empty/all-failed/partial resolve toasts and resolve loading clears in finally. TaskList uses store tasks plus local filters/search/selection; callbacks and empty-selection guards gate bulk actions. useNoteGroups owns group loading/busy/selection and server-backed CRUD; list errors warn/finally clear loading, mutations toast and refresh. NotePanel/TranscriptView render task data without backend calls; empty transcript yields EmptyState and note copy errors toast. GeneralSection initial Skeleton/save/reload/error toast and disabled-on-clean draft are source-backed. Model/Transcriber/OCR/Prompt/Media/Download/Monitor settings have per-section async/local state and source-level loading/save/error branches; direct component tests and browser writes remain incomplete. AboutSection is static with no API.
+
+Direct UI test links were not found within the reported CodeGraph caller hops for most listed components. These rows are SOURCE_ONLY unless run_060 browser evidence is explicitly named in section 11. Section 2B callers are file-level inheritance; they are not per-export call proofs.
+
+
+## 3C. Verified static primitive caller-use matrix
+
+Use descriptions below derive from indexed callsites. This is source evidence, not independent browser execution or direct tests. BilibiliMark is registered as videoPlatforms[0].logo, but no frontend consumer/render of that metadata was found; Tooltip has no static caller/dynamic registration.
+
+| Primitive | Caller use |
+|---|---|
+| Badge | TaskCard/TaskProgressCard status; About version/stack; Download platform; GlobalModelPicker active model; ModelSection provider; Monitor health; OCR result; Prompt state; ProviderModels model; Transcriber engine/model. |
+| Button | NotePanel copy/download; intake/batch submit/options; group create/rename/delete/download; retry/task selection/bulk; onboarding steps; settings save/test/refresh/model/cookie; AppShell mobile nav; locale switch; startup retry; Dialog/Drawer controls. |
+| Card | Intake/batch/task progress/onboarding and settings surfaces. CardBody has two OnboardingPage uses; CardHeader/CardTitle/CardFooter no external callers. |
+| Checkbox | Batch part picks; GroupPanel selection. |
+| Chip | Batch picked entries; generation format options; TaskList filters. |
+| Dialog | Group CRUD; TaskList delete confirmation; ModelSection provider editor; TranscriberSection endpoint editor. |
+| Drawer | AppShell mobile navigation. |
+| EmptyState | No note/transcript/history/workspace; NotFound; no providers/models. |
+| Field | Intake/batch/generation/onboarding; cookie/OCR/prompt/provider/transcriber fields. |
+| Input/Textarea | Transcript/task search; batch URLs/controls; generation values; group name; intake URL; onboarding credentials; cookie; general/media/OCR/prompt/provider/model/transcriber fields. |
+| Progress | TaskCard compact; TaskProgressCard detailed. |
+| Select | Generation options; active model; provider type; transcriber engine/model. |
+| Skeleton | TaskList and initial settings loads. |
+| Spinner | Lazy route fallback; batch resolve; active task; onboarding/startup; Button loading. |
+| Switch | Batch/generation settings; general boolean; OCR/transcriber toggles. |
+| Tabs | Note/transcript; sampling mode; single/batch intake. |
+| Tooltip | No static caller or dynamic registry found; unresolved candidate only. |
+
+Caller use is source-level and does not prove runtime transitions or browser/test coverage for every instance. See §3B and §3C for source-state evidence; §11 lists actual browser runs.
+
+
+### 3C. Per-symbol state/API/behavior and direct verification status
+
+Each row records state ownership and code-supported branches. SOURCE_ONLY is not browser verification. Test names are listed only where direct coverage is known.
+
+| Symbol/source | Entry | State owner/API | Source-supported error/empty/loading/disabled/success behavior | Direct tests/browser |
+|---|---|---|---|---|
+| WorkspacePage, pages/WorkspacePage.tsx:24 | EmberApp / | Zustand tasks/current ID; useNoteGroups/useTaskPolling; child services | listLoading true until loadTasks settles; current task from ID; retry catches/toasts | run_060 workspace; no direct page test |
+| IntakeForm, features/workspace/IntakeForm.tsx:79 | Workspace single mode | react-hook-form URL/options; taskStore pending row; expandUrl multipart probe | 600 ms probe silently catches; full submit branches need review | helper tests only; submit NOT RUN |
+| BatchImportPanel, features/workspace/BatchImportPanel.tsx:83 | IntakePanel batch panel | local stage/resolving/videos/selection/group/merge/submitting; expandUrl/generateNotes | empty/all-fail/partial resolve toast; resolving clears finally; success enters picking | 001/018 helpers; live intake NOT RUN |
+| TaskList, features/workspace/TaskList.tsx:45 | Workspace history | Zustand tasks/current/remove; local filter/search/selection; parent callbacks | group/status/search filters; empty-selection/optional callback guards; exact empty rendering needs review | 005 tests; run_060 failed filter/retry/delete |
+| GroupPanel/useNoteGroups, features/workspace/GroupPanel.tsx:27,useNoteGroups.ts:31 | Workspace shared hook | server group records; taskStore tasks; list/create/rename/delete/assign/archive APIs | initial list warns/finally clears loading; blank names blocked; mutation busy/toast/reload; delete resets selected group and reloads tasks | run_060 CRUD; drag/assign/archive NOT RUN |
+| NotePanel/TranscriptView/MarkdownNote | Workspace selected task | task markdown/transcript + local tabs/query; no reader API | copy errors toast; note controls require markdown; empty transcript uses EmptyState; markdown math/time transforms | run_060 empty tabs; successful content NOT RUN |
+| GeneralSection, settings/sections/GeneralSection.tsx:73 | Settings /general | getGeneralSettings, local draft, updateGeneralSettings | initial Skeleton; save disabled when clean; success clears/reloads; error toast | run_060 reversible max_parallel_notes save |
+| ModelSection | Settings /model | provider/global queries and local dialog state; activateGlobalModel | empty provider default; select validates then saves/reloads or toasts | provider writes/connect NOT RUN |
+| TranscriberSection | Settings /transcriber | config/status queries, editor/delete/download state and APIs | 2s status polling during download; apply errors toast; success toast/reload | endpoint/download NOT RUN |
+| OcrSection | Settings /ocr | config query, local draft/test result; update/test APIs | initial Skeleton; save reload/toast; test stores result/failure detail | OCR write/test NOT RUN |
+| PromptSection | Settings /prompt | general settings query/local draft; update API | placeholder/length validation; save disabled invalid; restore local draft | save/restore NOT RUN |
+| MediaSection | Settings /media | retention/recent queries, preview/busy; cleanup APIs | Skeleton; preview before deletion; errors toast; success reloads/clears preview | media write/cleanup NOT RUN |
+| DownloadSection | Settings /download | local cookie and read/update APIs | initial error swallowed; save disabled during load; success/error toast | cookie write NOT RUN |
+| MonitorSection | Settings /monitor | independent sys_health/deploy queries | loading until data; health error shown; deploy-only error branch needs review | main path NOT RUN |
+| AboutSection | Settings /about | static/i18n; no API/state | static; other states N/A | historical visit only |
+
+Most symbols lack direct UI tests in the searched caller hops. This is source evidence, not completed per-symbol acceptance.
+
+## 4.4 run_062 route-caller corrections
+
+| Route | Current main-Web caller/evidence | Contract and classification |
+|---|---|---|
+| POST /api/task_status/batch | services/note.ts exports getTaskStatusBatch wrapper, but full BillNote_frontend/src has no active importer. useTaskPolling uses task-groups SSE and getTaskReadModelSnapshot. | Backend trims/dedupes up to 1000 IDs; unknown/deleted => null; known without status => pending; lightweight states only. Wrapper/legacy candidate; no active main-Web caller. |
+| GET/POST /api/proxy_config | services/proxy.ts wrappers exist; no active main-Web importer. | GET persisted enabled/url plus effective config/env proxy; POST updates ProxyConfigManager/config/proxy.json. Unreferenced wrapper candidate, not dead-code conclusion. |
+| POST /api/upload | services/upload.ts wrapper exists; no active main-Web or extension caller found. | Router writes multipart bytes under uploads and returns URL. No current UI entry found. |
+| GET /api/image_proxy | No main-Web caller. Extension resolveImageUrl rewrites allowlisted hosts only; extension component mapping is excluded. | Router fetches with Bilibili referer/user-agent and timeout; Web external-Markdown runtime remains unverified. |
+| GET /api/media/cache/limit | No Web/extension caller. MediaSection uses media settings/cleanup routes. | Backend read settings plus dry-run preview; operational route, no Web entry. |
+| POST /api/media/cache/enforce | No Web/extension caller. Enforcement also occurs in internal cleanup loop and terminal-task handling. | Actual cleanup route, separate from UI media cleanup path. |
+| GET /api/sys_check | useCheckBackend probes /sys_check and gates EmberApp; OnboardingPage also fetches it. MonitorSection calls /sys_health, not /sys_check. | Lightweight liveness response; source callers confirmed; isolated boot proxy was exercised in run_060. |
+
+These corrections are source-only and do not complete the full 65-route service-to-Web state/error/test chains. Route totals remain 65 active AST declarations and 66 textual decorator hits including the commented provider.py:75 line.
+
+
 ## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
 
 证据口径：静态源码/清单证据与真实run_060命令或浏览器证据分列。README §6实际10项；PASS仅适用于其独立标准已全部证实。run_060有隔离库seed/清理与浏览器CRUD/retry-safe-skip证据，但不等于整卡通过。
@@ -402,7 +497,7 @@ run_060 actual path outcomes are recorded in §11. Synthetic fixture rows/files 
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
 | 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（56 TSX+39 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 278 exports。 | run_060 counted 97 unique rows (56 TSX, 41 TS including 2 declarations) and 278 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
-| 2. 每个 UI 原语静态调用者 | PARTIAL | §3有18个primitive独立行与静态caller；Tooltip标零静态caller待核；BilibiliMark在constant/note.ts被作为component value消费，不是JSX caller。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
+| 2. 每个 UI 原语静态调用者 | PARTIAL | §3按18个原语列明静态caller及具体用途（source re-audit）；Tooltip零caller；BilibiliMark仅注册为metadata，无render consumer found。 | run_060页面实见Button/Input/Checkbox/Dialog/Tabs等；非全18项运行覆盖。 | 每个caller的具体作用、动态consumer与对应行为/test仍未全项追溯。 |
 | 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2A文件类别/域和§2B 278 export rows、§5B各spec代表链。 | run_060运行workspace/group CRUD/failed-task safe-skip/empty reader tabs/general settings restore。 | 278符号caller仍由文件级继承，逐符号state/API/noAPI/error/empty/loading/disabled/success/test未完成；其余页面动作缺运行证据。 |
 | 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4列65条活动route及method/path/contract摘要，§4.3标明13个历史疑点。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry和delete。 | 65条完整route→service→UI/state/error链仍欠；proxy/upload/image_proxy无入口/动态路径待核，task_status/batch当前调用条件待核。 |
 | 5. Specs 001–020 矩阵 | PARTIAL | §5B逐项列当前实现候选、backend contract与具名test paths，并标historical/inferred gaps。 | FE 17 files/100 tests、BE 875+1 subtest aggregate目录集合通过；非逐spec测试结果。 | 逐验收点symbol→route/service/contract→test links未全部直接证明；006/013/014/016关联尤其薄弱，013 exact tests absent。 |
@@ -854,3 +949,11 @@ This matrix links current source anchors and named tracked tests. Historical pre
 | 020 rendering/options | markdown/generationSettings/GenerationOptions/IntakeForm/BatchImportPanel/GroupPanel/MarkdownNote | generation APIs, no new route | BE 020 test_prompt_format_rules; FE 020 markdown.test.ts/generationSettings.test.ts | suites pass |
 
 run_060 frontend spec-directory suite: 17 files/100 tests, exit 0. Backend existing spec-directory suite (001–015 except absent 016, plus 017–020): 875 passed + 1 subtest passed, exit 0, one pkg_resources warning. These aggregate results do not prove each spec requirement complete.
+
+## 12. run_063 current worktree verification
+
+The current T-046 worktree is based on master `c011bbdf80f604fb1adc0a5030575c237c6d3568`. This round made no product-source changes. `git ls-files BillNote_frontend/src` returned 100 paths; TS/TSX returned 95 paths (55 `.tsx`, 40 `.ts` by shell glob plus declaration files counted by the report inventory), and CSS returned 2 paths. The raw decorator search returned 66 textual hits; the report route table uses 65 active AST routes because `backend/app/routers/provider.py:75` is commented.
+
+Fresh commands in this round, all from the T-046 worktree: `pnpm exec vitest run tests/001-bilibili-batch-import tests/004-note-math-rendering tests/005-modern-dark-ui tests/010-group-and-note-deletion tests/015-note-preset-scene-and-detail tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options tests/onboardingTranscriber.test.ts` exit 0 (17 files/100 tests); `pnpm exec tsc -b` exit 0; `pnpm lint` exit 0; `pnpm build` exit 0 (3158 modules, chunk-size/Browserslist warnings); `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider tests/001-bilibili-batch-import tests/002-video-understanding-sampling tests/003-openai-compatible-asr tests/005-modern-dark-ui-and-task-progress tests/006-note-pipeline-performance tests/007-note-archive-and-media-cache tests/008-ocr-assist-and-legacy-cleanup tests/009-batch-grouping-and-long-run-robustness tests/010-group-and-note-deletion tests/011-failed-task-retry tests/012-rate-limit-backoff tests/013-global-active-model tests/014-backend-cache-optimization tests/015-note-preset-scene-and-detail tests/017-web-rebuild-and-architecture tests/018-single-batch-and-merged-note tests/019-global-model-in-provider-section tests/020-note-rendering-and-batch-options` exit 0 (875 passed, 1 subtest passed, 1 pkg_resources warning). `git diff --check` exit 0 before commit.
+
+The ten README acceptance items remain PARTIAL. This round confirms executable gates and source-count consistency only; it does not close the report’s documented gaps in per-symbol behavior/state/test rows, all 65 route-to-Web chains, per-acceptance-point spec links, or every user-reachable browser write/read path. No reproducible existing-spec violation was established and no repair task was created.
