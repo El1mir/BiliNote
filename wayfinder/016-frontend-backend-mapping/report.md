@@ -552,7 +552,7 @@ The first scan used the root project-reference tsconfig (empty files list) and r
 | Same-file-only use / no external value import in scan | 91 | Includes local helpers/types plus re-export/route-entry candidates; do not call these dead code. Requires same-file/dynamic/lazy/route/re-export classification. |
 | Total exported path-symbol pairs | 280 | Matches report inventory; includes named re-exports and defaults. |
 
-The scan does not claim 159 is the final caller graph: namespace/property references, reflective/config-driven dispatch, JSX/router lazy entries, re-export alias identity and type/value merges need manual/source-specific reconciliation. Symbols with no direct import edge need classification as entry module, route lazy import, re-export, same-file helper, type-only contract, metadata value or unresolved candidate before any dead-code conclusion. Temporary scanner files were removed after analysis. The root-tsconfig false-zero attempt is not counted as a test or audit result.
+Run_073 scan totals: 159 exports had compiler-resolved external value/JSX use; 30 had type-only external imports; 91 had same-file-only/no external value use under the scan. These are aggregate classifications only; report §2B has no exact 159 per-symbol external-use edges yet. Namespace/property access, re-export identity, route/lazy entry, same-file, type-only and dynamic/config dispatch need classification before any “no caller” judgment. The root-tsconfig scan returned zero files and is discarded, not a test result.
 
 
 ## 3F. run_073 TypeScript compiler import-use classification (lower-bound)
@@ -562,22 +562,22 @@ The first attempt used the root project-reference tsconfig, whose files list is 
 
 ## 10. README §6 逐项验收状态（当前：PARTIAL，不代表审计完成）
 
-验收汇总：截至run_067，README §6十项均为PARTIAL，未有整项PASS。局部主路径/门禁有run evidence，但每项完整标准仍有未闭合子项。
+验收汇总：截至run_073，十项整体均PARTIAL，未有整项PASS；独立门禁/局部路径虽有证据，但每项完整验收仍未闭合。
 
-证据口径：区分run_060/067浏览器与门禁证据及run_071 report-only更新；README §6实际10项，只有整项全部达标才可标PASS。
+证据口径：区分run_060/067浏览器和测试证据、run_073只读编译器scan及report-only更新；README §6实际10项，整项完全证实方可标PASS。
 
 | README §6 | 状态 | 静态/文件证据 | 本轮命令/浏览器证据 | 剩余差距 |
 |---|---|---|---|---|
 | 1. 全量枚举与组件/导出符号 | PARTIAL | master c011bbdf tracked src=100/100；95 runtime TS/TSX（55 TSX+40 non-declaration TS）、2 d.ts、3 CSS；§2A 97 files, §2B 280 exports。 | run_063 fresh inventory counted 97 unique rows (55 TSX, 42 TS including 2 declarations) and 280 symbol rows. | Symbol callers are file-level inheritance only; per-symbol state/API/error/empty/loading/disabled/success/test still incomplete. |
 | 2. 每个 UI 原语静态调用者 | PARTIAL | §3/§3D列18原语的静态caller与具体用途；Tooltip零caller；BilibiliMark仅元数据注册、无consumer/render found。 | run_060若干caller路径实际可见，但非全18原语全caller浏览器测试。 | 仍需每个callsite用途与动态caller逐个对账，primitive行为/test与browser覆盖不完整。 |
-| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2B有280 exports；§3E为主要页面/组件source-state摘要。 | run_060 workspace/group/retry/empty reader/general save；run_067 synthetic SUCCESS reader与Settings只读；run_072未跑browser。 | §2B caller仍file-level inherited；逐export入口/state/API/error/empty/loading/disabled/success/direct-test未完成，3E也仅代表symbol集合。 |
-| 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | §4有65 active AST route rows；§4.3/§4.4更新caller分类和证据。 | run_060隔离API实际触发health、note_group CRUD、general settings、retry、delete。 | 65条完整route→service→Web entry/state/error/test闭环仍欠；proxy/upload/image_proxy及batch wrapper按§4.4标为未调用/extension-only/未验证。 |
-| 5. Specs 001–020 矩阵 | PARTIAL | §5B列当前源码/contract/test代表项与历史/推断界限。 | run_060聚合FE/BE suites pass；run_067与071未运行测试。 | 逐spec acceptance点symbol→route/service/contract→test proof不全；006/013/014/016仍弱。 |
-| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11区分run_060和run_067隔离浏览器证据。 | run_060 Workspace/group CRUD/retry safe-skip/General save-restore；run_067 settings read routes、NotFound、synthetic SUCCESS Markdown/transcript reader。 | real single/batch generation、provider/transcriber/OCR/prompt/media/download writes、Onboarding mutations仍未验证。 |
-| 7. 运行可用专项测试与静态门禁 | PARTIAL | §6记录run_060实际命令/exit；§12标注继承证据。 | run_060 FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0/1 warning；run_072 tests NOT RUN。 | 全验收点/route行为覆盖不能由aggregate tests推出；run_072未重跑测试。 |
+| 3. 页面/业务组件/service/store/hook 功能映射 | PARTIAL | §2B有280 exports；§3E是主要页面/组件source-state代表摘要。 | run_060 workspace/group/retry/empty reader/general save；run_067 synthetic SUCCESS reader与Settings只读；run_073仅source scan未跑browser。 | §2B caller仍file-level inherited；逐export入口/state/API/error/empty/loading/disabled/success/direct-test未完成，3E也仅代表symbol集合。 |
+| 4. 每条对外 route 契约、service 与 Web caller | PARTIAL | 65 active route rows与4.4来源证据；route量正确。 | run_060触发health/group/settings/retry/delete；run_073为source scan无请求。 | 所有65 route逐条service/Web caller/状态/error/test契约闭环未完成；wrapper无caller/动态候选按表标示。 |
+| 5. Specs 001–020 矩阵 | PARTIAL | §5B列当前源码/contract/test代表项与历史/推断界限。 | run_060聚合FE/BE suites pass；run_067/071/073未运行测试。 | 逐spec acceptance点symbol→route/service/contract→test proof不全；006/013/014/016仍弱。 |
+| 6. 每个用户可达页面浏览器主路径 | PARTIAL | §11按run_060/run_067逐路径记录。 | run_060 Workspace/group CRUD/retry-safe-skip/General save/empty reader；run_067 Settings/model→about只读路径、NotFound、synthetic SUCCESS Markdown/transcript reader。 | real single/batch generation、generated B站内容reader、设置写路径和Onboarding mutations未验证。 |
+| 7. 运行可用专项测试与静态门禁 | PARTIAL | §6记录run_060实际命令/exit；§12区分后续source scans。 | run_060 FE Vitest17/100、tsc/lint/build exit0；BE pytest875+1 subtest exit0/1 warning；run_072/073 tests NOT RUN。 | 全验收点/route行为覆盖不能由aggregate tests推出；run_072未重跑测试。 |
 | 8. 每个缺陷复现步骤及 spec 依据 | PARTIAL | §8分列可复现违规、验证不足、无入口候选、范围外和产品决策。 | run_060测试及run_060/run_067隔离浏览器路径中未复现spec违规。 | 无需决定的已复现缺陷则无修复票；无入口项保持候选，未判dead code。 |
 | 9. worktree clean、只读审计、修复另卡 | PARTIAL | 产品源/master DB未改；run_067 fixtures和temp env已清；当前report.md唯一diff。 | run_072起点HEAD411ad12；DB business rows=0, cleanup_runs=5 retained startup audits; final commit/clean待完成。 | 提交后验证clean与branch delta；pr_008不合并。 |
-| 10. 报告、评论和计数一致 | PARTIAL | report reconciles 100 src paths, 97 TS/TSX modules, 280 exports, 18 primitives, 65 routes, 20 specs and §10/§11 tables. | run_066/067 evidence and gates are documented; run_071 report-only correction pending. | Full route/symbol/spec behavior trace remains incomplete; PR pr_008 needs_work and unmerged. |
+| 10. 报告、评论和计数一致 | PARTIAL | report reconciles 100 src paths, 97 TS/TSX modules, 280 exports, 18 primitives, 65 routes, 20 specs and §10/§11/§12 tables. | run_060/067 evidence and gates explicitly inherited; run_073 source scan and report correction documented, no tests run. | Full route/symbol/spec behavior trace remains incomplete; PR pr_008 needs_work/unmerged. |
 
 ## 11. 浏览器用户路径清单（操作与结果状态）
 
