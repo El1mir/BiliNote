@@ -28,6 +28,16 @@
 
 768–1023px 只出图标，无一像素被截断的文字；≥1280px 出现标签。
 
+### xl 断点边界（补充，截图 `w2-workspace-1280.png`）
+
+| 宽度 | aside 宽度 | 「工作区」标签 | 「设置」标签 |
+| --- | --- | --- | --- |
+| 1279 | 76px | display:none, 0px | display:none, 0px |
+| 1280 | 256px | display:block, 48px | display:block, 32px |
+| 1440 | 256px | display:block, 48px | display:block, 32px |
+
+1279 → 1280 一像素之差即完成「图标栏 → 图标+标签」切换，正是验收第 2 条要求的行为。
+
 ## 3. Card 选中态（截图 `w2-card-selected-1440.png`）
 
 设置 → 转写器，两个 ASR 接口卡（真实 UI，切换激活项前后各测一次）：
