@@ -85,7 +85,7 @@ export function NotePanel({ task }: NotePanelProps) {
       </div>
 
       {tab === 'note' ? (
-        <div {...tabPanelProps(TABS_ID, 'note')}>
+        <div {...tabPanelProps(TABS_ID, 'note')} className="flex min-h-0 flex-1 flex-col">
           {markdown ? (
             <div className="flex min-h-0 gap-6">
               {outline.length > 2 ? (
@@ -120,7 +120,7 @@ export function NotePanel({ task }: NotePanelProps) {
       ) : null}
 
       {tab === 'transcript' ? (
-        <div {...tabPanelProps(TABS_ID, 'transcript')}>
+        <div {...tabPanelProps(TABS_ID, 'transcript')} className="flex min-h-0 flex-1 flex-col">
           <TranscriptView task={task} />
         </div>
       ) : null}
