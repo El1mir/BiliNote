@@ -1,25 +1,26 @@
 # Ember Studio
 
 ## Overview
-A warm, craft-focused design system for creative project management tools. The aesthetic blends terracotta warmth with modern minimalism — soft earth tones anchor the interface while amber accents draw attention to actions and progress. Designed for teams that value aesthetics alongside productivity. Both light and dark modes feel intentional, not just inverted. The overall mood is calm, focused, and subtly luxurious.
+A warm, craft-focused design system for creative project management tools. The aesthetic blends terracotta warmth with modern minimalism — soft earth tones anchor the interface while amber accents draw attention to actions and progress. Designed for teams that value aesthetics alongside productivity. The system ships a single light theme (`color-scheme: light` in `tokens.css`); there is no dark mode. The overall mood is calm, focused, and subtly luxurious.
 
 ## Colors
 - **Primary** (#C2410C): Terracotta — CTAs, active states, links, focus rings, progress indicators
 - **Primary Hover** (#9A3412): Burnt sienna — hover states on primary elements
 - **Accent** (#F59E0B): Amber — notifications, badges, highlights, new-item indicators
-- **Neutral** (#78716C): Stone — muted text, placeholders, timestamps, metadata
+- **Neutral** (#665F5A): Stone — muted text, placeholders, timestamps, metadata (AA ≥4.5:1 on surface and raised)
 - **Background** (#FAFAF9): Warm white page background with a hint of cream
 - **Surface** (#F5F5F4): Cards, panels, modals — slightly warm off-white
 - **Surface Raised** (#E7E5E4): Hover states, selected rows, active tabs
+- **Surface Raised Hover** (#DCD9D6): One notch darker than Surface Raised — hover on chips and other raised controls (hover always darkens, never lightens)
 - **Text Primary** (#1C1917): Warm near-black — headings, body text, primary labels
 - **Text Secondary** (#57534E): Warm gray — descriptions, captions, secondary info
-- **Border** (#D6D3D1): Warm gray borders — card edges, dividers, input borders
-- **Success** (#16A34A): Completed tasks, approved items, positive states
-- **Warning** (#D97706): Due soon, needs attention, caution banners
-- **Error** (#DC2626): Overdue, failed, destructive actions
+- **Border** (#918A85): Warm gray borders — card edges, dividers, input borders (non-text contrast ≥3:1 on canvas and surface)
+- **Success** (#166534): Completed tasks, approved items, positive states
+- **Warning** (#92400E): Due soon, needs attention, caution banners
+- **Error** (#B91C1C): Overdue, failed, destructive actions
 
 ## Typography
-- **Display Font**: Playfair Display — loaded from Google Fonts
+- **Display Font**: Playfair Display — loaded from Google Fonts via `<link>` in `index.html` (with `preconnect`), not a blocking CSS `@import`
 - **Body Font**: Source Sans 3 — loaded from Google Fonts
 - **Code Font**: Fira Code — loaded from Google Fonts
 
@@ -28,13 +29,13 @@ Display and heading text uses Playfair Display at bold weight with tight letter 
 Type scale: Display 64px, Headline 48px, Section heading 28px, Subhead 20px, Body 16px, Small 14px, Caption 12px, Overline 11px uppercase tracking-wide.
 
 ## Elevation
-Cards rest flat with a 1px warm border (#D6D3D1) and gain a soft shadow on hover (0 4px 16px rgba(28,25,23,0.06)). Active/selected cards get a 2px left border in terracotta. Primary buttons gain a warm glow on hover (0 4px 12px rgba(194,65,12,0.25)). Modals use a larger shadow (0 24px 48px rgba(28,25,23,0.12)) with a backdrop blur. The nav is transparent with backdrop-blur, gaining a 1px bottom border on scroll.
+Cards rest flat with a 1px warm border (#918A85) and gain a soft shadow on hover (0 4px 16px rgba(28,25,23,0.06)). Active/selected cards get a 2px left border in terracotta. Primary buttons gain a warm glow on hover (0 4px 12px rgba(194,65,12,0.25)). Modals use a larger shadow (0 24px 48px rgba(28,25,23,0.12)) with a backdrop blur. The nav is transparent with backdrop-blur, gaining a 1px bottom border on scroll.
 
 ## Components
-- **Buttons**: Primary uses terracotta (#C2410C) fill with white text, 8px radius, semibold weight. Secondary uses transparent bg with 1px stone border (#D6D3D1), warm text. Ghost has no border, just text color. Destructive uses red bg with white text. All buttons have 150ms transition. Sizes: small (32px height, 12px padding), medium (40px, 16px), large (48px, 24px).
-- **Cards**: Warm white surface (#F5F5F4), 1px border (#D6D3D1), 12px radius, 16px padding. Project cards show a colored left stripe (4px) matching the project's assigned color. Hover lifts 2px with shadow increase. Selected cards have a terracotta left border.
-- **Inputs**: 1px border (#D6D3D1), surface background (#F5F5F4), 8px radius, 12px padding, 16px font. Focus: border turns terracotta with a warm ring (0 0 0 3px rgba(194,65,12,0.12)). Error: border turns red. Labels are 14px semibold above the input.
-- **Chips**: Pill-shaped (9999px radius). Category chips: stone-100 bg, stone-600 text, 6px/14px padding. Active: terracotta bg, white text. Priority chips use semantic colors with matching text.
+- **Buttons**: Primary uses terracotta (#C2410C) fill with white text, 8px radius, semibold weight. Secondary uses transparent bg with 1px stone border (#918A85), warm text. Ghost has no border, just text color. Destructive uses red bg with white text. All buttons have 150ms transition. Sizes: small (32px height, 12px padding), medium (40px, 16px), large (48px, 24px).
+- **Cards**: Warm white surface (#F5F5F4), 1px border (#918A85), 12px radius, 16px padding. Project cards show a colored left stripe (4px) matching the project's assigned color. Hover lifts 2px with shadow increase. Selected cards have a terracotta left border.
+- **Inputs**: 1px border (#918A85), surface background (#F5F5F4), 8px radius, 12px padding, 16px font. Focus: border turns terracotta with a warm ring (0 0 0 3px rgba(194,65,12,0.12)). Error: border turns red. Labels are 14px semibold above the input.
+- **Chips**: Pill-shaped (9999px radius). Raised bg (#E7E5E4) with stone-600 text; hover deepens to #DCD9D6 (never lightens). Active: terracotta bg, white text. Priority chips use semantic colors with matching text.
 - **Progress Bars**: 4px height, rounded-full, stone-200 track, terracotta fill. Animated fill with 300ms ease transition. Percentage label in small text above.
 - **Avatars**: Circular (9999px radius), 32px default size. Stack with -8px overlap for team display. Border: 2px solid surface color for separation.
 - **Tabs**: Horizontal, underline style. Inactive: stone text, no underline. Active: terracotta text with 2px bottom border. Hover: warm gray background.
