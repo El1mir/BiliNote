@@ -29,7 +29,11 @@ type TaskListProps = {
   /** Real groups, offered as a keyboard/touch alternative to dragging. */
   groups?: { id: string; name: string }[]
   onMoveTasks?: (ids: string[], groupId: string | null) => void
-  onRetryFailedTasks?: (selectedIds: string[], scope: 'all' | 'group', groupId: string | null) => Promise<void>
+  onRetryFailedTasks?: (
+    selectedIds: string[],
+    scope: 'all' | 'group',
+    groupId: string | null
+  ) => Promise<void>
 }
 
 const isReady = (task: Task) => String(task.status) === 'SUCCESS'
@@ -94,7 +98,9 @@ export function TaskList({
   }, [tasks, filter, query, activeGroupId])
 
   const toggleSelected = (id: string) =>
-    setSelected(current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id]))
+    setSelected(current =>
+      current.includes(id) ? current.filter(item => item !== id) : [...current, id]
+    )
 
   const exitSelection = () => {
     setSelecting(false)
@@ -139,7 +145,12 @@ export function TaskList({
                 {t('common.cancel')}
               </Button>
               {onMoveTasks && groups.length ? (
-                <Button size="sm" variant="ghost" disabled={!selected.length} onClick={() => setMoving(true)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!selected.length}
+                  onClick={() => setMoving(true)}
+                >
                   <FolderInput className="size-3.5" />
                   {t('group.move')}
                 </Button>
@@ -159,11 +170,18 @@ export function TaskList({
                 onClick={deleteSelected}
               >
                 <Trash2 className="size-3.5" />
-                {selected.length ? t('history.selected', { count: selected.length }) : t('common.delete')}
+                {selected.length
+                  ? t('history.selected', { count: selected.length })
+                  : t('common.delete')}
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="ghost" onClick={() => setSelecting(true)} disabled={!tasks.length}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelecting(true)}
+              disabled={!tasks.length}
+            >
               <CheckSquare className="size-3.5" />
               {t('common.more')}
             </Button>
@@ -172,7 +190,10 @@ export function TaskList({
       </div>
 
       <div className="relative">
-        <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-mute" />
+        <Search
+          aria-hidden="true"
+          className="text-ink-mute pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+        />
         <Input
           value={query}
           onChange={event => setQuery(event.target.value)}
@@ -185,7 +206,7 @@ export function TaskList({
             type="button"
             aria-label={t('common.clear')}
             onClick={() => setQuery('')}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-control p-1 text-ink-mute hover:bg-raised"
+            className="ember-press rounded-control text-ink-mute hover:bg-raised absolute top-1/2 right-1 flex size-11 -translate-y-1/2 items-center justify-center"
           >
             <X className="size-3.5" />
           </button>
@@ -194,7 +215,12 @@ export function TaskList({
 
       <div className="flex flex-wrap gap-1.5">
         {filters.map(item => (
-          <Chip key={item.id} active={filter === item.id} onClick={() => setFilter(item.id)} className="px-3 py-1">
+          <Chip
+            key={item.id}
+            active={filter === item.id}
+            onClick={() => setFilter(item.id)}
+            className="px-3 py-1"
+          >
             {item.label}
           </Chip>
         ))}
@@ -249,7 +275,7 @@ export function TaskList({
               key={group.id}
               type="button"
               onClick={() => void moveSelected(group.id)}
-              className="flex items-center gap-2 rounded-control px-2 py-1.5 text-left text-small text-ink-soft transition-colors hover:bg-surface hover:text-ink"
+              className="rounded-control text-small text-ink-soft hover:bg-surface hover:text-ink flex items-center gap-2 px-2 py-1.5 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
             >
               <FolderInput className="size-3.5 shrink-0" />
               <span className="truncate">{group.name}</span>
@@ -258,7 +284,7 @@ export function TaskList({
           <button
             type="button"
             onClick={() => void moveSelected(UNGROUPED_ID)}
-            className="flex items-center gap-2 rounded-control px-2 py-1.5 text-left text-small text-ink-soft transition-colors hover:bg-surface hover:text-ink"
+            className="rounded-control text-small text-ink-soft hover:bg-surface hover:text-ink flex items-center gap-2 px-2 py-1.5 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
           >
             <FolderInput className="size-3.5 shrink-0" />
             <span className="truncate">{t('group.moveToNone')}</span>

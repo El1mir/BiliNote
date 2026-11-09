@@ -144,7 +144,7 @@ export function ProviderModels({
                   <button
                     type="button"
                     onClick={() => onActivate(globalModelValue(provider.id, model.model_name))}
-                    className="rounded-control text-caption text-ink-mute hover:bg-raised hover:text-ember shrink-0 px-1.5 py-0.5 transition-colors duration-150"
+                    className="rounded-control text-caption text-ink-mute hover:bg-raised hover:text-ember shrink-0 px-1.5 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                   >
                     {t('settings.model.useAsGlobal')}
                   </button>
@@ -154,7 +154,7 @@ export function ProviderModels({
                 type="button"
                 aria-label={t('common.delete')}
                 onClick={() => void remove(model.id)}
-                className="rounded-control text-ink-mute hover:bg-raised hover:text-danger p-1"
+                className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-danger inline-flex size-11 shrink-0 items-center justify-center"
               >
                 <Trash2 className="size-3.5" />
               </button>

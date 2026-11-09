@@ -3,7 +3,7 @@ import { cn } from '@/ember/lib/cn'
 
 const BASE =
   'w-full rounded-control border border-line bg-surface px-3 py-2.5 text-body text-ink ' +
-  'placeholder:text-ink-mute transition-[border-color,box-shadow] duration-150 ' +
+  'placeholder:text-ink-mute transition-[border-color,box-shadow] ease-[var(--ease)] duration-[var(--dur-hover)] ' +
   'focus:border-ember focus:outline-none focus:ring-[3px] focus:ring-ember-ring ' +
   'disabled:cursor-not-allowed disabled:opacity-60'
 
@@ -11,11 +11,14 @@ const BASE =
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function Input({ className, ...rest }, ref) {
     return <input ref={ref} className={cn(BASE, 'h-10 py-0', className)} {...rest} />
-  },
+  }
 )
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  function Textarea({ className, ...rest }, ref) {
-    return <textarea ref={ref} className={cn(BASE, 'resize-y leading-relaxed', className)} {...rest} />
-  },
-)
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function Textarea({ className, ...rest }, ref) {
+  return (
+    <textarea ref={ref} className={cn(BASE, 'resize-y leading-relaxed', className)} {...rest} />
+  )
+})

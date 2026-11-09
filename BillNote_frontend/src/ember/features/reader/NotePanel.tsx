@@ -47,7 +47,8 @@ export function NotePanel({ task }: NotePanelProps) {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = (task?.audioMeta?.title || task?.id || 'note').replace(/[\\/:*?"<>|]/g, '_') + '.md'
+    anchor.download =
+      (task?.audioMeta?.title || task?.id || 'note').replace(/[\\/:*?"<>|]/g, '_') + '.md'
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -87,13 +88,13 @@ export function NotePanel({ task }: NotePanelProps) {
                   <ListTree className="size-3" />
                   {t('note.outline')}
                 </p>
-                <nav className="flex flex-col gap-1 border-l border-line">
+                <nav className="border-line flex flex-col gap-1 border-l">
                   {outline.map(item => (
                     <button
                       key={item.id}
                       type="button"
                       onClick={() => scrollToAnchor(item.id)}
-                      className="truncate border-l-2 border-transparent py-0.5 pl-3 text-left text-caption text-ink-soft transition-colors hover:border-ember hover:text-ember"
+                      className="text-caption text-ink-soft hover:border-ember hover:text-ember truncate border-l-2 border-transparent py-0.5 pl-3 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                       style={{ paddingLeft: (item.depth - 2) * 10 + 12 }}
                     >
                       {item.text}

@@ -1,0 +1,20 @@
+# W5 before — 2026-11-10 03:38 HEAD 0a896fe
+$ grep -rno "duration-150" --include=*.tsx src/ember
+BillNote_frontend/src/ember/features/workspace/GroupPanel.tsx:20:duration-150
+BillNote_frontend/src/ember/features/workspace/GroupPanel.tsx:168:duration-150
+BillNote_frontend/src/ember/features/workspace/GroupPanel.tsx:219:duration-150
+BillNote_frontend/src/ember/features/workspace/GroupPanel.tsx:253:duration-150
+BillNote_frontend/src/ember/pages/settings/sections/ModelSection.tsx:116:duration-150
+BillNote_frontend/src/ember/pages/settings/sections/ProviderModels.tsx:147:duration-150
+BillNote_frontend/src/ember/pages/settings/sections/TranscriberSection.tsx:214:duration-150
+BillNote_frontend/src/ember/pages/settings/sections/TranscriberSection.tsx:223:duration-150
+BillNote_frontend/src/ember/ui/Checkbox.tsx:31:duration-150
+BillNote_frontend/src/ember/ui/Input.tsx:6:duration-150
+BillNote_frontend/src/ember/ui/Select.tsx:25:duration-150
+BillNote_frontend/src/ember/ui/Switch.tsx:27:duration-150
+BillNote_frontend/src/ember/ui/Switch.tsx:35:duration-150
+
+count: 13
+
+$ grep -rn "animate-spin" src/ember
+BillNote_frontend/src/ember/features/workspace/TaskProgressCard.tsx:51:              <Loader2 className="size-4 animate-spin text-ember" />

@@ -46,20 +46,23 @@ export function TaskProgressCard({ task, onRetry }: TaskProgressCardProps) {
         <div className="flex items-start gap-3">
           <span className="mt-0.5 shrink-0">
             {failed ? (
-              <AlertTriangle className="size-4 text-danger" />
+              <AlertTriangle className="text-danger size-4" />
             ) : running ? (
-              <Loader2 className="size-4 animate-spin text-ember" />
+              <Loader2 className="ember-spin text-ember size-4" />
             ) : (
-              <CheckCircle2 className="size-4 text-ok" />
+              <CheckCircle2 className="text-ok size-4" />
             )}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <p className="line-clamp-1 text-small font-semibold text-ink">{taskTitle(task)}</p>
-            <p className="line-clamp-1 text-caption text-ink-soft" data-testid="task-stage">
+            <p className="text-small text-ink line-clamp-1 font-semibold">{taskTitle(task)}</p>
+            <p className="text-caption text-ink-soft line-clamp-1" data-testid="task-stage">
               {stageLabel}
             </p>
             {detail ? (
-              <p className="truncate text-caption text-ink-mute tabular-nums" data-testid="task-detail">
+              <p
+                className="text-caption text-ink-mute truncate tabular-nums"
+                data-testid="task-detail"
+              >
                 {detail}
               </p>
             ) : null}

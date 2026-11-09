@@ -1,0 +1,20 @@
+# W5 after — 2026-11-10 03:43
+$ grep -rno "duration-150" --include=*.tsx src/ember
+(no output above = 0 hits)
+count: 0
+
+$ grep -rho "duration-[0-9]*" --include=*.tsx src/ember
+     16 duration-
+
+$ grep -rn "animate-spin" --include=*.tsx src/ember
+(empty = 0 hits)
+
+$ grep -rn "ember-spin" --include=*.tsx src/ember
+BillNote_frontend/src/ember/features/workspace/TaskProgressCard.tsx:51:              <Loader2 className="ember-spin text-ember size-4" />
+BillNote_frontend/src/ember/ui/Spinner.tsx:14:        className="ember-spin inline-block size-4 rounded-full border-2 border-current border-t-transparent"
+
+$ grep -rn "Tooltip" --include=*.tsx --include=*.ts src/ember
+(empty = 0 hits)
+
+$ ls src/ember/ui/Tooltip.tsx
+ls: cannot access 'BillNote_frontend/src/ember/ui/Tooltip.tsx': No such file or directory

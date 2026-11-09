@@ -14,17 +14,17 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
  */
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
   { className, options, ...rest },
-  ref,
+  ref
 ) {
   return (
     <div className="relative">
       <select
         ref={ref}
         className={cn(
-          'h-10 w-full appearance-none rounded-control border border-line bg-surface py-0 pr-9 pl-3 text-body text-ink',
-          'transition-[border-color,box-shadow] duration-150 focus:border-ember focus:ring-[3px] focus:ring-ember-ring focus:outline-none',
+          'rounded-control border-line bg-surface text-body text-ink h-10 w-full appearance-none border py-0 pr-9 pl-3',
+          'focus:border-ember focus:ring-ember-ring transition-[border-color,box-shadow] duration-[var(--dur-hover)] ease-[var(--ease)] focus:ring-[3px] focus:outline-none',
           'disabled:cursor-not-allowed disabled:opacity-60',
-          className,
+          className
         )}
         {...rest}
       >
@@ -34,7 +34,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           </option>
         ))}
       </select>
-      <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-ink-mute" />
+      <ChevronDown
+        aria-hidden="true"
+        className="text-ink-mute pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2"
+      />
     </div>
   )
 })

@@ -1,0 +1,58 @@
+# W5 命中区与 reduced-motion 实测（2026-11-10）
+
+## 测量方式
+vite dev (3033, VITE_API_BASE_URL=http://127.0.0.1:8499/api) + 本地 mock backend（仅返回 count=0 的列表数据），
+浏览器真实 Chromium 渲染后在页面内执行：
+  [...document.querySelectorAll('button[aria-label]')].map(b => { const r = b.getBoundingClientRect(); return {aria:b.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height)} })
+只统计可见（w>0 && h>0）的按钮，即用户实际能点到的命中盒。
+
+## 结果（改动后）
+工作区 /
+- 重命名分组 44×44
+- 删除分组 44×44（两个分组各一组，共 4 个按钮均 44×44）
+设置 /settings/model
+- 编辑服务商 44×44
+设置 /settings/transcriber
+- 编辑接口 44×44
+- 删除接口 44×44
+
+合计 8 个手写图标按钮（分组重命名×2、分组删除×2、编辑服务商×1、编辑接口×1、删除接口×1、启动提示关闭×1；
+后者只在 Tauri 下渲染，未在本轮浏览器实测中复现）实测命中盒 ≥44×44px。
+
+## 不在本卡范围的图标按钮（如实列出）
+- 「下载所选分组」32×28、「新建」32×32、「Switch to English」78×32：均为 ember/ui/Button.tsx 的 size=sm/md 尺寸体系（u-8/u-10/u-12），
+  尺寸由设计系统给定，不是手写图标按钮；本卡 scope 未包含 Button 尺寸标尺改造。
+- Checkbox 18×18（role=checkbox 的表单控件，非图标按钮）。
+
+## prefers-reduced-motion
+TaskProgressCard.tsx:51 已由 animate-spin 改为 .ember-spin；motion.css 的 reduce 块包含 .ember-spin { animation: none }：
+$ sed -n "/prefers-reduced-motion: reduce/,/^}/p" src/ember/motion.css
+@media (prefers-reduced-motion: reduce) {
+  .ember-press,
+  .ember-lift,
+  .ember-toast {
+    transition-property: background-color, border-color, color, box-shadow, opacity;
+  }
+  .ember-press:active:not(:disabled),
+  .ember-lift:hover {
+    transform: none;
+  }
+  .ember-enter,
+  .ember-stagger > *,
+  .ember-overlay[data-state='open'],
+  .ember-dialog[data-state='open'],
+  .ember-drawer[data-state='open'] {
+    animation: ember-overlay-in 1ms linear both;
+  }
+  .ember-spin,
+  .ember-pulse,
+  .ember-indeterminate {
+    animation: none;
+  }
+  .ember-progress-fill {
+    transition: none;
+  }
+}
+
+$ grep -n "ember-spin" BillNote_frontend/src/ember/features/workspace/TaskProgressCard.tsx
+51:              <Loader2 className="ember-spin text-ember size-4" />
