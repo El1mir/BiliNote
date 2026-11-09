@@ -1,10 +1,14 @@
 import { useCallback, useState } from 'react'
 import { Tabs } from '@/ember/ui/Tabs'
+import { tabPanelProps } from '@/ember/ui/tabsA11y'
 import { useI18n } from '@/ember/i18n/context'
 import { BatchImportPanel } from './BatchImportPanel'
 import { IntakeForm } from './IntakeForm'
 
 type Mode = 'single' | 'batch'
+
+/** tab 与面板 id 的稳定前缀（见 Tabs 的 idBase 说明）。 */
+const TABS_ID = 'intake-mode'
 
 type Props = {
   /** 批量提交成功后让工作区刷新任务列表。 */
@@ -34,6 +38,7 @@ export function IntakePanel({ onSubmitted }: Props) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs
+          idBase={TABS_ID}
           value={mode}
           onChange={next => setMode(next as Mode)}
           items={[
@@ -46,11 +51,11 @@ export function IntakePanel({ onSubmitted }: Props) {
         </p>
       </div>
 
-      <div className={mode === 'single' ? undefined : 'hidden'}>
+      <div {...tabPanelProps(TABS_ID, 'single')} className={mode === 'single' ? undefined : 'hidden'}>
         <IntakeForm onMultiPart={handleMultiPart} />
       </div>
 
-      <div className={mode === 'batch' ? undefined : 'hidden'}>
+      <div {...tabPanelProps(TABS_ID, 'batch')} className={mode === 'batch' ? undefined : 'hidden'}>
         <BatchImportPanel
           key={handoffKey}
           initialUrl={handoffUrl}
