@@ -357,6 +357,8 @@ const zhCN = {
   'settings.model.description': '服务商、接口地址与可用模型',
   'settings.saved': '设置已保存',
   'settings.saveFailed': '保存失败',
+  'settings.loadFailed': '读取设置失败，未加载到可编辑内容',
+  'settings.loadFailedHint': '为免把空值当成配置写回，已禁用该分区的保存。请确认后端可用后重试。',
 
   'settings.general.maxParallel': '并发任务数',
   'settings.general.maxParallelHint': '同时进行的笔记生成任务上限',
@@ -929,6 +931,9 @@ const enUS: Dictionary = {
   'settings.model.description': 'Providers, endpoints and available models',
   'settings.saved': 'Settings saved',
   'settings.saveFailed': 'Save failed',
+  'settings.loadFailed': 'Could not load settings — nothing editable was shown',
+  'settings.loadFailedHint':
+    'Saving is disabled so empty values can never be written back as configuration. Check the backend, then retry.',
 
   'settings.general.maxParallel': 'Parallel tasks',
   'settings.general.maxParallelHint': 'How many notes may be generated at once',

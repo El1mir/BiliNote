@@ -10,7 +10,7 @@ import { Card } from '@/ember/ui/Card'
 import { Field } from '@/ember/ui/Field'
 import { Textarea } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 
 /**
  * Base prompt editing (spec 005 ticket 11).
@@ -26,7 +26,7 @@ import { SettingsSection } from '@/ember/pages/settings/Section'
  */
 export function PromptSection() {
   const { t } = useI18n()
-  const { data, loading, reload } = useAsync(getGeneralSettings)
+  const { data, loading, error, reload } = useAsync(getGeneralSettings)
   const [draft, setDraft] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showDefault, setShowDefault] = useState(false)
@@ -39,6 +39,8 @@ export function PromptSection() {
   const invalid = missing.length > 0 || tooLong
 
   const save = async () => {
+    // 读失败时 data 为空，value 会是空串；照常保存就会用空串覆盖 base_prompt_override。
+    if (error) return
     setSaving(true)
     try {
       await updateGeneralSettings({ base_prompt_override: value })
@@ -59,6 +61,14 @@ export function PromptSection() {
 
   if (loading && !data) return <Skeleton className="h-72 w-full" />
 
+  if (error) {
+    return (
+      <SettingsSection title={t('settings.prompt')} description={t('settings.prompt.description')}>
+        <SettingsLoadError onRetry={reload} />
+      </SettingsSection>
+    )
+  }
+
   return (
     <SettingsSection
       title={t('settings.prompt')}
@@ -69,7 +79,7 @@ export function PromptSection() {
             <RotateCcw className="size-3.5" />
             {t('settings.prompt.restore')}
           </Button>
-          <Button size="sm" variant="primary" onClick={save} loading={saving} disabled={invalid}>
+          <Button size="sm" variant="primary" onClick={save} loading={saving} disabled={invalid || Boolean(error)}>
             {t('common.save')}
           </Button>
         </div>

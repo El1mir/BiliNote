@@ -12,7 +12,7 @@ import { Card } from '@/ember/ui/Card'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
-import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 
 /** Byte counts are shown as-is with a hint: a GB-precision field would silently lose exactness. */
 const MiB = 1024 * 1024
@@ -58,7 +58,7 @@ type NumericField =
  */
 export function GeneralSection() {
   const { t } = useI18n()
-  const { data, loading, reload } = useAsync(getGeneralSettings)
+  const { data, loading, error, reload } = useAsync(getGeneralSettings)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<GeneralSettingsPatch>({})
 
@@ -71,6 +71,8 @@ export function GeneralSection() {
   const flag = (key: 'asr_silence_split') => draft[key] ?? data?.[key] ?? false
 
   const save = async () => {
+    // 读失败时每个 num() 都会回落成 0，保存会把 26 个数值字段写成 0。
+    if (error) return
     setSaving(true)
     try {
       await updateGeneralSettings(draft)
@@ -93,6 +95,14 @@ export function GeneralSection() {
     )
   }
 
+  if (error) {
+    return (
+      <SettingsSection title={t('settings.general')} description={t('settings.general.description')}>
+        <SettingsLoadError onRetry={reload} />
+      </SettingsSection>
+    )
+  }
+
   return (
     <SettingsSection
       title={t('settings.general')}
@@ -102,7 +112,7 @@ export function GeneralSection() {
           variant="primary"
           onClick={save}
           loading={saving}
-          disabled={!Object.keys(draft).length}
+          disabled={!Object.keys(draft).length || Boolean(error)}
         >
           {t('common.save')}
         </Button>

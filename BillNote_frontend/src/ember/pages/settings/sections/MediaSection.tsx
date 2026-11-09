@@ -15,7 +15,7 @@ import { Button } from '@/ember/ui/Button'
 import { Card } from '@/ember/ui/Card'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 
 const RESOURCE_TYPES = ['video', 'audio', 'screenshot']
 
@@ -38,7 +38,11 @@ export function MediaSection() {
   const screenshotDays = draft.screenshot_retention_days ?? retention.data?.screenshot_retention_days ?? 0
   const mediaDays = draft.media_retention_days ?? retention.data?.media_retention_days ?? 0
 
+  const readFailed = Boolean(retention.error)
+
   const save = async () => {
+    // 读失败时 retention_days 会回落成 0，保存等于把保留期改成 0（立即过期）。
+    if (readFailed) return
     setBusy(true)
     try {
       await saveRetentionSettings({
@@ -86,13 +90,23 @@ export function MediaSection() {
 
   if (retention.loading && !retention.data) return <Skeleton className="h-72 w-full" />
 
+  if (readFailed) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SettingsSection title={t('settings.media.retention')} description={t('settings.media.retentionHint')}>
+          <SettingsLoadError onRetry={retention.reload} />
+        </SettingsSection>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <SettingsSection
         title={t('settings.media.retention')}
         description={t('settings.media.retentionHint')}
         actions={
-          <Button size="sm" variant="primary" onClick={save} loading={busy}>
+          <Button size="sm" variant="primary" onClick={save} loading={busy} disabled={readFailed}>
             {t('common.save')}
           </Button>
         }
