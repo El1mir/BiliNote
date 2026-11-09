@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { Activity, AudioLines, Cpu, FileText, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
+import { Activity, AudioLines, Cpu, FileText, Globe, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
 import { useI18n } from '@/ember/i18n/context'
 import type { MessageKey } from '@/ember/i18n/strings'
 import { AppShell } from '@/ember/shell/AppShell'
@@ -13,6 +13,7 @@ import { PromptSection } from '@/ember/pages/settings/sections/PromptSection'
 import { MediaSection } from '@/ember/pages/settings/sections/MediaSection'
 import { DownloadSection } from '@/ember/pages/settings/sections/DownloadSection'
 import { MonitorSection } from '@/ember/pages/settings/sections/MonitorSection'
+import { ProxySection } from '@/ember/pages/settings/sections/ProxySection'
 import { AboutSection } from '@/ember/pages/settings/sections/AboutSection'
 import { useHasDraft, useUnsavedCount } from '@/ember/pages/settings/useSectionDraft'
 
@@ -26,6 +27,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'prompt', labelKey: 'settings.prompt', icon: <MessageSquareText className="size-4" /> },
   { id: 'media', labelKey: 'settings.media', icon: <HardDrive className="size-4" /> },
   { id: 'download', labelKey: 'settings.download', icon: <DownloadIcon className="size-4" /> },
+  { id: 'proxy', labelKey: 'settings.proxy', icon: <Globe className="size-4" /> },
   { id: 'monitor', labelKey: 'settings.monitor', icon: <Activity className="size-4" /> },
   { id: 'about', labelKey: 'settings.about', icon: <Info className="size-4" /> },
 ]
@@ -105,6 +107,7 @@ export default function SettingsPage() {
               <Route path="prompt" element={<PromptSection />} />
               <Route path="media" element={<MediaSection />} />
               <Route path="download" element={<DownloadSection />} />
+              <Route path="proxy" element={<ProxySection />} />
               <Route path="monitor" element={<MonitorSection />} />
               <Route path="about" element={<AboutSection />} />
               <Route path="*" element={<Navigate to="general" replace />} />
