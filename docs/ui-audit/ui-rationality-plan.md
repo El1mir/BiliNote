@@ -177,3 +177,203 @@
 - rev 6（2026-11-10）：落人的 4 项决定 —— F1 补归档导出入口（归 W3，含 `services/note.ts`）、F2 补代理设置分区（归 W4，新增 `sections/ProxySection.tsx` + `services/proxy.ts` + i18n）、F5 13 个 0 引用依赖单独开卡不进 T-057、F6 维持浅色并把 `ember-studio-DESIGN.md` 归 W0 改写。**撤销 A7 缺陷判定**（Tailwind v4 `hover:` 自带 `@media (hover: hover)` 门控），改为手写时长一致性项（`duration-150` 13 处 → `--dur-hover` 160ms / `--dur-press` 140ms、手写图标按钮补 `.ember-press`）。同步更新 §0 表与 W5 判据。
 - rev 3（2026-11-10）：采纳 Q1–Q8 裁决 —— 按 W0–W5 逐文件收敛 scope 与依赖；S2 拆出本轮；hover 判据改为调度复现的 47 并记录差异；A6 限定 line/warn/ok/danger/ink-mute 且 ember/ink 不动；D6 改为删除 Tooltip + 补 aria-label；D7 改为保留 `.ember-markdown` 并补真实 CSS（probe 脚本依赖）；新增 §5 W4 数据安全五项；证据入库 `docs/ui-audit/`。
 - rev 2：首版分层审计（S/L2/A/D 共 26 条 + 功能缺口 7 条）。
+
+## 11. 附：派工卡规格（供 `flow_task_split` 直接使用）
+
+> 本节把 §6 的 W0–W5 展开成拆卡字段。**scope 全部是文件路径，无目录、无通配符**，避免被判范围重叠。
+> `testCmd` 统一：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`（当前检出无 `node_modules`，实施前需 `pnpm install`）。
+
+### W0 · UI 可访问性与资源：对比度 token、Chip hover、字体加载、浅色设计文档
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/tokens.css`
+- `BillNote_frontend/src/ember/ui/Badge.tsx`
+- `BillNote_frontend/src/ember/ui/Chip.tsx`
+- `BillNote_frontend/index.html`
+- `ember-studio-DESIGN.md`
+
+**purpose**：修 A6 对比度硬线（warn 2.92 / ok 3.02 / danger 4.43 / line 1.37-1.43 / ink-mute 3.82-4.40 均不达标）、D2 Chip hover 变亮反向、D5 字体 @import 阻塞首屏；并按人的裁决把设计文档收敛到浅色。
+
+**out of scope**：不动 `--color-ember` / `--color-ink` / `--color-ink-soft`；不新增暗色主题；不改语义与文案；不做自托管字体子集（另开卡）。
+
+**acceptance**
+1. `node docs/ui-audit/evidence/contrast-script.cjs` 复算：warn/ok/danger 在 surface 上 ≥4.5，line 在 canvas/surface 上 ≥3.0
+2. `--color-ember`、`--color-ink` 的值与改动前逐字节一致
+3. Chip 非激活态 hover 后底色不比静止态更亮
+4. `index.html` 含 `rel="preconnect"`（crossorigin）且 `tokens.css` 首行不再是 Google Fonts `@import`
+5. `ember-studio-DESIGN.md` 不再声明支持暗色，与 `tokens.css` 的 `color-scheme: light` 一致
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：改全局颜色变量影响全站观感；字体加载方式改变可能造成 FOUT/FOIT 变化。
+
+**rollback**：`git revert` 本卡提交；颜色与字体均为纯 CSS/HTML 改动，无数据迁移。
+
+**dependsOn**：无
+
+### W1 · UI 原语：表单错误绑定、Tabs ARIA、overlay 焦点、Progress 命名、focus-visible
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/ui/Field.tsx`
+- `BillNote_frontend/src/ember/ui/Input.tsx`
+- `BillNote_frontend/src/ember/ui/Textarea.tsx`
+- `BillNote_frontend/src/ember/ui/Select.tsx`
+- `BillNote_frontend/src/ember/ui/Tabs.tsx`
+- `BillNote_frontend/src/ember/ui/Dialog.tsx`
+- `BillNote_frontend/src/ember/ui/Drawer.tsx`
+- `BillNote_frontend/src/ember/ui/Progress.tsx`
+- `BillNote_frontend/src/ember/features/workspace/TaskCard.tsx`
+
+**purpose**：A1 错误文案绑定到控件（aria-describedby/aria-invalid）、A2 补齐 tabs 模式（tabpanel/aria-controls/方向键/roving tabindex）、A3+A4 overlay 焦点陷阱与关闭还原、S5/A5 进度条必有名、D3 focus-visible、D4 disabled 统一。
+
+**out of scope**：不改各调用点的业务逻辑；不改 Dialog/Drawer 的视觉与动画曲线；不引入第三方 a11y 库。
+
+**acceptance**
+1. 带 error 的 Field 渲染后，控件有 `aria-invalid="true"` 且 `aria-describedby` 指向错误节点 id
+2. Tabs 有 `role="tabpanel"` 与 `aria-controls`，左右方向键可切换且 roving tabindex 生效
+3. Dialog/Drawer 打开后 Tab 不离开面板，Escape/关闭后焦点回到触发元素
+4. `<Progress>` 无 label 时也有可读 `aria-label`（不再出现 undefined）
+5. 鼠标点击 Input/Select 不显示焦点环，键盘 Tab 到时显示
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：焦点陷阱实现不当会锁死键盘用户；Tabs 改造影响 reader 与 workspace 的切换交互。
+
+**rollback**：`git revert` 本卡提交；为纯组件改动，无持久化影响。
+
+**dependsOn**：无
+
+### W2 · 应用外壳：错误边界、侧栏标签、卡片选中边界、平板导航顺序、引导步骤条
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/EmberApp.tsx`
+- `BillNote_frontend/src/ember/shell/AppShell.tsx`
+- `BillNote_frontend/src/ember/shell/ErrorBoundary.tsx`
+- `BillNote_frontend/src/ember/ui/Card.tsx`
+- `BillNote_frontend/src/ember/pages/WorkspacePage.tsx`
+- `BillNote_frontend/src/ember/pages/OnboardingPage.tsx`
+
+**purpose**：S1 渲染异常不再白屏（fallback 复用 StartupScreen 失败卡）、L2-1 图标栏不再挤截断文字、L2-5 选中卡片不横跳、L2-3 平板下历史列表回到正文前、L2-6 步骤条区分当前步与已完成步。
+
+**out of scope**：**不碰路由**（S2 已拆出本轮）；不改 Onboarding 的四步业务与接口调用；不改 AppShell 断点数值。
+
+**acceptance**
+1. 在子树里抛错时页面显示失败卡（含重试入口），控制台有错误记录，而不是空白页
+2. 768–1279px 宽度下侧栏只显示图标，不出现被截断的文字；≥1280px 显示文字
+3. Card 选中前后，内部文本的横向位置不变（无 1px 位移）
+4. <1024px 时历史列表出现在笔记正文之前或可展开
+5. 步骤条当前步与已完成步视觉可区分（不只靠 ✓）
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：ErrorBoundary 包裹位置不当会吞掉路由错误；AppShell 改动影响所有页面。
+
+**rollback**：`git revert` 本卡提交。
+
+**dependsOn**：无
+
+### W3 · 阅读区：转写搜索空态、阅读行宽、大纲缩进、markdown 样式钩子、归档导出入口
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/features/reader/TranscriptView.tsx`
+- `BillNote_frontend/src/ember/features/reader/NotePanel.tsx`
+- `BillNote_frontend/src/ember/features/reader/MarkdownNote.tsx`
+- `BillNote_frontend/src/services/note.ts`
+
+**purpose**：S4 搜索无结果给空态、L2-2 正文行宽上限、L2-4 大纲缩进随字号、D7 给 `.ember-markdown` 补真实 CSS（三个 probe 脚本依赖该钩子，不能删）、F1 把 `downloadNoteArchive`/`downloadNoteArchives` 接进笔记操作区。
+
+**out of scope**：不改转写数据结构与时间轴逻辑；不改 `.ember-markdown` 的类名（probe 依赖）；不新增导出格式。
+
+**acceptance**
+1. 搜索无匹配时显示空态文案，而不是空白容器
+2. 正文列在 1440px 宽度下行宽有上限（约 68ch），表格/代码块可横向溢出
+3. 大纲缩进随根字号变化（浏览器放大到 150% 时不重叠）
+4. `.ember-markdown` 存在真实 CSS 规则且 `scripts/ember-reader-probe.cjs` 仍能定位
+5. 笔记操作区可下载单篇归档（含 busy 态与失败提示），请求打到 `note.ts` 的两个导出函数
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：归档下载涉及 blob 与错误 JSON 处理，失败路径易吞错；行宽改动影响阅读观感。
+
+**rollback**：`git revert` 本卡提交。
+
+**dependsOn**：无
+
+### W4 · 设置页：数据安全五项、草稿跨分区保留、连接测试 busy、代理分区
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/pages/settings/SettingsPage.tsx`
+- `BillNote_frontend/src/ember/pages/settings/Section.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/AboutSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/DownloadSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/GeneralSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/MediaSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ModelSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/MonitorSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/OcrSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/PromptSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/TranscriberSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ProviderDialog.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ProviderModels.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/GlobalModelPicker.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ProxySection.tsx`
+- `BillNote_frontend/src/services/proxy.ts`
+- `BillNote_frontend/src/ember/i18n/strings.ts`
+
+**purpose**：先修 R-1…R-5（cookie 被空串覆盖、数值字段写成 0、预览与实删口径不一致、恢复默认无确认、SettingRow 无可访问名），再做 S3 草稿跨分区保留与修改角标、F4 连接测试 busy 态、F2 新增代理设置分区。
+
+**out of scope**：不改后端 `/proxy_config` 与 `/general/settings` 契约；不改各设置项的语义与默认值；不重排分区顺序。
+
+**acceptance**
+1. cookie 读取失败时保存按钮禁用，或空串不写入（可复现：断开 `/downloader/cookie` 请求后保存，旧 cookie 仍在）
+2. 设置加载失败时数值字段不显示为 0，且保存被禁用
+3. MediaSection 预览数字与实际删除口径一致（两个按钮各自预览或删除前确认并显示实际计数）
+4. 恢复默认有确认或可撤销
+5. SettingRow 内 Switch/Checkbox 有可访问名（读屏可读出标签）
+6. 切换分区再回来，未保存的草稿仍在且有角标
+7. 连接测试按钮在请求期间显示 busy 并禁用
+8. 设置页出现代理分区，可读可存 `/proxy_config`，中英文案齐全
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：改动设置保存路径可能引入新的写入回归；代理分区新增 i18n key 需两侧对齐。
+
+**rollback**：`git revert` 本卡提交；代理分区为新增文件，删除即可回退。
+
+**dependsOn**：无
+
+### W5 · 一致性收尾：过渡时长、命中区、spin token、Tooltip 死代码
+
+**scope（文件）**
+- `BillNote_frontend/src/ember/features/workspace/GroupPanel.tsx`
+- `BillNote_frontend/src/ember/features/workspace/TaskList.tsx`
+- `BillNote_frontend/src/ember/features/workspace/TaskCard.tsx`
+- `BillNote_frontend/src/ember/features/workspace/TaskProgressCard.tsx`
+- `BillNote_frontend/src/ember/features/reader/NotePanel.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ModelSection.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/ProviderModels.tsx`
+- `BillNote_frontend/src/ember/pages/settings/sections/TranscriberSection.tsx`
+- `BillNote_frontend/src/ember/ui/Checkbox.tsx`
+- `BillNote_frontend/src/ember/ui/Input.tsx`
+- `BillNote_frontend/src/ember/ui/Select.tsx`
+- `BillNote_frontend/src/ember/ui/Switch.tsx`
+- `BillNote_frontend/src/ember/ui/Tooltip.tsx`
+
+**purpose**：A7 过渡时长一致性（`duration-150` 13 处 → `--dur-hover` 160ms、按下态 `--dur-press` 140ms，12 处 `transition-colors` 对齐，手写图标按钮补 `.ember-press`）、A8 命中区 ≥44px、D1 用 `.ember-spin`、D6 删除零调用的 Tooltip 原语并给受影响纯图标按钮补 `aria-label`。
+
+**out of scope**：**不做 hover 门控改造**（Tailwind v4 的 `hover:` 已自带 `@media (hover: hover)`，原 A7 判定已撤销）；不改配色与布局。
+
+**acceptance**
+1. `grep -rho 'duration-[0-9]*' --include=*.tsx src/ember` 中 `duration-150` 为 0 处
+2. `grep -rno 'duration-150' --include=*.tsx src/ember` 前后输出存档在 `docs/ui-audit/evidence/`
+3. 小图标按钮命中盒 ≥44×44px（浏览器 DevTools 量测至少 3 处）
+4. `animate-spin` 在 `src/ember` 内为 0 处，全部改用 `.ember-spin`
+5. `src/ember/ui/Tooltip.tsx` 已删除，`grep -rn Tooltip src/ember` 无残留引用，相关纯图标按钮均有 `aria-label`
+
+**testCmd**：`cd BillNote_frontend && pnpm exec vitest run && pnpm exec tsc -b && pnpm lint`
+
+**risk**：批量替换时长可能漏改或误改非交互元素；删除 Tooltip 需确认无动态引用。
+
+**rollback**：`git revert` 本卡提交；Tooltip 删除可一并恢复。
+
+**dependsOn**：dependsOn W0、W1、W2、W3、W4（同一批文件会被前四包改写）
