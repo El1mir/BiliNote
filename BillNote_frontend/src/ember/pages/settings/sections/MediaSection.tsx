@@ -11,9 +11,12 @@ import {
 } from '@/services/media'
 import { useAsync } from '@/ember/lib/useAsync'
 import { useI18n } from '@/ember/i18n/context'
+import { Badge } from '@/ember/ui/Badge'
 import { Button } from '@/ember/ui/Button'
 import { Card } from '@/ember/ui/Card'
+import { Dialog } from '@/ember/ui/Dialog'
 import { Input } from '@/ember/ui/Input'
+import { scopeExpiredOnly, type CleanupScope } from '@/ember/pages/settings/cleanupScopes'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 
@@ -32,8 +35,10 @@ export function MediaSection() {
   const retention = useAsync(getRetentionSettings)
   const runs = useAsync(getRecentCleanupRuns)
   const [draft, setDraft] = useState<Record<string, number>>({})
-  const [preview, setPreview] = useState<CleanupPreview | null>(null)
+  const [preview, setPreview] = useState<{ scope: CleanupScope; data: CleanupPreview } | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 待确认的动作；非 null 时弹出确认框。清理会删文件，不能只有一次点击。 */
+  const [pending, setPending] = useState<CleanupScope | null>(null)
 
   const screenshotDays = draft.screenshot_retention_days ?? retention.data?.screenshot_retention_days ?? 0
   const mediaDays = draft.media_retention_days ?? retention.data?.media_retention_days ?? 0
@@ -59,10 +64,11 @@ export function MediaSection() {
     }
   }
 
-  const refreshPreview = async () => {
+  const refreshPreview = async (scope: CleanupScope) => {
     setBusy(true)
     try {
-      setPreview(await previewMediaCleanup(RESOURCE_TYPES, true))
+      // 预览与执行共用同一个 expired_only 口径，数字才对得上。
+      setPreview({ scope, data: await previewMediaCleanup(RESOURCE_TYPES, scopeExpiredOnly(scope)) })
     } catch {
       toast.error(t('settings.saveFailed'))
     } finally {
@@ -70,10 +76,11 @@ export function MediaSection() {
     }
   }
 
-  const clean = async (expiredOnly: boolean) => {
+  const clean = async (scope: CleanupScope) => {
+    setPending(null)
     setBusy(true)
     try {
-      const outcome = await runMediaCleanup(RESOURCE_TYPES, expiredOnly)
+      const outcome = await runMediaCleanup(RESOURCE_TYPES, scopeExpiredOnly(scope))
       toast.success(
         `${t('settings.media.deleted', { count: outcome.result.deleted })} · ${t('settings.media.freed', {
           size: formatBytes(outcome.result.bytes),
@@ -145,25 +152,34 @@ export function MediaSection() {
         <Card className="bg-canvas p-4 sm:p-5">
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="secondary" onClick={refreshPreview} loading={busy}>
+              <Button size="sm" variant="secondary" onClick={() => refreshPreview('expired')} loading={busy}>
                 {t('settings.media.refreshPreview')}
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => clean(true)} disabled={busy}>
+              <Button size="sm" variant="secondary" onClick={() => refreshPreview('all')} disabled={busy}>
+                {t('settings.media.previewAll')}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setPending('expired')} disabled={busy}>
                 <Trash2 className="size-3.5" />
                 {t('settings.media.cleanupExpired')}
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => clean(false)} disabled={busy}>
+              <Button size="sm" variant="destructive" onClick={() => setPending('all')} disabled={busy}>
                 {t('settings.media.cleanupAll')}
               </Button>
             </div>
 
             {preview ? (
-              <div className="ember-enter flex items-center gap-3 rounded-control bg-surface px-3 py-2.5">
+              <div className="ember-enter flex flex-wrap items-center gap-3 rounded-control bg-surface px-3 py-2.5">
                 <HardDrive className="size-4 text-ink-mute" />
+                <Badge tone={preview.scope === 'all' ? 'danger' : 'neutral'}>
+                  {t(preview.scope === 'all' ? 'settings.media.scopeAll' : 'settings.media.scopeExpired')}
+                </Badge>
                 <span className="text-small text-ink">
-                  {t('settings.media.deleted', { count: preview.count })} ·{' '}
-                  {t('settings.media.freed', { size: formatBytes(preview.bytes) })}
+                  {t('settings.media.deleted', { count: preview.data.count })} ·{' '}
+                  {t('settings.media.freed', { size: formatBytes(preview.data.bytes) })}
                 </span>
+                <Button size="sm" variant="primary" onClick={() => setPending(preview.scope)} disabled={busy}>
+                  {t('settings.media.runPreviewed')}
+                </Button>
               </div>
             ) : null}
 
@@ -188,6 +204,38 @@ export function MediaSection() {
           </div>
         </Card>
       </SettingsSection>
+
+      <Dialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        size="sm"
+        title={t('settings.media.confirmTitle')}
+        description={
+          pending === null
+            ? undefined
+            : preview && preview.scope === pending
+              ? t('settings.media.confirmBody', { count: preview.data.count })
+              : t('settings.media.confirmNoPreview')
+        }
+        footer={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setPending(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => pending && void clean(pending)}
+            >
+              {t('common.confirm')}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-small text-ink-soft">
+          {t(pending === 'all' ? 'settings.media.cleanupAllHint' : 'settings.media.cleanupExpiredHint')}
+        </p>
+      </Dialog>
     </div>
   )
 }

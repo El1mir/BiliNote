@@ -7,6 +7,7 @@ import { useI18n } from '@/ember/i18n/context'
 import { Badge } from '@/ember/ui/Badge'
 import { Button } from '@/ember/ui/Button'
 import { Card } from '@/ember/ui/Card'
+import { Dialog } from '@/ember/ui/Dialog'
 import { Field } from '@/ember/ui/Field'
 import { Textarea } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
@@ -54,9 +55,14 @@ export function PromptSection() {
     }
   }
 
+  /** 恢复默认只改本地草稿，但会把整段自定义模板从眼前抹掉，所以先确认。 */
+  const [confirmingRestore, setConfirmingRestore] = useState(false)
+  const canRestore = value.trim().length > 0
+
   const restore = () => {
     // Deliberately local: nothing is written until Save, matching every other section.
     setDraft('')
+    setConfirmingRestore(false)
   }
 
   if (loading && !data) return <Skeleton className="h-72 w-full" />
@@ -75,7 +81,12 @@ export function PromptSection() {
       description={t('settings.prompt.description')}
       actions={
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={restore}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setConfirmingRestore(true)}
+            disabled={!canRestore}
+          >
             <RotateCcw className="size-3.5" />
             {t('settings.prompt.restore')}
           </Button>
@@ -151,6 +162,26 @@ export function PromptSection() {
           </div>
         </Card>
       </div>
+
+      <Dialog
+        open={confirmingRestore}
+        onClose={() => setConfirmingRestore(false)}
+        size="sm"
+        title={t('settings.prompt.restoreConfirmTitle')}
+        description={t('settings.prompt.restoreConfirmBody')}
+        footer={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setConfirmingRestore(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" variant="destructive" onClick={restore}>
+              {t('settings.prompt.restoreConfirmAction')}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-small text-ink-soft">{t('settings.prompt.restoreConfirmHint')}</p>
+      </Dialog>
     </SettingsSection>
   )
 }
