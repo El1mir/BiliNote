@@ -1,0 +1,26 @@
+=== src-only grep (before removal, from HEAD) ===
+antd                            src hits: 0
+@ant-design/x                   src hits: 0
+@lobehub/icons                  src hits: 0
+sonner                          src hits: 1
+fuse.js                         src hits: 0
+pinyin-match                    src hits: 0
+jszip                           src hits: 0
+markmap-view                    src hits: 0
+react-resizable-panels          src hits: 0
+next-themes                     src hits: 0
+@lottiefiles/dotlottie-react    src hits: 0
+lottie-react                    src hits: 0
+markdown-navbar                 src hits: 0
+注：sonner 的 1 处命中是 BillNote_frontend/src/ember/shell/EmberToaster.tsx:8 的注释
+（说明为何不再挂第二套 toast 系统），不是 import：
+   * there. Mounting a second system (sonner) alongside it meant half the
+scripts/ember-toast-probe.cjs:21 只是读 DOM 上的 [data-sonner-toaster] 节点数做探针，也不是依赖引用。
+
+=== 配置文件与仓库其他位置（移除前）===
+vite.config.ts:65 manualChunks.ui  引用 antd、@ant-design/x
+vite.config.ts:67 manualChunks.animation 引用 lottie-react、@lottiefiles/dotlottie-react
+其余 9 个包在 src/、tests/、scripts/、public/、index.html、*.ts/tsx/json/cjs、src-tauri 全部 0 命中。
+
+=== 移除后复跑（src/ 与配置）===
+grep -rn "<13 个包名>" BillNote_frontend/src BillNote_frontend/vite.config.ts  ->  0 命中
