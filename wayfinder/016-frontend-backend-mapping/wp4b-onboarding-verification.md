@@ -47,3 +47,31 @@
 ```
 
 隔离 DB 检查、HTTP 探活、浏览器步骤均为本轮实际执行；无模拟数据冒充端到端。
+
+## 5. 返工补验（rev 2，2026-11-09 21:20–21:22，隔离环境 3020/8490）
+
+调度返工指令要求把「未执行真实凭据初始化」补掉，并把「跳过」按源码事实写成结论而非阻塞。本轮按该口径在隔离环境完整走通第 2–4 步。
+
+环境：隔离 backend `BACKEND_PORT=8490`、`DATABASE_URL=sqlite:///.quarantine/t050-run/bili_note.db`（源 `orphan-T-052-1794220574030`，含真实 provider `kouri`）、隔离前端 `VITE_FRONTEND_PORT=3020`（`.env.local`，用后已还原）。转写配置在本次运行中临时切换为在线 ASR，用于邻近的 T-050 验证；本卡第 3 步保存的是 `openai-asr`。
+
+| 步骤 | 操作 | 真实结果 |
+|---|---|---|
+| 1 backend ping | 打开 `http://127.0.0.1:3020/onboarding` | `GET /api/sys_check` HTTP 200，页面「后端已就绪，可以继续」；`localStorage` 初始为 `{}`（先 `localStorage.clear()` 以复现首启） |
+| 2 供应商写入 | 填 `kouri` / `https://api.kourichat.com/v1` / 真实 Key（从隔离 DB 读取，不回显）/ `gpt-6-luna-codex` → 「保存并下一步」 | `POST /api/add_provider` **200**(10ms) → `GET /api/get_all_providers` **200**(5ms，同名已存在走复用) → `POST /api/update_provider` **200**(10ms) → `POST /api/models` **200**(7ms) → `POST /api/connect_test` **200**(16418ms)；随后进入步骤 3 |
+| 3 转写器写入 | 选中「OpenAI 兼容 ASR（在线）」→ 「保存并下一步」 | `POST /api/transcriber_config` **200**(11ms)；进入步骤 4 |
+| 4 完成 | 点「完成，进入 BiliNote」 | URL 变为 `/`（Workspace 渲染：单集/批量入口、生成设置、分组、空历史）；`localStorage = {"bilinote-onboarded":"1"}` |
+| 刷新回显 | `F5` 重载 `/` | 仍停在 Workspace，未被引导拦截；`localStorage` 保持 `{"bilinote-onboarded":"1"}`，`location.pathname === "/"` |
+
+隔离 DB 落库核对（`sqlite3` 直读，运行期）：`providers = [('kouri','https://api.kourichat.com/v1')]`、`models = [('gpt-6-luna-codex')]`、`general_settings.active = ('47bc11f4-1748-49c4-a1db-53ab21bd823b','gpt-6-luna-codex')`。
+
+### 跳过语义（结论，非阻塞）
+
+- `OnboardingPage.tsx` 四步流程**无独立「跳过」按钮**（仅有「上一步 / 下一步」与第 4 步的 `onboarding.finish`）；`strings.ts` 无 `onboarding.*skip*` 键。
+- 唯一语义上的「跳过」出现在第 4 步 Cookie 的文案「先跳过也没问题」，其正常终止动作即 `onboarding.finish` 按钮 —— 也就是**由第 4 步完成承担**，不存在被绕过的独立入口。
+- `OnboardingGuard.tsx:16-18` 只在 Tauri 下拦截（`if (!isTauri) return <>{children}</>`），因此 Web 构建下未完成首启也不会被守卫拦下；本卡在 Web 上以 `localStorage` 键 + 刷新行为作为等价回显证据。
+
+### 本轮清理
+
+- 停后端（PID 29344）与前端（PID 38356），`netstat` 确认 8490 / 3020 无 LISTENING。
+- 删除 `.quarantine/t050-run/`；还原 `backend/config/transcriber.json`（`fast-whisper/tiny`）、`BillNote_frontend/.env.local`（`8484` / 3017）、删除临时根 `.env`。
+- 主库 `backend/bili_note.db` mtime 未变（`2026-10-31 19:14:29`）；`git status --short` 无输出。
