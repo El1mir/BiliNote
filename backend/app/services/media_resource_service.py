@@ -305,8 +305,11 @@ def preview_cleanup(
             }
             for kind in selected
         },
-        "expires_earliest": min(expires_values, default=None),
-        "expires_latest": max(expires_values, default=None),
+        # 转成 ISO 字符串再返回：这两个字段会进 JSON 响应，直接给 datetime 会在
+        # 序列化时抛 TypeError: Object of type datetime is not JSON serializable，
+        # 表现为「预览全部」返回 500（`get_recent_cleanup_runs` 早已按 ISO 约定输出）。
+        "expires_earliest": min(expires_values).isoformat() if expires_values else None,
+        "expires_latest": max(expires_values).isoformat() if expires_values else None,
     }
 
 

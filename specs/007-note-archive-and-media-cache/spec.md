@@ -180,3 +180,21 @@
 「损坏/过期的旧条目」（先 `rmtree` 再 rename 原子替换）；读路径也改为复用同一判定，避免两处
 逻辑再次漂移。该缺陷由
 `test_corrupt_cache_entry_is_treated_as_miss_and_rebuilt` 首次运行时失败暴露。
+
+## 14. 2026-11-10 修订：清理预演的 JSON 契约与作用域一致（来源：T-062 / UI 计划 §5）
+
+前端「清理全部受管资源」在 T-062 之前点不动 —— 预演请求直接 500。原因是
+`preview_cleanup` 把 `expires_earliest` / `expires_latest` 以 `datetime` 返回，
+进 JSON 响应时抛 `TypeError: Object of type datetime is not JSON serializable`。
+`expired_only=true` 时这两个字段多为 `None`，所以历史上只有「只看到期」的路径能用，
+全量预演一出现未到期资源就必失败。修法：返回 `isoformat()` 字符串，与同文件的
+`get_recent_cleanup_runs`（`completed_at` 一直输出 ISO）保持一致。
+
+同轮把前端预演与执行的作用域收敛到同一个值：此前预演写死 `expired_only=true`，
+而「强制清理全部」走 `expired_only=false`，预演 N 项与实际删除量对不上，
+预演失去"确认步骤"的意义。前端现在由单一 `scope`（expired | all）同时驱动两者，
+并在预演条上标出作用域、在删除前弹二次确认。
+
+测试：`backend/tests/007-note-archive-and-media-cache/test_cleanup_preview_scope.py`
+（4 条：两条序列化、一条"同作用域预演数=实删数"、一条"两作用域数字不串"）。
+把 `media_resource_service.py` 还原到修复前，前两条会失败。
