@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
-import { CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import { Archive, CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useTaskStore, type Task } from '@/store/taskStore'
+import { downloadNoteArchives } from '@/services/note'
 import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { Chip } from '@/ember/ui/Chip'
@@ -61,6 +63,7 @@ export function TaskList({
   const [query, setQuery] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
   const [moving, setMoving] = useState(false)
   const selectedFailedCount = selected.filter(id => {
     const task = tasks.find(item => item.id === id)
@@ -105,6 +108,35 @@ export function TaskList({
     if (!selected.length) return
     await removeTasks(selected)
     exitSelection()
+  }
+
+  /**
+   * Zips the selected notes' folders into one download. The endpoint answers
+   * HTTP 200 with a JSON body when none of the ids has a finished note, so the
+   * failure has to reach the user as a toast rather than an empty file.
+   */
+  const exportSelected = async () => {
+    if (!selected.length || exporting) return
+    setExporting(true)
+    try {
+      const blob = await downloadNoteArchives(selected)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `bilinote-notes-${selected.length}.zip`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      toast.success(t('group.archiveDone', { count: selected.length }))
+      exitSelection()
+    } catch (error) {
+      toast.error(
+        t('note.exportFailed', {
+          detail: error instanceof Error && error.message ? error.message : t('common.error'),
+        })
+      )
+    } finally {
+      setExporting(false)
+    }
   }
 
   const moveSelected = async (groupId: string | null) => {
@@ -152,6 +184,16 @@ export function TaskList({
                   onRetry={() => void retryFailedInScope()}
                 />
               ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!selected.length}
+                loading={exporting}
+                onClick={() => void exportSelected()}
+              >
+                <Archive className="size-3.5" />
+                {t('history.exportSelected')}
+              </Button>
               <Button
                 size="sm"
                 variant="destructive"

@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Copy, Download, FileText, ListTree } from 'lucide-react'
+import { Archive, Copy, Download, FileText, ListTree } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { readLatestMarkdown, type Task } from '@/store/taskStore'
+import { downloadNoteArchive } from '@/services/note'
 import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { EmptyState } from '@/ember/ui/EmptyState'
@@ -29,6 +30,7 @@ type NotePanelProps = {
 export function NotePanel({ task }: NotePanelProps) {
   const { t } = useI18n()
   const [tab, setTab] = useState<ReaderTab>('note')
+  const [exporting, setExporting] = useState(false)
   const markdown = readLatestMarkdown(task?.markdown)
 
   const outline = markdown ? extractOutline(markdown) : []
@@ -42,14 +44,43 @@ export function NotePanel({ task }: NotePanelProps) {
     }
   }
 
-  const downloadMarkdown = () => {
-    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+  /** Windows-safe file stem for the two downloads below. */
+  const fileName = (task?.audioMeta?.title || task?.id || 'note').replace(/[\\/:*?"<>|]/g, '_')
+
+  const saveBlob = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = (task?.audioMeta?.title || task?.id || 'note').replace(/[\\/:*?"<>|]/g, '_') + '.md'
+    anchor.download = name
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  const downloadMarkdown = () => {
+    saveBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), fileName + '.md')
+  }
+
+  /**
+   * Zips the note folder the backend keeps for this task (markdown +
+   * screenshots). Errors are surfaced, never swallowed: the endpoint answers
+   * HTTP 200 with a JSON body when there is nothing to package, so a silent
+   * path here would hand the user a broken download.
+   */
+  const downloadArchive = async () => {
+    if (!task?.id || exporting) return
+    setExporting(true)
+    try {
+      saveBlob(await downloadNoteArchive(task.id), fileName + '.zip')
+      toast.success(t('group.archiveDone', { count: 1 }))
+    } catch (error) {
+      toast.error(
+        t('note.exportFailed', {
+          detail: error instanceof Error && error.message ? error.message : t('common.error'),
+        })
+      )
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -74,6 +105,15 @@ export function NotePanel({ task }: NotePanelProps) {
               <Download className="size-3.5" />
               <span className="hidden sm:inline">{t('note.download')}</span>
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={exporting}
+              onClick={() => void downloadArchive()}
+            >
+              <Archive className="size-3.5" />
+              <span className="hidden sm:inline">{t('note.exportArchive')}</span>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -93,8 +133,10 @@ export function NotePanel({ task }: NotePanelProps) {
                       key={item.id}
                       type="button"
                       onClick={() => scrollToAnchor(item.id)}
-                      className="truncate border-l-2 border-transparent py-0.5 pl-3 text-left text-caption text-ink-soft transition-colors hover:border-ember hover:text-ember"
-                      style={{ paddingLeft: (item.depth - 2) * 10 + 12 }}
+                      className="truncate border-l-2 border-transparent py-0.5 text-left text-caption text-ink-soft transition-colors hover:border-ember hover:text-ember"
+                      // rem, not px: the rail has to breathe with the user's
+                      // font-size setting instead of staying nailed to 10px steps.
+                      style={{ paddingLeft: `${0.75 + Math.max(0, item.depth - 2) * 0.5}rem` }}
                     >
                       {item.text}
                     </button>
@@ -102,7 +144,9 @@ export function NotePanel({ task }: NotePanelProps) {
                 </nav>
               </aside>
             ) : null}
-            <div className="min-w-0 flex-1">
+            {/* ~68ch is the comfortable long-form measure. Wider viewports keep
+                the column centred instead of stretching paragraphs to 1400px. */}
+            <div className="mx-auto min-w-0 w-full max-w-[68ch] flex-1">
               <MarkdownNote markdown={markdown} />
             </div>
           </div>
