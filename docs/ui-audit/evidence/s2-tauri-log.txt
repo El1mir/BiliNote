@@ -1,0 +1,10 @@
+TAURI 启动后 URL: http://127.0.0.1:3035/
+TAURI 启动后是哈希路由: false
+TAURI 模式标记存在: true
+TAURI 点击任务后 URL: http://127.0.0.1:3035/#/?task=deeplink-task-0001
+TAURI 点击后正文可见: true
+TAURI 刷新后 URL: http://127.0.0.1:3035/#/?task=deeplink-task-0001 / 正文仍在: true
+TAURI 新标签深链 http://127.0.0.1:3035/#/?task=deeplink-task-0001 → 正文可见: true
+TAURI 无效 id URL: http://127.0.0.1:3035/#/?task=no-such-task-9f3a
+TAURI 无效 id 文本: BiliNote | AI 视频笔记 | 工作区 | 设置 | 中文 | 工作区 | 粘贴视频链接，生成结构化笔记 | 单集生成 | 批量生成 | 一次生成一条视频的笔记 | 视频链接* | 生成笔记 | 生成设置 | 找不到这条笔记 | 链接里的任务不存在，可能已被删除。回到工作区挑一条已有笔记。 | 查看任务列表 
+pageerror: []

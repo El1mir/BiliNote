@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FileText, Settings } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useTaskStore } from '@/store/taskStore'
 import { retryFailedTasks } from '@/services/note'
@@ -15,6 +16,13 @@ import { TaskList } from '@/ember/features/workspace/TaskList'
 import { TaskProgressCard } from '@/ember/features/workspace/TaskProgressCard'
 import { useNoteGroups } from '@/ember/features/workspace/useNoteGroups'
 import { NotePanel } from '@/ember/features/reader/NotePanel'
+import { Button } from '@/ember/ui/Button'
+import {
+  readTaskId,
+  shouldProbeTask,
+  taskSelectionStatus,
+  writeTaskId,
+} from '@/ember/lib/taskUrl'
 
 /**
  * The workspace: compose on the left, read in the middle, history on the right.
@@ -29,6 +37,13 @@ export function WorkspacePage() {
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
   const [listLoading, setListLoading] = useState(true)
   const noteGroups = useNoteGroups()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlTaskId = readTaskId(searchParams.toString())
+  /**
+   * 地址栏给的 id 在内存里找不到时，单独问后端一次再下结论。
+   * 'unprobed' → 'found' | 'missing'，换个 id 重置；不做第二次，避免死循环。
+   */
+  const [probe, setProbe] = useState<{ id: string; result: 'found' | 'missing' } | null>(null)
 
   useTaskPolling(3000)
 
@@ -42,7 +57,46 @@ export function WorkspacePage() {
     }
   }, [loadTasks])
 
-  const currentTask = tasks.find(task => task.id === currentTaskId)
+  const status = taskSelectionStatus({
+    urlTaskId,
+    listLoading,
+    knownIds: tasks.map(task => task.id),
+    probe: probe?.id === urlTaskId ? probe.result : 'unprobed',
+  })
+
+  // store 只是 URL 的内存镜像：地址栏说了算，不同意就把它改回来。
+  useEffect(() => {
+    if (currentTaskId !== urlTaskId) setCurrentTask(urlTaskId)
+  }, [urlTaskId, currentTaskId, setCurrentTask])
+
+  // 深链到一条内存里没有的任务：先按 id 单独回填，回填不到才算失效。
+  const rehydrateTask = useTaskStore(state => state.rehydrateTask)
+  const probingId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!shouldProbeTask({ status, listLoading, probe: 'unprobed' }) || !urlTaskId) return
+    if (probingId.current === urlTaskId) return
+    probingId.current = urlTaskId
+    let cancelled = false
+    void rehydrateTask(urlTaskId).then(task => {
+      if (cancelled) return
+      setProbe({ id: urlTaskId, result: task ? 'found' : 'missing' })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [status, listLoading, urlTaskId, rehydrateTask])
+
+  /** 选中一条任务：只改地址栏，store 的镜像由上面的 effect 负责。 */
+  const selectTask = (taskId: string | null) => {
+    setSearchParams(prev => new URLSearchParams(writeTaskId(prev.toString(), taskId)), {
+      replace: false,
+    })
+    setProbe(null)
+  }
+
+  const currentTask = urlTaskId
+    ? tasks.find(task => task.id === urlTaskId)
+    : tasks.find(task => task.id === currentTaskId)
 
   const retryFailedInScope = async (
     selectedIds: string[],
@@ -116,12 +170,22 @@ export function WorkspacePage() {
         {/* spec 018：单集/批量在输入区内用 Tab 切换，页头不再放第二套入口。 */}
         <IntakePanel onSubmitted={() => void loadTasks()} />
 
-        {currentTask ? (
+        {status === 'missing' ? (
+          <EmptyState
+            icon={<FileText className="size-6" />}
+            title={t('workspace.taskMissingTitle')}
+            description={t('workspace.taskMissingDescription')}
+            action={
+              <Button size="sm" variant="secondary" onClick={() => selectTask(null)}>
+                {t('workspace.taskMissingAction')}
+              </Button>
+            }
+          />
+        ) : currentTask ? (
           <>
             <TaskProgressCard
               task={currentTask}
               onRetry={() => {
-                setCurrentTask(currentTask.id)
                 void loadTasks()
               }}
             />
