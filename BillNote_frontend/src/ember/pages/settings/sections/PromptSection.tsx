@@ -12,6 +12,10 @@ import { Field } from '@/ember/ui/Field'
 import { Textarea } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+
+/** 草稿在设置页内跨分区保留时用的 key。 */
+const DRAFT_KEY = 'prompt'
 
 /**
  * Base prompt editing (spec 005 ticket 11).
@@ -28,7 +32,8 @@ import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Secti
 export function PromptSection() {
   const { t } = useI18n()
   const { data, loading, error, reload } = useAsync(getGeneralSettings)
-  const [draft, setDraft] = useState<string | null>(null)
+  // 草稿放仓库：切到别的分区再回来，未保存的模板还在（undefined = 没有改动）。
+  const [draft, setDraft] = useSectionDraft<string>(DRAFT_KEY)
   const [saving, setSaving] = useState(false)
   const [showDefault, setShowDefault] = useState(false)
 
@@ -46,7 +51,7 @@ export function PromptSection() {
     try {
       await updateGeneralSettings({ base_prompt_override: value })
       toast.success(t('settings.saved'))
-      setDraft(null)
+      setDraft(undefined)
       reload()
     } catch {
       toast.error(t('settings.saveFailed'))

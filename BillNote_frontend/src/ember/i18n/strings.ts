@@ -357,6 +357,8 @@ const zhCN = {
   'settings.model.description': '服务商、接口地址与可用模型',
   'settings.saved': '设置已保存',
   'settings.saveFailed': '保存失败',
+  'settings.unsavedBadge': '有未保存的修改',
+  'settings.unsavedHint': '有 {count} 个分区存在未保存的修改（导航上的圆点），切走再切回不会丢失。',
   'settings.loadFailed': '读取设置失败，未加载到可编辑内容',
   'settings.loadFailedHint': '为免把空值当成配置写回，已禁用该分区的保存。请确认后端可用后重试。',
 
@@ -438,6 +440,8 @@ const zhCN = {
   'settings.model.models': '模型',
   'settings.model.addModel': '添加模型',
   'settings.model.testConnection': '测试连接',
+  'settings.model.testing': '测试中…',
+  'settings.model.testConnectionBusy': '正在向服务商发起一次真实请求，通常需要 30–50 秒，期间不能重复触发',
   'settings.model.connected': '连接成功',
   'settings.model.connectFailed': '连接失败',
   'settings.model.providerName': '名称',
@@ -944,6 +948,9 @@ const enUS: Dictionary = {
   'settings.model.description': 'Providers, endpoints and available models',
   'settings.saved': 'Settings saved',
   'settings.saveFailed': 'Save failed',
+  'settings.unsavedBadge': 'Unsaved changes',
+  'settings.unsavedHint':
+    '{count} section(s) have unsaved changes (marked with a dot in the navigation). Switching away and back keeps them.',
   'settings.loadFailed': 'Could not load settings — nothing editable was shown',
   'settings.loadFailedHint':
     'Saving is disabled so empty values can never be written back as configuration. Check the backend, then retry.',
@@ -1033,6 +1040,9 @@ const enUS: Dictionary = {
   'settings.model.models': 'Models',
   'settings.model.addModel': 'Add model',
   'settings.model.testConnection': 'Test connection',
+  'settings.model.testing': 'Testing…',
+  'settings.model.testConnectionBusy':
+    'Sends one real request to the provider; typically takes 30–50 seconds and cannot be retriggered meanwhile',
   'settings.model.connected': 'Connected',
   'settings.model.connectFailed': 'Connection failed',
   'settings.model.providerName': 'Name',

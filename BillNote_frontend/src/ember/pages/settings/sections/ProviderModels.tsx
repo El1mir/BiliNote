@@ -48,6 +48,8 @@ export function ProviderModels({
   const [fetching, setFetching] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 连接测试是真实往服务商发一次请求，实测 30–50s；期间按钮必须锁住。 */
+  const [testing, setTesting] = useState(false)
 
   const models: SavedModel[] = saved.data ?? []
 
@@ -104,11 +106,15 @@ export function ProviderModels({
   }
 
   const test = async () => {
+    if (testing) return
+    setTesting(true)
     try {
       await testConnection({ provider_id: provider.id })
       toast.success(t('settings.model.connected'))
     } catch {
       toast.error(t('settings.model.connectFailed'))
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -117,8 +123,15 @@ export function ProviderModels({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="ember-overline">{t('settings.model.models')}</span>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={test}>
-            {t('settings.model.testConnection')}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={test}
+            loading={testing}
+            disabled={testing}
+            title={t('settings.model.testConnectionBusy')}
+          >
+            {testing ? t('settings.model.testing') : t('settings.model.testConnection')}
           </Button>
           <Button size="sm" variant="secondary" onClick={loadRemote} loading={fetching}>
             <CloudDownload className="size-3.5" />
