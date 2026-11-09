@@ -1,6 +1,6 @@
 from typing import Optional
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.exceptions.provider import ProviderError, ProviderNameExistsError
 from app.models.model_config import ModelConfig
@@ -22,9 +22,22 @@ class ProviderRequest(BaseModel):
     max_rpm: Optional[int] = None
 
 class TestRequest(BaseModel):
-    id: str
+    id: Optional[str] = None
+    provider_id: Optional[str] = None
     # 可选：指定用哪个 model 跑连通性测试；不传则用该 provider 在 DB 里的第一个模型
     model: Optional[str] = None
+
+    @model_validator(mode='after')
+    def require_provider_identifier(self):
+        if not self.id and not self.provider_id:
+            raise ValueError('either id or provider_id is required')
+        if self.id and self.provider_id and self.id != self.provider_id:
+            raise ValueError('id and provider_id must match when both are provided')
+        return self
+
+    @property
+    def provider_identifier(self) -> str:
+        return self.provider_id or self.id
 class ProviderUpdateRequest(BaseModel):
     id: str
     name: Optional[str] = None
@@ -105,5 +118,5 @@ def update_provider(data: ProviderUpdateRequest):
 
 @router.post('/connect_test')
 def gpt_connect_test(data: TestRequest):
-    ModelService().connect_test(data.id, model=data.model)
+    ModelService().connect_test(data.provider_identifier, model=data.model)
     return R.success(msg='连接成功')
