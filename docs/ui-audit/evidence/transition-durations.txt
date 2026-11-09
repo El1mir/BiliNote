@@ -1,0 +1,29 @@
+# 过渡时长基线（A7 改为一致性项后）2026-11-10 · flow/T-057
+# 工作目录：BillNote_frontend
+
+## duration-* 分布
+$ grep -rho 'duration-[0-9]*' --include=*.tsx src/ember | sort | uniq -c | sort -rn
+13 duration-150
+
+## transition-colors 计数
+$ grep -ro 'transition-colors' --include=*.tsx src/ember | wc -l
+12
+
+## motion.css 中的时长 token
+$ grep -n 'dur-hover|dur-press' src/ember/motion.css
+12:  --dur-press: 140ms;
+13:  --dur-hover: 160ms;
+25:    transform var(--dur-press) var(--ease),
+26:    background-color var(--dur-hover) var(--ease),
+27:    border-color var(--dur-hover) var(--ease),
+28:    color var(--dur-hover) var(--ease),
+29:    box-shadow var(--dur-hover) var(--ease);
+39:    transform var(--dur-hover) var(--ease),
+40:    box-shadow var(--dur-hover) var(--ease),
+41:    border-color var(--dur-hover) var(--ease);
+
+## 背景
+原 A7 判定「47 处 hover 未门控」已撤销：Tailwind v4（package.json "tailwindcss": "^4.1.3"）的 hover: 变体
+本身编译进 @media (hover: hover)，47/27/52 只是计数口径差异。本 worktree 无 node_modules，
+无法本地复核编译产物，该结论由调度在 tailwindcss/dist/lib.js 上确认。
+A7 改为一致性项：duration-150 → --dur-hover / --dur-press。

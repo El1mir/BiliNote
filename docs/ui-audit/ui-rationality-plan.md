@@ -3,7 +3,7 @@
 > 依据：ui-ux-pro-max / apple-design（流体界面）/ emil-design-eng 三套设计知识。
 > 审计对象：`BillNote_frontend/src`（Ember Studio 表现层）。
 > 方式：逐符号读源码 + 机器可算事实（对比度脚本、grep 计数）。**每条结论均带 文件:行号 + 层级 + 规则编号。**
-> 状态：`draft` —— 等待用户过目与需求评审（grilling）后拆包。**本卡不改产品代码。**
+> 状态：`rev 6` —— Q1–Q8 与人的 4 项取舍已裁决、scope 逐文件收敛；A7 缺陷判定已撤销。**本卡不改产品代码**，W0–W5 由调度拆卡分派。
 > 日期：2026-11-10 · 分支 flow/T-057
 
 ---
@@ -16,7 +16,7 @@
 |---|---|---|
 | **L1 结构** | 缺错误边界、状态不可寻址、Settings 切换丢草稿、转写搜索无空态 | **必做** —— 造成白屏与真实数据丢失 |
 | **L2 布局层级** | 图标栏标签溢出、阅读无行宽上限、平板导航顺序反了 | 必做 |
-| **L3 可访问性** | Field 不绑定错误、Tabs 非完整 ARIA、Dialog/Drawer 无焦点陷阱、5 组对比度不达标、47 处 hover 未门控、小图标命中区 <44px | 必做（硬线） |
+| **L3 可访问性** | Field 不绑定错误、Tabs 非完整 ARIA、Dialog/Drawer 无焦点陷阱、5 组对比度不达标、小图标命中区 <44px（hover 门控非缺陷，见 §3 A7） | 必做（硬线） |
 | **L4 装饰** | 克制：1 处 `animate-spin` 绕过 token、Chip hover 反向、disabled 不一致、死代码 | 最后做，只清债不加戏 |
 
 现在界面“不够精致”的主因不是缺动效或渐变，而是：刷新丢当前任务、切设置分区丢草稿、键盘 Tab 跑出对话框、12px 徽标在暖底上读不清。
@@ -87,7 +87,7 @@
 | A4 | `src/ember/ui/Drawer.tsx:23-30` | 只有 Escape；**无初始焦点、无陷阱、无滚动锁、无焦点恢复**。 | R5 | 与 Dialog 共用 overlay 焦点逻辑 |
 | A5 | `src/ember/ui/Progress.tsx:31` | `aria-label={label}`，label 可空（见 S5）。 | R5 | 同上 |
 | A6 | `src/ember/ui/Badge.tsx:11-17` + §2 表 | `warning` 2.92、`success` 3.02、`danger` 4.43 的 12px 文字在暖底上不达 4.5；`--color-line` 非文本 UI 仅 1.4。 | R5 硬线 | 加深前景（warn→#b45309、ok→#15803d），分隔线单列评估 |
-| A7 | 全仓 `hover:` 共 **47** 处（判据命令 `grep -ro "hover:[a-z-]*" --include=*.tsx src | wc -l` → 47），仅 `.ember-lift`（`motion.css:37-49`，门控在 `:44`）做了 `@media (hover:hover) and (pointer:fine)` 门控 | 触屏点按触发假 hover 并残留高亮。 | R3 明确要求门控 | 收敛到门控工具类后逐处替换 |
+| A7 | 手写过渡时长分散：`duration-150` **13 处**、`transition-colors` **12 处**（`grep -rho 'duration-[0-9]*' --include=*.tsx src/ember`），与 `motion.css` 的 `--dur-hover` 160ms / `--dur-press` 140ms 不一致；部分手写图标按钮没有 `.ember-press`。 | 同一次交互里不同控件收尾速度不同，观感不齐。 | R6 一致性 | 把 13 处 `duration-150` 统一到 `--dur-hover`(160ms)，按下态用 `--dur-press`(140ms)；手写图标按钮补 `.ember-press` |
 | A8 | `src/ember/features/workspace/GroupPanel.tsx:228,239` 等 `p-1` + `size-3` | 命中区约 20×20px（4+12），低于 44px。 | R5 | 命中区扩到 44px，视觉可不变 |
 
 ### L4 · 装饰（最后做，只清债）
@@ -109,12 +109,12 @@
 
 | # | 现状证据 | 缺口 | 处置 |
 |---|---|---|---|
-| F1 | `src/services/note.ts:77,97` 导出 `downloadNoteArchive`/`downloadNoteArchives`，`grep` 在 `*.tsx` **无任何 UI 调用** | 归档导出已实现且无入口 | 需人确认是否补入口 |
-| F2 | `src/services/proxy.ts:11,18` 完整（后端 `backend/app/routers/config.py` 有 `/proxy_config`），`grep -i proxy` 在 `ember/` 只命中一条注释 | 代理设置无界面 | 需人确认 |
+| F1 | `src/services/note.ts:77,97` 导出 `downloadNoteArchive`/`downloadNoteArchives`，`grep` 在 `*.tsx` **无任何 UI 调用** | 归档导出已实现且无入口 | **已定：补 UI 入口**，接进笔记操作区 → 归 **W3** |
+| F2 | `src/services/proxy.ts:11,18` 完整（后端 `backend/app/routers/config.py:322,334` 有 `/proxy_config`），`grep -i proxy` 在 `ember/` 只命中一条注释 | 代理设置无界面 | **已定：补设置界面**，W4 新增分区，需同步 i18n key → 归 **W4** |
 | F3 | `src/services/upload.ts:4` `uploadFile`（后端 `backend/app/routers/note.py:1592` `/upload`），0 个 UI 调用者 | 同上 | 需人确认 |
 | F4 | `src/ember/pages/settings/sections/ProviderModels.tsx:106-113` `test()` 无 busy 态 | 连点重复打上游（30–50s），无“正在测”反馈 | 加 loading（**属 L1 结构**，并入 W1） |
-| F5 | 已声明但 0 引用的前端库（antd / @ant-design/x / @lobehub/icons / sonner / fuse.js / pinyin-match / jszip / markmap-view / react-resizable-panels / next-themes / lottie / markdown-navbar） | 产物体积 | **需人确认后单独排期** |
-| F6 | `src/ember/tokens.css:92` `color-scheme: light`，全仓无 `prefers-color-scheme`/`dark:` | 设计文档要求 light/dark 都成立，实现只有 light | **需人拍板**（spec 005 曾从暗翻浅） |
+| F5 | 已声明但 0 引用的前端库（antd / @ant-design/x / @lobehub/icons / sonner / fuse.js / pinyin-match / jszip / markmap-view / react-resizable-panels / next-themes / lottie / markdown-navbar） | 产物体积 | **已定：单独开卡清理，不进 T-057 工作包** |
+| F6 | `src/ember/tokens.css:92` `color-scheme: light`，全仓无 `prefers-color-scheme`/`dark:`；`ember-studio-DESIGN.md` 却写“light and dark 都要成立” | 文档与实现不一致 | **已定：维持浅色**，改 `ember-studio-DESIGN.md` 与 `color-scheme: light` 一致 → 归 **W0** |
 | F7 | 无 ErrorBoundary（见 S1） | 见 S1 | 已列入 L1 / W2 |
 
 ## 5. 数据安全追加项（W4，优先于 S3）
@@ -134,22 +134,26 @@
 
 | 包 | 范围（逐文件） | 内容 | 依赖 |
 |---|---|---|---|
-| **W0** | `BillNote_frontend/src/ember/tokens.css`、`BillNote_frontend/src/ember/ui/Badge.tsx`、`BillNote_frontend/src/ember/ui/Chip.tsx`、`BillNote_frontend/index.html` | A6 对比度（**只调 line/warn/ok/danger/ink-mute，ember 与 ink 不动**；line 取刚好 ≥3:1）、D2 Chip hover 反向、D5 字体加载（`index.html` 加 preconnect crossorigin + 把 `tokens.css:1` 的 `@import` 换成 `<link>`） | 无 |
+| **W0** | `BillNote_frontend/src/ember/tokens.css`、`BillNote_frontend/src/ember/ui/Badge.tsx`、`BillNote_frontend/src/ember/ui/Chip.tsx`、`BillNote_frontend/index.html`、`ember-studio-DESIGN.md`（仓库根） | A6 对比度（**只调 line/warn/ok/danger/ink-mute，ember 与 ink 不动**；line 取刚好 ≥3:1）、D2 Chip hover 反向、D5 字体加载（`index.html` 加 preconnect crossorigin + 把 `tokens.css:1` 的 `@import` 换成 `<link>`）、**F6 维持浅色**：把 `ember-studio-DESIGN.md` 改成与 `tokens.css:92` 的 `color-scheme: light` 一致（删掉“light and dark 都要成立”的表述） | 无 |
 | **W1** | `.../src/ember/ui/Field.tsx`、`Input.tsx`、`Textarea.tsx`、`Select.tsx`、`Tabs.tsx`、`Dialog.tsx`、`Drawer.tsx`、`Progress.tsx`、`.../src/ember/features/workspace/TaskCard.tsx` | A1 Field 错误绑定（useId + aria-describedby/aria-invalid）、A2 Tabs 完整 ARIA（tabpanel/aria-controls/方向键/roving tabindex）、A3+A4 overlay 焦点（陷阱 + 关闭还原，Dialog/Drawer 共用）、S5/A5 Progress 命名、D3 focus-visible、D4 disabled 统一、F4 连接测试 loading 的前置（origin 在 W4） | 无 |
 | **W2** | `.../src/ember/EmberApp.tsx`、`.../src/ember/shell/AppShell.tsx`、`.../src/ember/shell/ErrorBoundary.tsx`（新建）、`.../src/ember/ui/Card.tsx`、`.../src/ember/pages/WorkspacePage.tsx`、`.../src/ember/pages/OnboardingPage.tsx` | S1 ErrorBoundary（fallback 复用 StartupScreen 失败卡）、L2-1 `hidden xl:inline`、L2-5 Card 选中边界不跳、L2-3 平板导航顺序、L2-6 步骤条状态。**W2 不碰路由**（S2 已拆出） | 无 |
-| **W3** | `.../src/ember/features/reader/TranscriptView.tsx`、`NotePanel.tsx`、`MarkdownNote.tsx` | S4 转写搜索空态、L2-2 阅读行宽上限、L2-4 大纲 rem、D7 **保留 `.ember-markdown` 并补真实 CSS** | 无 |
-| **W4** | `.../src/ember/pages/settings/SettingsPage.tsx`、`Section.tsx`、`sections/AboutSection.tsx`、`DownloadSection.tsx`、`GeneralSection.tsx`、`GlobalModelPicker.tsx`、`MediaSection.tsx`、`ModelSection.tsx`、`MonitorSection.tsx`、`OcrSection.tsx`、`PromptSection.tsx`、`ProviderDialog.tsx`、`ProviderModels.tsx`、`TranscriberSection.tsx` | **先修 R-1…R-5 数据安全**（§5），再做 S3 草稿跨分区保留（draft 提升到 SettingsPage + 修改角标）与 F4 连接测试 loading | 无 |
-| **W5** | `.../src/ember/**/*.tsx` | A7 hover 门控（47 处机械替换）、A8 命中区 ≥44px、D1 `animate-spin`→`.ember-spin`、D6 删除 `ui/Tooltip.tsx` 并给受影响纯图标按钮补 `aria-label` | **dependsOn W0–W4**（Chip/Input/Select/Progress/MarkdownNote 会被再碰） |
+| **W3** | `.../src/ember/features/reader/TranscriptView.tsx`、`NotePanel.tsx`、`MarkdownNote.tsx`、`.../src/services/note.ts` | S4 转写搜索空态、L2-2 阅读行宽上限、L2-4 大纲 rem、D7 **保留 `.ember-markdown` 并补真实 CSS**；**F1 归档导出接 UI 入口**（`note.ts:77,97` 的 `downloadNoteArchive`/`downloadNoteArchives` 接进笔记操作区，含 loading 与失败提示） | 无 |
+| **W4** | `.../src/ember/pages/settings/SettingsPage.tsx`、`Section.tsx`、`sections/AboutSection.tsx`、`DownloadSection.tsx`、`GeneralSection.tsx`、`GlobalModelPicker.tsx`、`MediaSection.tsx`、`ModelSection.tsx`、`MonitorSection.tsx`、`OcrSection.tsx`、`PromptSection.tsx`、`ProviderDialog.tsx`、`ProviderModels.tsx`、`TranscriberSection.tsx`、`sections/ProxySection.tsx`（新建）、`.../src/services/proxy.ts`、`.../src/ember/i18n/strings.ts` | **先修 R-1…R-5 数据安全**（§5）；再做 S3 草稿跨分区保留（draft 提升到 SettingsPage + 修改角标）、F4 连接测试 loading、**F2 新增代理设置分区**（接 `services/proxy.ts:11,18` 与后端 `config.py:322,334` 的 `/proxy_config`，同步 i18n key） | 无 |
+| **W5** | `.../src/ember/**/*.tsx` | **A7（一致性项）**：13 处 `duration-150` 统一到 `--dur-hover`(160ms)、按下态用 `--dur-press`(140ms)、12 处 `transition-colors` 对齐、手写图标按钮补 `.ember-press`；A8 命中区 ≥44px；D1 `animate-spin`→`.ember-spin`；D6 删除 `ui/Tooltip.tsx` 并给受影响纯图标按钮补 `aria-label` | **dependsOn W0–W4**（Chip/Input/Select/Progress/MarkdownNote 会被再碰） |
 
 **已拆出本轮**：S2 URL 状态（状态可寻址）—— Q3 裁决不进本轮，单开卡，验收写「BrowserRouter 与 Tauri HashRouter 各验一次深链」，W2 不碰路由。
 
-**暂不排期（需人拍板）**：F1 归档导出入口、F2 代理设置界面、F3 上传入口、F5 未使用依赖清理、F6 暗色主题。
+**已裁决归属**：F1 补 UI 入口 → W3；F2 补设置界面 → W4（新分区）；F6 维持浅色、改设计文档 → W0。
+
+**不进 T-057**：F5 13 个 0 引用依赖 —— 人已定单独开卡清理，由调度另建。
+
+**待确认**：F3 上传入口（`services/upload.ts:4`）人未作答，保持未排期。
 
 ## 7. 验证方式（可复现）
 
 - **回归（每个工作包必须真跑并记 exit code）**：`cd BillNote_frontend && pnpm exec vitest run`、`pnpm exec tsc -b`、`pnpm lint`、`node scripts/i18n-contract.cjs`。
 - **对比度（W0）**：`docs/ui-audit/evidence/contrast-ratios.txt` 的脚本复算；warn/ok/danger 在各自底色 ≥4.5（12px 文字），`--color-line` 作非文本 UI ≥3。W0 单独验收，前后截图各一份。
-- **hover 计数（W5）**：判据命令 `grep -ro "hover:[a-z-]*" --include=*.tsx src | wc -l`（改前 47）；完成后 `grep -rno "hover:" --include=*.tsx src/ember` 每处都在受控白名单内，前后输出存档到 `docs/ui-audit/evidence/`。
+- **过渡一致性（W5，原 A7）**：判据不是“归零”而是“白名单内一致”——改后 `grep -rho 'duration-[0-9]*' --include=*.tsx src/ember` 只应出现 token 派生的时长，`duration-150` 从 13 处降到 0（改用 `--dur-hover` 160ms / `--dur-press` 140ms）；`transition-colors` 12 处逐条确认时长来源。前后输出存档到 `docs/ui-audit/evidence/`。
 - **可访问性（W1）**：键盘全程无鼠标走一遍 —— Tab 顺序、Escape、焦点陷阱、关闭后焦点还原、错误是否被 `aria-describedby` 关联。
 - **响应式（W2）**：375 / 768 / 1024 / 1440 四个宽度各截一次导航与阅读区。
 - **不能假装验证的**：不以“看起来好了”代替上述命令与截图。
@@ -163,11 +167,13 @@
 
 ## 9. 本轮实际执行与未执行（如实）
 
-- **已执行**：对比度脚本复算（数值见 §2）；`grep` 计数（hover 47/52 两种模式差异见 §7）；S1–S5、L2-1…L2-6、A1–A8、D1–D7、R-1…R-5 的源码逐条核对（file:line 均为本轮实读）。
+- **已执行**：对比度脚本复算（数值见 §2）；`grep` 计数（`duration-150` 13 处、`transition-colors` 12 处、hover 47/52/27 三种口径，证据见 `docs/ui-audit/evidence/`）；S1–S5、L2-1…L2-6、A1–A8、D1–D7、R-1…R-5 的源码逐条核对（file:line 均为本轮实读）。
+- **A7 已撤销**：原判定“47 处 hover 未门控”不成立。Tailwind v4（`package.json` `"tailwindcss": "^4.1.3"`）的 `hover:` 变体本身编译进 `@media (hover: hover)`，47/27/52 只是计数口径差异。本 worktree 无 `node_modules`，无法本地复核该编译行为，判据由调度在 `tailwindcss/dist/lib.js` 上确认；因此 A7 改为**一致性项**（见 §3）。
 - **未执行**：`pnpm exec vitest/tsc/lint/build` 与 i18n 脚本 —— T-057 worktree 无 `node_modules`（`ls node_modules` → NO_NM），无法运行；这些命令在 W0–W5 实施卡里必须真跑。
 - **未执行**：任何产品代码改动（本卡纪律：只出计划）。
 
 ## 10. 修订记录
 
+- rev 6（2026-11-10）：落人的 4 项决定 —— F1 补归档导出入口（归 W3，含 `services/note.ts`）、F2 补代理设置分区（归 W4，新增 `sections/ProxySection.tsx` + `services/proxy.ts` + i18n）、F5 13 个 0 引用依赖单独开卡不进 T-057、F6 维持浅色并把 `ember-studio-DESIGN.md` 归 W0 改写。**撤销 A7 缺陷判定**（Tailwind v4 `hover:` 自带 `@media (hover: hover)` 门控），改为手写时长一致性项（`duration-150` 13 处 → `--dur-hover` 160ms / `--dur-press` 140ms、手写图标按钮补 `.ember-press`）。同步更新 §0 表与 W5 判据。
 - rev 3（2026-11-10）：采纳 Q1–Q8 裁决 —— 按 W0–W5 逐文件收敛 scope 与依赖；S2 拆出本轮；hover 判据改为调度复现的 47 并记录差异；A6 限定 line/warn/ok/danger/ink-mute 且 ember/ink 不动；D6 改为删除 Tooltip + 补 aria-label；D7 改为保留 `.ember-markdown` 并补真实 CSS（probe 脚本依赖）；新增 §5 W4 数据安全五项；证据入库 `docs/ui-audit/`。
 - rev 2：首版分层审计（S/L2/A/D 共 26 条 + 功能缺口 7 条）。
