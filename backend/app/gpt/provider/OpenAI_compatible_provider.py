@@ -4,6 +4,28 @@ from app.utils.logger import get_logger
 from app.utils.openai_client import build_openai_client
 
 logging= get_logger(__name__)
+def _is_completion_token_param_error(exc: Exception) -> bool:
+    raw = str(exc).lower()
+    token_name_error = (
+        ("max_tokens" in raw or "max_completion_tokens" in raw)
+        and ("unsupported" in raw or "unknown" in raw or "invalid" in raw or "unexpected" in raw)
+    )
+    # Kouri returns model_not_found/200105 when the model rejects the legacy
+    # parameter, even though the model itself is valid with max_completion_tokens.
+    kouri_parameter_error = "model_not_found" in raw and "200105" in raw
+    return token_name_error or kouri_parameter_error
+
+
+def _create_minimal_completion(client, model: str):
+    kwargs = {"model": model, "messages": [{"role": "user", "content": "ping"}], "temperature": 0}
+    try:
+        return client.chat.completions.create(max_completion_tokens=1, **kwargs)
+    except Exception as exc:
+        if not _is_completion_token_param_error(exc):
+            raise
+        return client.chat.completions.create(max_tokens=1, **kwargs)
+
+
 class OpenAICompatibleProvider:
     def __init__(self, api_key: str, base_url: str, model: Union[str, None]=None):
         # build_openai_client：注入全局代理 + 校验 api_key 非空
@@ -28,12 +50,7 @@ class OpenAICompatibleProvider:
             client = build_openai_client(
                 api_key, base_url, key_label="模型供应商的 API Key", timeout=15.0,
             )
-            client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": "ping"}],
-                max_tokens=1,
-                temperature=0,
-            )
+            _create_minimal_completion(client, model)
             logging.info(f"连通性测试成功（model={model}）")
             return True
         except Exception as e:
