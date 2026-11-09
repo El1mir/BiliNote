@@ -1,0 +1,14 @@
+# 由 docs/ui-audit/evidence/contrast-script.cjs 生成（node 运行）
+# 2026-11-10 · 分支 flow/T-057 · token 源 BillNote_frontend/src/ember/tokens.css
+
+line/canvas      1.43
+line/surface     1.37
+warn/surface     2.92
+ok/surface       3.02
+danger/surface   4.43
+mute/surface     4.40
+mute/raised      3.82
+ink/canvas       16.74
+soft/surface     6.99
+ember/canvas     4.96
+mute/canvas      4.59

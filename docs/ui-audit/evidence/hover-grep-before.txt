@@ -1,0 +1,18 @@
+# hover 计数（改前基线）2026-11-10 · flow/T-057
+# 工作目录：BillNote_frontend
+
+# 判据口径（调度复现 + 本节采用）
+$ grep -ro "hover:[a-z-]*" --include=*.tsx src | wc -l
+47
+
+# 宽口径（含非 tsx 与更长匹配）
+$ grep -ro 'hover:[a-z-]*' src/ember | wc -l
+52
+
+# 含 hover: 的行数合计
+$ grep -rc "hover:" --include=*.tsx src | awk -F: '{s+=$2} END {print s}'
+27
+
+# 回归命令可用性
+$ ls -d node_modules
+NO_NODE_MODULES
