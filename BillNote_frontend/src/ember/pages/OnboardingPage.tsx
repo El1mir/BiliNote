@@ -204,11 +204,18 @@ export function OnboardingPage() {
         <ol className="flex items-center gap-2" aria-label={t('onboarding.stepLabel', { current: step, total: TOTAL_STEPS })}>
           {[1, 2, 3, 4].map(index => (
             <li key={index} className="flex flex-1 items-center gap-2">
+              {/* Three states, three looks: done = solid ember + check, current = ember
+                  outline + number, upcoming = hairline outline. Previously done and
+                  current were both solid ember, so the bar never said where you were. */}
               <span
+                data-step-state={index < step ? 'done' : index === step ? 'current' : 'upcoming'}
+                aria-current={index === step ? 'step' : undefined}
                 className={
-                  index <= step
+                  index < step
                     ? 'grid size-6 shrink-0 place-items-center rounded-full bg-ember text-caption font-semibold text-white'
-                    : 'grid size-6 shrink-0 place-items-center rounded-full border border-line bg-canvas text-caption font-semibold text-ink-mute'
+                    : index === step
+                      ? 'grid size-6 shrink-0 place-items-center rounded-full border-2 border-ember bg-canvas text-caption font-semibold text-ember'
+                      : 'grid size-6 shrink-0 place-items-center rounded-full border border-line bg-canvas text-caption font-semibold text-ink-mute'
                 }
               >
                 {index < step ? <Check className="size-3.5" aria-hidden="true" /> : index}
