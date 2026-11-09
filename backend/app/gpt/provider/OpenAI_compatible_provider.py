@@ -6,10 +6,14 @@ from app.utils.openai_client import build_openai_client
 logging= get_logger(__name__)
 def _is_completion_token_param_error(exc: Exception) -> bool:
     raw = str(exc).lower()
-    return (
+    token_name_error = (
         ("max_tokens" in raw or "max_completion_tokens" in raw)
         and ("unsupported" in raw or "unknown" in raw or "invalid" in raw or "unexpected" in raw)
     )
+    # Kouri returns model_not_found/200105 when the model rejects the legacy
+    # parameter, even though the model itself is valid with max_completion_tokens.
+    kouri_parameter_error = "model_not_found" in raw and "200105" in raw
+    return token_name_error or kouri_parameter_error
 
 
 def _create_minimal_completion(client, model: str):
