@@ -40,7 +40,7 @@ export function Progress({ value, label, className }: ProgressProps) {
         aria-label={accessibleLabel}
       >
         <div
-          className="ember-progress-fill h-full w-full rounded-full bg-ember"
+          className="ember-progress-fill h-full w-full rounded-full bg-primary"
           style={{ transform: `scaleX(${clamped})` }}
         />
       </div>

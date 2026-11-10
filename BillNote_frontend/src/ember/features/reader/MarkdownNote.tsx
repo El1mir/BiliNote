@@ -70,7 +70,7 @@ const components: Components = {
       return (
         <a
           href={href}
-          className="text-ember decoration-ember/30 hover:decoration-ember underline underline-offset-2"
+          className="text-primary decoration-primary/30 hover:decoration-primary underline underline-offset-2"
           onClick={event => {
             if (scrollToAnchor(href)) event.preventDefault()
           }}
@@ -81,7 +81,7 @@ const components: Components = {
     }
     return (
       <a
-        className="text-ember decoration-ember/30 hover:decoration-ember underline underline-offset-2"
+        className="text-primary decoration-primary/30 hover:decoration-primary underline underline-offset-2"
         target="_blank"
         rel="noreferrer"
         href={href}
@@ -106,7 +106,7 @@ const components: Components = {
   ),
   blockquote: ({ node: _node, children, ...props }) => (
     <blockquote
-      className="rounded-r-control border-ember bg-ember-soft/60 text-ink-soft my-4 border-l-2 py-1 pr-3 pl-4"
+      className="rounded-r-control border-primary bg-primary-soft/60 text-ink-soft my-4 border-l-2 py-1 pr-3 pl-4"
       {...props}
     >
       {children}

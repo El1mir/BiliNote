@@ -67,13 +67,13 @@ export function Tabs({ items, value, onChange, idBase, className }: TabsProps) {
             onKeyDown={event => onKeyDown(event, index)}
             className={cn(
               'ember-press relative -mb-px inline-flex items-center gap-1.5 rounded-t-control px-3 py-2 text-small font-semibold',
-              active ? 'text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+              active ? 'text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
             )}
           >
             {item.label}
             {item.badge}
             {active ? (
-              <span aria-hidden="true" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-ember" />
+              <span aria-hidden="true" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
             ) : null}
           </button>
         )

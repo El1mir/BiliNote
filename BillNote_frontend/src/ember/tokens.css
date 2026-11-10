@@ -1,96 +1,167 @@
 @import 'tailwindcss';
 
 /* ==========================================================================
-   Ember Studio — design tokens
-   Single source of truth for colour, type, space, radius, elevation, motion.
+   BiliNote workbench — design tokens
+   Single source of truth for colour, type, space, radius, elevation.
+
+   The palette is graphite / cool-white / teal. Light is the default theme;
+   `.dark` on <html> swaps every semantic value. Components never hardcode a
+   colour — they only use the semantic utilities generated from @theme below
+   (bg-canvas, text-ink, border-line, bg-primary…).
    ========================================================================== */
 
-@theme {
-  /* Type families */
-  --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  --font-sans: 'Source Sans 3', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+:root {
+  /* Surfaces */
+  --canvas: #f4f6f7;
+  --surface: #ffffff;
+  --raised: #fbfcfc;
+  --raised-hover: #f0f4f5;
 
-  /* Type scale (design spec: Display 64 / Headline 48 / Section 28 / Subhead 20
-     / Body 16 / Small 14 / Caption 12 / Overline 11) */
-  --text-display: 4rem;
-  --text-display--line-height: 1.05;
-  --text-display--letter-spacing: -0.02em;
-  --text-headline: 3rem;
-  --text-headline--line-height: 1.1;
-  --text-headline--letter-spacing: -0.02em;
+  /* Text */
+  --ink: #172126;
+  --ink-soft: #526168;
+  --ink-mute: #5f6d74;
+
+  /* Lines — `line` is the decorative divider, `line-strong` the control border
+     that has to clear 3:1 against surface for non-text UI. */
+  --line: #cbd5d8;
+  --line-strong: #7e8e94;
+
+  /* Primary — teal, reserved for interaction and current state */
+  --primary: #07756f;
+  --primary-hover: #05635e;
+  --primary-soft: #e8f3f1;
+  --primary-ring: rgba(7, 117, 111, 0.18);
+  --on-primary: #ffffff;
+
+  /* Status */
+  --success: #18794e;
+  --success-soft: #e6f4ec;
+  --warning: #926100;
+  --warning-soft: #fbf2dc;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --on-danger: #ffffff;
+  --info: #1769aa;
+  --info-soft: #e9f2fa;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-inout: cubic-bezier(0.6, 0, 0.3, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --nav-width: 240px;
+  --shell-max: 1200px;
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #111719;
+  --surface: #182124;
+  --raised: #202b2e;
+  --raised-hover: #263336;
+
+  --ink: #edf4f3;
+  --ink-soft: #c0cfce;
+  --ink-mute: #91a3a5;
+
+  --line: #3b4a4d;
+  --line-strong: #6b7f82;
+
+  --primary: #43c7b6;
+  --primary-hover: #5fd8c8;
+  --primary-soft: #14312f;
+  --primary-ring: rgba(67, 199, 182, 0.28);
+  --on-primary: #06201d;
+
+  --success: #62c891;
+  --success-soft: #14322a;
+  --warning: #f1c75b;
+  --warning-soft: #33290f;
+  --danger: #ff8c83;
+  --danger-soft: #3a1b18;
+  --on-danger: #2a0b08;
+  --info: #8dc7f0;
+  --info-soft: #152a3a;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  /* Type families. Inter for UI, Source Serif 4 for reading, IBM Plex Mono for
+     identifiers / code / error text. System fallbacks stay in the stack so a
+     blocked webfont never delays first paint.
+     ponytail: no self-hosted font files; the webfonts load non-blocking and the
+     system stack is the floor. Add woff2 assets here if FOUT ever matters. */
+  --font-sans: 'Inter', -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Inter', -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', 'Noto Serif SC', Georgia, 'Songti SC', serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale — page 28/34, section 20/26, card 15/21, body 14/22,
+     small 13/19, caption 12/16. */
+  --text-hero: 2rem;
+  --text-hero--line-height: 1.15;
+  --text-hero--letter-spacing: -0.02em;
   --text-section: 1.75rem;
-  --text-section--line-height: 1.25;
+  --text-section--line-height: 1.214;
   --text-section--letter-spacing: -0.02em;
   --text-subhead: 1.25rem;
-  --text-subhead--line-height: 1.4;
-  --text-body: 1rem;
-  --text-body--line-height: 1.6;
-  --text-small: 0.875rem;
-  --text-small--line-height: 1.5;
+  --text-subhead--line-height: 1.3;
+  --text-subhead--letter-spacing: -0.01em;
+  --text-card: 0.9375rem;
+  --text-card--line-height: 1.4;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.571;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.462;
   --text-caption: 0.75rem;
-  --text-caption--line-height: 1.4;
+  --text-caption--line-height: 1.333;
   --text-overline: 0.6875rem;
   --text-overline--line-height: 1.2;
   --text-overline--letter-spacing: 0.08em;
 
-  /* Palette */
-  --color-ember: #c2410c;
-  --color-ember-hover: #9a3412;
-  --color-ember-soft: #fdf0e9;
-  --color-ember-ring: rgba(194, 65, 12, 0.12);
-  --color-accent: #f59e0b;
-  --color-canvas: #fafaf9;
-  --color-surface: #f5f5f4;
-  --color-raised: #e7e5e4;
-  --color-raised-hover: #dcd9d6;
-  --color-ink: #1c1917;
-  --color-ink-soft: #57534e;
-  --color-ink-mute: #665f5a;
-  --color-line: #918a85;
-  --color-ok: #166534;
-  --color-warn: #92400e;
-  --color-danger: #b91c1c;
+  /* Semantic colour surface */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-raised-hover: var(--raised-hover);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-mute: var(--ink-mute);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-ring: var(--primary-ring);
+  --color-on-primary: var(--on-primary);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger: var(--on-danger);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
 
-  /* Radius */
+  /* Short aliases some primitives were written against. */
+  --color-accent: var(--primary);
+  --color-ok: var(--success);
+  --color-warn: var(--warning);
+
+  /* Radius — 8px controls, 8–12px content surfaces */
   --radius-inline: 4px;
   --radius-control: 8px;
   --radius-surface: 12px;
 
-  /* Elevation */
-  --shadow-raise: 0 4px 16px rgba(28, 25, 23, 0.06);
-  --shadow-float: 0 24px 48px rgba(28, 25, 23, 0.12);
-  --shadow-ember: 0 4px 12px rgba(194, 65, 12, 0.25);
+  /* Elevation — cool graphite, never warm */
+  --shadow-raise: 0 1px 2px rgba(12, 24, 28, 0.06), 0 8px 24px rgba(12, 24, 28, 0.08);
+  --shadow-float: 0 16px 48px rgba(12, 24, 28, 0.18);
+  --shadow-primary: 0 0 0 1px var(--primary-ring);
 
-  /* Motion */
-  --ease-ember: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-ember-inout: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-/* Semantic aliases used by hand-written CSS below */
-:root {
-  --ember: #c2410c;
-  --ember-hover: #9a3412;
-  --ember-soft: #fdf0e9;
-  --accent: #f59e0b;
-  --canvas: #fafaf9;
-  --surface: #f5f5f4;
-  --raised: #e7e5e4;
-  --raised-hover: #dcd9d6;
-  --ink: #1c1917;
-  --ink-soft: #57534e;
-  --ink-mute: #665f5a;
-  --line: #918a85;
-  --ok: #166534;
-  --warn: #92400e;
-  --danger: #b91c1c;
-  --ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-inout: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --nav-width: 256px;
-  --shell-max: 1200px;
-  color-scheme: light;
+  --ease-out-quart: var(--ease);
+  --ease-in-out-quart: var(--ease-inout);
 }
 
 @layer base {
@@ -109,18 +180,26 @@
     background: var(--canvas);
     color: var(--ink);
     font-family: var(--font-sans);
-    font-size: 1rem;
-    line-height: 1.6;
+    font-size: 0.875rem;
+    line-height: 1.571;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+  }
+
+  /* The theme swap repaints; keep the crossfade short and never animate on
+     first paint (the class is applied before React mounts). */
+  html.theme-transition body {
+    transition:
+      background-color var(--dur-hover) var(--ease),
+      color var(--dur-hover) var(--ease);
   }
 
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.02em;
     color: var(--ink);
   }
@@ -133,18 +212,18 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--ember);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
 
   ::selection {
-    background: rgba(194, 65, 12, 0.16);
+    background: var(--primary-soft);
+    color: var(--ink);
   }
 
-  /* Warm scrollbars — never cool grey */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--line) transparent;
+    scrollbar-color: var(--line-strong) transparent;
   }
   *::-webkit-scrollbar {
     width: 10px;
@@ -154,7 +233,7 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: var(--line);
+    background: var(--line-strong);
     border: 3px solid transparent;
     background-clip: content-box;
     border-radius: 9999px;
@@ -166,7 +245,7 @@
 }
 
 @layer utilities {
-  /* Overline — 11px uppercase tracking-wide */
+  /* Overline — 11px uppercase tracking-wide, for section eyebrows */
   .ember-overline {
     font-size: 0.6875rem;
     line-height: 1.2;
@@ -176,7 +255,7 @@
     color: var(--ink-mute);
   }
 
-  /* Terracotta left accent bar for active navigation / selected cards */
+  /* Thin accent bar for the active navigation item and selected cards */
   .ember-accent-bar::before {
     content: '';
     position: absolute;
@@ -184,21 +263,14 @@
     inset-inline-start: 0;
     width: 3px;
     border-radius: 0 9999px 9999px 0;
-    background: var(--ember);
+    background: var(--primary);
   }
 
   .ember-scroll-fade {
     mask-image: linear-gradient(to bottom, transparent, black 12px, black calc(100% - 12px), transparent);
   }
 
-  /* Horizontal counterpart, for scrollable tab strips: the fading edge is what
-     tells a touch user the row continues past the viewport. */
   .ember-scroll-fade-x {
     mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
-  }
-
-  .ember-grain {
-    background-image: radial-gradient(rgba(28, 25, 23, 0.035) 1px, transparent 0);
-    background-size: 18px 18px;
   }
 }

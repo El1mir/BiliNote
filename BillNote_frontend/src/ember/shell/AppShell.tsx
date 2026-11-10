@@ -4,6 +4,7 @@ import { Menu, Sparkles } from 'lucide-react'
 import { Button } from '@/ember/ui/Button'
 import { Drawer } from '@/ember/ui/Drawer'
 import { LanguageSwitcher } from '@/ember/shell/LanguageSwitcher'
+import { ThemeToggle } from '@/ember/shell/ThemeToggle'
 import { useEmberNav } from '@/ember/shell/useEmberNav'
 import { cn } from '@/ember/lib/cn'
 import { useState } from 'react'
@@ -48,10 +49,10 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
             aria-current={active ? 'page' : undefined}
             className={cn(
               'ember-press ember-accent-bar relative flex items-center gap-3 rounded-control py-2.5 pr-3 pl-4 text-small font-semibold',
-              active ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+              active ? 'bg-primary-soft text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
             )}
           >
-            <span className={cn('shrink-0', active ? 'text-ember' : 'text-ink-mute')}>{item.icon}</span>
+            <span className={cn('shrink-0', active ? 'text-primary' : 'text-ink-mute')}>{item.icon}</span>
             {/* 76px rail (md–lg) has no room for labels; hidden, not truncated. */}
             <span className="hidden truncate xl:inline">{item.label}</span>
           </Link>
@@ -65,7 +66,7 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
       {/* Desktop / tablet sidebar */}
       <aside className="sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-canvas md:flex md:w-[76px] xl:w-[256px]">
         <div className="flex items-center gap-2.5 px-4 py-5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-control bg-ember text-white">
+          <span className="grid size-9 shrink-0 place-items-center rounded-control bg-primary text-on-primary">
             <Sparkles className="size-4" />
           </span>
           <div className="hidden min-w-0 flex-col xl:flex">
@@ -74,7 +75,13 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-4">{navList()}</div>
-        {sidebarFooter ? <div className="border-t border-line px-3 py-3">{sidebarFooter}</div> : null}
+        {/* Global switches sit at the bottom of the rail. The language switcher
+            is supplied by the page (sidebarFooter) and only fits the labelled
+            rail; below xl it lives in the mobile header and the drawer. */}
+        <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-2 xl:px-3">
+          <ThemeToggle compact />
+          {sidebarFooter ? <span className="hidden xl:block">{sidebarFooter}</span> : null}
+        </div>
       </aside>
 
       {/* Mobile top bar */}
@@ -84,7 +91,8 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
             <Menu className="size-5" />
           </Button>
           <span className="font-display text-subhead">BiliNote</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle compact />
             <LanguageSwitcher compact />
           </div>
         </header>
@@ -92,6 +100,10 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
         <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="BiliNote">
           <div className="flex flex-col gap-4">
             {navList(() => setDrawerOpen(false))}
+            <div className="flex items-center gap-1 border-t border-line pt-3">
+              <ThemeToggle compact />
+              <LanguageSwitcher compact />
+            </div>
             {sidebarFooter ? <div className="border-t border-line pt-3">{sidebarFooter}</div> : null}
           </div>
         </Drawer>

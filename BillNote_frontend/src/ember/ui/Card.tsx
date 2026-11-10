@@ -25,7 +25,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
         'relative overflow-hidden rounded-surface border border-line bg-surface',
         // A left border would eat 2px out of the 1px box and shift every child.
         // An inset ring paints inside the existing border without touching layout.
-        selected && 'border-ember ring-1 ring-ember ring-inset',
+        selected && 'border-primary ring-1 ring-primary ring-inset',
         interactive && 'ember-lift cursor-pointer',
         className,
       )}

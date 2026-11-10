@@ -48,7 +48,7 @@ function SectionLink({ section }: { section: SectionDef }) {
       className={({ isActive }) =>
         cn(
           'ember-press flex shrink-0 items-center gap-2.5 rounded-control px-3 py-2 text-small font-semibold whitespace-nowrap',
-          isActive ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+          isActive ? 'bg-primary-soft text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
         )
       }
     >

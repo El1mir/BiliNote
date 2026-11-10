@@ -190,7 +190,7 @@ export function OnboardingPage() {
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
         <header className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-surface bg-ember font-display text-subhead font-bold text-white">
+            <span className="grid size-10 place-items-center rounded-surface bg-primary font-display text-subhead font-bold text-on-primary">
               B
             </span>
             <div>
@@ -212,16 +212,16 @@ export function OnboardingPage() {
                 aria-current={index === step ? 'step' : undefined}
                 className={
                   index < step
-                    ? 'grid size-6 shrink-0 place-items-center rounded-full bg-ember text-caption font-semibold text-white'
+                    ? 'grid size-6 shrink-0 place-items-center rounded-full bg-primary text-caption font-semibold text-on-primary'
                     : index === step
-                      ? 'grid size-6 shrink-0 place-items-center rounded-full border-2 border-ember bg-canvas text-caption font-semibold text-ember'
+                      ? 'grid size-6 shrink-0 place-items-center rounded-full border-2 border-primary bg-canvas text-caption font-semibold text-primary'
                       : 'grid size-6 shrink-0 place-items-center rounded-full border border-line bg-canvas text-caption font-semibold text-ink-mute'
                 }
               >
                 {index < step ? <Check className="size-3.5" aria-hidden="true" /> : index}
               </span>
               {index < TOTAL_STEPS && (
-                <span className={index < step ? 'h-px flex-1 bg-ember' : 'h-px flex-1 bg-line'} />
+                <span className={index < step ? 'h-px flex-1 bg-primary' : 'h-px flex-1 bg-line'} />
               )}
             </li>
           ))}
@@ -233,7 +233,7 @@ export function OnboardingPage() {
               <StepHeading title={t('onboarding.step1.title')} description={t('onboarding.step1.description')} />
               {probing && (
                 <p className="flex items-center gap-2 text-small text-ink-soft">
-                  <Spinner className="size-4 text-ember" />
+                  <Spinner className="size-4 text-primary" />
                   {t('onboarding.step1.checking')}
                 </p>
               )}
@@ -312,7 +312,7 @@ export function OnboardingPage() {
                       key={option.value}
                       className={
                         active
-                          ? 'ember-press flex cursor-pointer gap-3 rounded-field border border-ember bg-ember-soft p-3'
+                          ? 'ember-press flex cursor-pointer gap-3 rounded-field border border-primary bg-primary-soft p-3'
                           : 'ember-press flex cursor-pointer gap-3 rounded-field border border-line p-3'
                       }
                     >
@@ -325,7 +325,7 @@ export function OnboardingPage() {
                           const value = event.currentTarget.value
                           if (value === 'fast-whisper' || value === 'openai-asr') setTranscriberType(value)
                         }}
-                        className="mt-1 accent-[var(--color-ember)]"
+                        className="mt-1 accent-[var(--primary)]"
                       />
                       <span className="flex flex-col gap-0.5">
                         <span className="text-small font-semibold text-ink">{t(option.title)}</span>

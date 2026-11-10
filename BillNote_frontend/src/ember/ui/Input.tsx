@@ -3,9 +3,9 @@ import { cn } from '@/ember/lib/cn'
 import { useFieldControlA11y } from '@/ember/ui/fieldContext'
 
 const BASE =
-  'w-full rounded-control border border-line bg-surface px-3 py-2.5 text-body text-ink ' +
+  'w-full rounded-control border border-line-strong bg-surface px-3 py-2.5 text-body text-ink ' +
   'placeholder:text-ink-mute transition-[border-color,box-shadow] ease-[var(--ease)] duration-[var(--dur-hover)] ' +
-  'focus-visible:border-ember focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ember-ring ' +
+  'focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary-ring ' +
   'aria-[invalid=true]:border-danger ' +
   'disabled:cursor-not-allowed disabled:opacity-50'
 

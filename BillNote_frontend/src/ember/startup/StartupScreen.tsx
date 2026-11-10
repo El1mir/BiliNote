@@ -106,7 +106,7 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
                       <li key={cause} className="flex gap-2.5 text-small text-ink-soft">
                         <span
                           aria-hidden="true"
-                          className="mt-[7px] size-1.5 shrink-0 rounded-full bg-ember/60"
+                          className="mt-[7px] size-1.5 shrink-0 rounded-full bg-primary/60"
                         />
                         <span className="min-w-0">{cause}</span>
                       </li>
@@ -129,14 +129,14 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
               className="mt-8 rounded-surface border border-line bg-canvas px-5 py-5 shadow-raise"
             >
               <div className="flex items-center gap-3">
-                <Spinner className="text-ember" />
+                <Spinner className="text-primary" />
                 <h1 id="startup-loading-title" className="text-subhead">
                   {t('startup.loading.title')}
                 </h1>
               </div>
               <p className="mt-3 text-small text-ink-soft">{t('startup.loading.description')}</p>
               <div className="mt-5 h-1 overflow-hidden rounded-full bg-raised">
-                <div className="ember-indeterminate h-full w-1/3 rounded-full bg-ember" />
+                <div className="ember-indeterminate h-full w-1/3 rounded-full bg-primary" />
               </div>
             </section>
           )}
@@ -150,7 +150,7 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
 function Wordmark({ overline }: { overline: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="grid size-11 shrink-0 place-items-center rounded-surface bg-ember font-display text-subhead font-bold text-white shadow-ember">
+      <span className="grid size-11 shrink-0 place-items-center rounded-surface bg-primary font-display text-subhead font-bold text-on-primary shadow-primary">
         B
       </span>
       <span className="min-w-0">

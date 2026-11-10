@@ -42,6 +42,9 @@ const zhCN = {
   'common.search': '搜索',
   'platform.bilibili': '哔哩哔哩',
   'shell.openNav': '打开导航',
+  'shell.theme.label': '主题',
+  'shell.theme.toDark': '切换到深色主题',
+  'shell.theme.toLight': '切换到浅色主题',
 
   'workspace.title': '工作区',
   'workspace.subtitle': '粘贴视频链接，生成结构化笔记',
@@ -649,6 +652,9 @@ const enUS: Dictionary = {
   'common.search': 'Search',
   'platform.bilibili': 'Bilibili',
   'shell.openNav': 'Open navigation',
+  'shell.theme.label': 'Theme',
+  'shell.theme.toDark': 'Switch to dark theme',
+  'shell.theme.toLight': 'Switch to light theme',
 
   'workspace.title': 'Workspace',
   'workspace.subtitle': 'Paste a video link and get structured notes',

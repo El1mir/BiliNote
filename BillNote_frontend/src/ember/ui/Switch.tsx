@@ -25,14 +25,14 @@ export function Switch({ checked, onChange, disabled, id, label, className }: Sw
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
-        checked ? 'border-ember bg-ember' : 'border-line bg-raised',
+        checked ? 'border-primary bg-primary' : 'border-line bg-raised',
         disabled && 'cursor-not-allowed opacity-50',
         className
       )}
     >
       <span
         aria-hidden="true"
-        className="pointer-events-none inline-block size-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--dur-press)] ease-[var(--ease)]"
+        className="pointer-events-none inline-block size-4 rounded-full bg-surface shadow-sm transition-transform duration-[var(--dur-press)] ease-[var(--ease)]"
         style={{ transform: checked ? 'translateX(22px)' : 'translateX(3px)' }}
       />
     </button>

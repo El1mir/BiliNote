@@ -46,7 +46,7 @@ export function EmberApp() {
           <Suspense
             fallback={
               <div className="grid h-screen place-items-center">
-                <Spinner className="size-5 text-ember" />
+                <Spinner className="size-5 text-primary" />
               </div>
             }
           >

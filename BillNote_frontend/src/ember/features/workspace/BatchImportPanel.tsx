@@ -278,7 +278,7 @@ export function BatchImportPanel({ onClose, onSubmitted, defaults, initialUrl }:
     <Card className="ember-enter bg-canvas">
       <div className="border-line flex items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
-          <Layers className="text-ember size-4 shrink-0" aria-hidden="true" />
+          <Layers className="text-primary size-4 shrink-0" aria-hidden="true" />
           <h2 className="text-subhead truncate">{t('batch.title')}</h2>
         </div>
         {onClose ? (

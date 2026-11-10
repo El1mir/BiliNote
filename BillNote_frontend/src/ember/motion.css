@@ -9,12 +9,16 @@
    ========================================================================== */
 
 :root {
-  --dur-press: 140ms;
+  /* One duration ladder for the whole product: press < hover < popover <
+     panel < page. Nothing above 300ms for a normal interaction. */
+  --dur-press: 120ms;
   --dur-hover: 160ms;
   --dur-popover: 180ms;
   --dur-menu: 200ms;
-  --dur-dialog: 240ms;
-  --dur-drawer: 280ms;
+  --dur-panel: 260ms;
+  --dur-dialog: var(--dur-panel);
+  --dur-drawer: var(--dur-panel);
+  --dur-page: 300ms;
   --dur-progress: 300ms;
 }
 

@@ -7,7 +7,7 @@ type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
 
 const TONE: Record<NonNullable<BadgeProps['tone']>, string> = {
   neutral: 'bg-raised text-ink-soft',
-  ember: 'bg-ember-soft text-ember',
+  ember: 'bg-primary-soft text-primary',
   accent: 'bg-accent/15 text-warn',
   success: 'bg-ok/10 text-ok',
   warning: 'bg-warn/10 text-warn',

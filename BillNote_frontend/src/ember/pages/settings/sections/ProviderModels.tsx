@@ -157,7 +157,7 @@ export function ProviderModels({
                   <button
                     type="button"
                     onClick={() => onActivate(globalModelValue(provider.id, model.model_name))}
-                    className="rounded-control text-caption text-ink-mute hover:bg-raised hover:text-ember shrink-0 px-1.5 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
+                    className="rounded-control text-caption text-ink-mute hover:bg-raised hover:text-primary shrink-0 px-1.5 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                   >
                     {t('settings.model.useAsGlobal')}
                   </button>

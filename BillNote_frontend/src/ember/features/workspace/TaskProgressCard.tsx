@@ -48,7 +48,7 @@ export function TaskProgressCard({ task, onRetry }: TaskProgressCardProps) {
             {failed ? (
               <AlertTriangle className="text-danger size-4" />
             ) : running ? (
-              <Loader2 className="ember-spin text-ember size-4" />
+              <Loader2 className="ember-spin text-primary size-4" />
             ) : (
               <CheckCircle2 className="text-ok size-4" />
             )}

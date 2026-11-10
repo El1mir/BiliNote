@@ -60,14 +60,14 @@ export function TaskCard({
       className={cn(
         'ember-press group rounded-surface relative flex w-full flex-col gap-1.5 border px-3 py-2.5 text-left',
         active
-          ? 'border-ember/40 bg-ember-soft/60'
+          ? 'border-primary/40 bg-primary-soft/60'
           : 'border-line bg-surface hover:border-ink-mute/40'
       )}
     >
       <span className="flex items-start gap-2">
         {selecting ? (
           checked ? (
-            <CheckSquare className="text-ember mt-0.5 size-4 shrink-0" />
+            <CheckSquare className="text-primary mt-0.5 size-4 shrink-0" />
           ) : (
             <Square className="text-ink-mute mt-0.5 size-4 shrink-0" />
           )

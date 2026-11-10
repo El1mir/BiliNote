@@ -22,7 +22,7 @@ export function Chip({ className, active, tone = 'neutral', children, ...rest }:
       className={cn(
         'ember-press inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-small font-semibold whitespace-nowrap',
         active
-          ? 'bg-ember text-white'
+          ? 'bg-primary text-on-primary'
           : cn('bg-raised hover:bg-raised-hover', TONE[tone]),
         className,
       )}

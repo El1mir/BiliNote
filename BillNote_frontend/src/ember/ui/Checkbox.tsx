@@ -23,7 +23,7 @@ export function Checkbox({ checked, onChange, disabled, id, label, className }: 
       onClick={() => onChange(!checked)}
       className={cn(
         'ember-press inline-flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border',
-        checked ? 'border-ember bg-ember text-white' : 'border-line bg-surface',
+        checked ? 'border-primary bg-primary text-on-primary' : 'border-line-strong bg-surface',
         disabled && 'cursor-not-allowed opacity-50',
         className
       )}
