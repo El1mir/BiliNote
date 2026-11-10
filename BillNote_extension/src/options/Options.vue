@@ -6,12 +6,14 @@ import TranscriberPage from './pages/Transcriber.vue'
 import DownloaderPage from './pages/Downloader.vue'
 import MonitorPage from './pages/Monitor.vue'
 
+// Text-only nav: the emoji icons clashed with the graphite/teal palette and
+// carried no information the labels do not already carry.
 const TABS = [
-  { id: 'general', label: '通用', icon: '⚙️', component: GeneralPage },
-  { id: 'providers', label: '模型供应商', icon: '🧠', component: ProvidersPage },
-  { id: 'transcriber', label: '音频转写配置', icon: '🎙️', component: TranscriberPage },
-  { id: 'downloader', label: '下载配置', icon: '🍪', component: DownloaderPage },
-  { id: 'monitor', label: '部署监控', icon: '📊', component: MonitorPage },
+  { id: 'general', label: '通用', component: GeneralPage },
+  { id: 'providers', label: '模型供应商', component: ProvidersPage },
+  { id: 'transcriber', label: '音频转写配置', component: TranscriberPage },
+  { id: 'downloader', label: '下载配置', component: DownloaderPage },
+  { id: 'monitor', label: '部署监控', component: MonitorPage },
 ] as const
 
 const activeTab = ref<typeof TABS[number]['id']>('general')
@@ -37,7 +39,6 @@ const ActiveComponent = computed(() => TABS.find(t => t.id === activeTab.value)?
           :aria-current="activeTab === tab.id ? 'page' : undefined"
           @click="activeTab = tab.id"
         >
-          <span aria-hidden="true">{{ tab.icon }}</span>
           <span>{{ tab.label }}</span>
         </button>
       </nav>

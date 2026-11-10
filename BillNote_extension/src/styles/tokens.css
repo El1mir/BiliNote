@@ -155,7 +155,8 @@ kbd {
   [role='button'],
   select,
   input,
-  textarea {
+  textarea,
+  summary {
     min-height: 2.75rem;
   }
   button,

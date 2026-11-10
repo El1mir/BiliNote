@@ -349,13 +349,9 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- TaskProgress already renders the badge + message, so a second
+           failure banner here only repeated the same sentence. -->
       <TaskProgress :status="activeTask.status" :message="activeTask.message" />
-
-      <!-- 失败态 -->
-      <div v-if="activeTask.status === 'FAILED'" class="banner banner-danger">
-        <span aria-hidden="true">✕</span>
-        <span class="break-words">{{ activeTask.message || '任务失败' }}</span>
-      </div>
 
       <button
         v-if="activeTask.status === 'SUCCESS'"
