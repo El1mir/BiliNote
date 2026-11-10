@@ -10,7 +10,7 @@ type CheckboxProps = {
   className?: string
 }
 
-/** Terracotta check mark on a warm surface; the mark fades in, nothing moves. */
+/** Accent check mark on a surface; the mark fades in, nothing moves. */
 export function Checkbox({ checked, onChange, disabled, id, label, className }: CheckboxProps) {
   return (
     <button

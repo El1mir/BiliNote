@@ -27,7 +27,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 /**
- * Ember Studio button — 8px radius, semibold, 150ms transition.
+ * BiliNote workbench button — 8px radius, semibold, 150ms transition.
  * Press feedback scales to 0.975; hover glow is reserved for the primary variant.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

@@ -7,18 +7,11 @@
     <title>BiliNote - 强大的AI视频笔记神器</title>
     <meta name="color-scheme" content="light dark" />
     <!--
-      Non-blocking webfont load: the swap trick applies the sheet after first
-      paint, so a slow Google Fonts response never delays the interface. Every
-      family has a system fallback in tokens.css, so text is readable either way.
+      Fonts are self-hosted through @fontsource and imported in src/fonts.ts:
+      no third-party request on first paint, no CDN dependency for an offline
+      or air-gapped install. Latin subsets only — CJK falls back to the system
+      stack declared in tokens.css.
     -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      media="print"
-      onload="this.media='all'"
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
-    />
   </head>
   <body>
     <div id="root"></div>

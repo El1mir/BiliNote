@@ -11,7 +11,7 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
 
 /**
  * Native select styled to the Ember input spec — 8px radius, surface fill,
- * terracotta focus ring. Native keeps keyboard and mobile behaviour free.
+ * Accent focus ring. Native keeps keyboard and mobile behaviour free.
  *
  * 焦点环用 focus-visible（鼠标点击不留环）；在 <Field> 内时自动继承
  * id / aria-describedby / aria-invalid，调用方显式传入的值优先。

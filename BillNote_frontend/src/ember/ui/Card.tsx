@@ -2,16 +2,16 @@ import { forwardRef, type HTMLAttributes } from 'react'
 import { cn } from '@/ember/lib/cn'
 
 type CardProps = HTMLAttributes<HTMLDivElement> & {
-  /** Terracotta 4px stripe on the leading edge — marks the active/selected item. */
+  /** Accent 4px stripe on the leading edge — marks the active/selected item. */
   stripe?: string
-  /** Selected state — terracotta inset ring. Never changes the box, so content cannot shift by a pixel. */
+  /** Selected state — Accent inset ring. Never changes the box, so content cannot shift by a pixel. */
   selected?: boolean
   /** Lift 2px with a soft shadow on pointer-fine hover. */
   interactive?: boolean
 }
 
 /**
- * Ember Studio card — warm surface, 1px border, 12px radius, 16px padding.
+ * BiliNote workbench card — surface, 1px border, 12px radius, 16px padding.
  * Floats flat at rest and gains elevation on hover.
  */
 export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(

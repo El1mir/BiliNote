@@ -18,7 +18,7 @@ type TabsProps = {
 }
 
 /**
- * Underline tabs — active tab is terracotta with a 2px bottom border.
+ * Underline tabs — active tab is Accent with a 2px bottom border.
  *
  * WAI-ARIA tabs 模式：tablist 内只有当前 tab 可 Tab 进入（roving tabindex），
  * 左右方向键在 tab 之间移动并聚焦，Home/End 跳到首尾。鼠标点击仍然直接切换。

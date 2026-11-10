@@ -99,7 +99,7 @@ export class ErrorBoundary extends Component<Props, State> {
             aria-labelledby="boundary-title"
             className="w-full max-w-[560px] overflow-hidden rounded-surface border border-line bg-canvas shadow-raise"
           >
-            <div className="flex items-start gap-3 border-b border-line bg-[#fef2f2] px-5 py-4">
+            <div className="flex items-start gap-3 border-b border-line bg-danger-soft px-5 py-4">
               <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-danger/10 text-danger">
                 <TriangleAlert className="size-4" aria-hidden="true" />
               </span>
@@ -117,7 +117,7 @@ export class ErrorBoundary extends Component<Props, State> {
               <p className="text-small text-ink-soft">{body}</p>
               <pre
                 data-boundary-detail
-                className="max-h-40 overflow-auto rounded-control bg-ink px-3 py-2 font-mono text-caption leading-relaxed text-[#fca5a5]"
+                className="max-h-40 overflow-auto rounded-control bg-raised px-3 py-2 font-mono text-caption leading-relaxed text-danger"
               >
                 {detail}
               </pre>

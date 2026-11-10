@@ -84,7 +84,7 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
               aria-labelledby="startup-failed-title"
               className="mt-8 overflow-hidden rounded-surface border border-line bg-canvas shadow-raise"
             >
-              <div className="flex items-start gap-3 border-b border-line bg-[#fef2f2] px-5 py-4">
+              <div className="flex items-start gap-3 border-b border-line bg-danger-soft px-5 py-4">
                 <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-danger/10 text-danger">
                   <TriangleAlert className="size-4" aria-hidden="true" />
                 </span>

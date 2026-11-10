@@ -13,7 +13,7 @@ const TONE: Record<NonNullable<ChipProps['tone']>, string> = {
   danger: 'text-danger',
 }
 
-/** Pill chip — 9999px radius. Active state is the only place a chip fills with terracotta. */
+/** Pill chip — 9999px radius. Active state is the only place a chip fills with Accent. */
 export function Chip({ className, active, tone = 'neutral', children, ...rest }: ChipProps) {
   return (
     <button

@@ -23,7 +23,7 @@ type AppShellProps = {
 }
 
 /**
- * Ember Studio application shell.
+ * BiliNote workbench application shell.
  * - >=1280px: 256px sidebar + fluid content + optional rail
  * - 768–1279px: icon-only sidebar + fluid content (rail collapses under content)
  * - <768px: top bar + slide-in drawer
@@ -48,6 +48,8 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
             to={item.to}
             onClick={onNavigate}
             aria-current={active ? 'page' : undefined}
+            // The 72px rail hides the label visually; the name has to survive.
+            aria-label={item.label}
             className={cn(
               'ember-press ember-accent-bar relative flex items-center gap-3 rounded-control py-2.5 pr-3 pl-4 text-small font-semibold',
               active ? 'bg-primary-soft text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
@@ -65,7 +67,7 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
   return (
     <div className="flex min-h-screen bg-canvas">
       {/* Desktop / tablet sidebar */}
-      <aside className="sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-canvas md:flex md:w-[76px] xl:w-[256px]">
+      <aside className="sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-canvas md:flex md:w-[72px] xl:w-[256px]">
         <div className="flex items-center gap-2.5 px-4 py-5">
           <span className="grid size-9 shrink-0 place-items-center rounded-control bg-primary text-on-primary">
             <Sparkles className="size-4" />

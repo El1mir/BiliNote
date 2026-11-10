@@ -10,7 +10,7 @@ const BASE =
   'disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
- * Ember Studio input — surface fill, 8px radius, 12px padding, terracotta focus ring.
+ * BiliNote workbench input — surface fill, 8px radius, 12px padding, Accent focus ring.
  *
  * 焦点环用 focus-visible：鼠标点击不再留环，键盘 Tab 到时才出现。
  * 在 <Field> 内时自动继承 id / aria-describedby / aria-invalid，调用方显式传入的值优先。

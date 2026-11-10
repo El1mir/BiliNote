@@ -7,7 +7,7 @@
    The palette is graphite / cool-white / teal. Light is the default theme;
    `.dark` on <html> swaps every semantic value. Components never hardcode a
    colour — they only use the semantic utilities generated from @theme below
-   (bg-canvas, text-ink, border-line, bg-primary…).
+   (bg-canvas, text-ink, border-line, bg-accent…).
    ========================================================================== */
 
 :root {
@@ -20,19 +20,21 @@
   /* Text */
   --ink: #172126;
   --ink-soft: #526168;
-  --ink-mute: #5f6d74;
+  --ink-muted: #5f6d74;
 
   /* Lines — `line` is the decorative divider, `line-strong` the control border
      that has to clear 3:1 against surface for non-text UI. */
   --line: #cbd5d8;
   --line-strong: #7e8e94;
 
-  /* Primary — teal, reserved for interaction and current state */
-  --primary: #07756f;
-  --primary-hover: #05635e;
-  --primary-soft: #e8f3f1;
-  --primary-ring: rgba(7, 117, 111, 0.18);
-  --on-primary: #ffffff;
+  /* Accent — teal, reserved for interaction and current state.
+     `accent` is the canonical name (DESIGN.md); `primary` survives as an
+     alias so pages/** that still spell it keep working. */
+  --accent: #07756f;
+  --accent-hover: #05635e;
+  --accent-soft: #e8f3f1;
+  --accent-ring: rgba(7, 117, 111, 0.18);
+  --on-accent: #ffffff;
 
   /* Status */
   --success: #18794e;
@@ -44,6 +46,15 @@
   --on-danger: #ffffff;
   --info: #1769aa;
   --info-soft: #e9f2fa;
+
+  /* Legacy aliases (W0 bridge). Remove once W1–W5 have migrated: nothing in
+     ui/ or shell/ should add new uses of these. */
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-soft: var(--accent-soft);
+  --primary-ring: var(--accent-ring);
+  --on-primary: var(--on-accent);
+  --ink-mute: var(--ink-muted);
 
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
   --ease-inout: cubic-bezier(0.6, 0, 0.3, 1);
@@ -62,16 +73,16 @@
 
   --ink: #edf4f3;
   --ink-soft: #c0cfce;
-  --ink-mute: #91a3a5;
+  --ink-muted: #91a3a5;
 
   --line: #3b4a4d;
   --line-strong: #6b7f82;
 
-  --primary: #43c7b6;
-  --primary-hover: #5fd8c8;
-  --primary-soft: #14312f;
-  --primary-ring: rgba(67, 199, 182, 0.28);
-  --on-primary: #06201d;
+  --accent: #43c7b6;
+  --accent-hover: #5fd8c8;
+  --accent-soft: #14312f;
+  --accent-ring: rgba(67, 199, 182, 0.28);
+  --on-accent: #06201d;
 
   --success: #62c891;
   --success-soft: #14322a;
@@ -89,9 +100,8 @@
 @theme inline {
   /* Type families. Inter for UI, Source Serif 4 for reading, IBM Plex Mono for
      identifiers / code / error text. System fallbacks stay in the stack so a
-     blocked webfont never delays first paint.
-     ponytail: no self-hosted font files; the webfonts load non-blocking and the
-     system stack is the floor. Add woff2 assets here if FOUT ever matters. */
+     blocked webfont never delays first paint. The faces themselves are
+     self-hosted through @fontsource (src/fonts.ts). */
   --font-sans: 'Inter', -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --font-display: 'Inter', -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   --font-serif: 'Source Serif 4', 'Noto Serif SC', Georgia, 'Songti SC', serif;
@@ -127,14 +137,22 @@
   --color-raised-hover: var(--raised-hover);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
-  --color-ink-mute: var(--ink-mute);
+  --color-ink-muted: var(--ink-muted);
+  /* Legacy alias: pages/** still spell text-ink-mute. */
+  --color-ink-mute: var(--ink-muted);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-soft: var(--primary-soft);
-  --color-primary-ring: var(--primary-ring);
-  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ring: var(--accent-ring);
+  --color-on-accent: var(--on-accent);
+  /* Legacy aliases (W0 bridge) — pages/** still spell primary-*. */
+  --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-hover);
+  --color-primary-soft: var(--accent-soft);
+  --color-primary-ring: var(--accent-ring);
+  --color-on-primary: var(--on-accent);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -146,7 +164,6 @@
   --color-info-soft: var(--info-soft);
 
   /* Short aliases some primitives were written against. */
-  --color-accent: var(--primary);
   --color-ok: var(--success);
   --color-warn: var(--warning);
 
@@ -158,7 +175,8 @@
   /* Elevation — cool graphite, never warm */
   --shadow-raise: 0 1px 2px rgba(12, 24, 28, 0.06), 0 8px 24px rgba(12, 24, 28, 0.08);
   --shadow-float: 0 16px 48px rgba(12, 24, 28, 0.18);
-  --shadow-primary: 0 0 0 1px var(--primary-ring);
+  --shadow-accent: 0 0 0 1px var(--accent-ring);
+  --shadow-primary: 0 0 0 1px var(--accent-ring);
 
   --ease-out-quart: var(--ease);
   --ease-in-out-quart: var(--ease-inout);
@@ -212,12 +230,12 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--primary);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
   ::selection {
-    background: var(--primary-soft);
+    background: var(--accent-soft);
     color: var(--ink);
   }
 
@@ -254,7 +272,7 @@
     border-radius: 9999px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: var(--ink-mute);
+    background: var(--ink-muted);
     background-clip: content-box;
   }
 }
@@ -267,7 +285,7 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     font-weight: 600;
-    color: var(--ink-mute);
+    color: var(--ink-muted);
   }
 
   /* Thin accent bar for the active navigation item and selected cards */
@@ -278,7 +296,7 @@
     inset-inline-start: 0;
     width: 3px;
     border-radius: 0 9999px 9999px 0;
-    background: var(--primary);
+    background: var(--accent);
   }
 
   .ember-scroll-fade {
