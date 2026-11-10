@@ -36,14 +36,14 @@ onMounted(refresh)
       </button>
     </div>
 
-    <div v-if="error" class="text-red-600 text-sm mb-4">{{ error }}</div>
+    <div v-if="error" class="text-danger text-sm mb-4">{{ error }}</div>
 
     <template v-if="status">
       <section class="section-card">
         <h2 class="font-semibold">后端</h2>
         <div class="text-sm">
-          <span class="tag bg-green-100 text-green-700">{{ status.backend.status }}</span>
-          <span class="ml-2 text-gray-600">端口 {{ status.backend.port }}</span>
+          <span class="tag bg-success-soft text-success">{{ status.backend.status }}</span>
+          <span class="ml-2 text-ink-soft">端口 {{ status.backend.port }}</span>
         </div>
       </section>
 
@@ -52,9 +52,9 @@ onMounted(refresh)
         <div class="text-sm flex items-center gap-3">
           <span
             class="tag"
-            :class="status.ffmpeg.available ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
+            :class="status.ffmpeg.available ? 'bg-success-soft text-success' : 'bg-red-100 text-danger'"
           >{{ status.ffmpeg.available ? '可用' : '不可用' }}</span>
-          <span v-if="health && !health.ok" class="text-red-600 text-xs">{{ health.msg }}</span>
+          <span v-if="health && !health.ok" class="text-danger text-xs">{{ health.msg }}</span>
         </div>
       </section>
 
@@ -63,9 +63,9 @@ onMounted(refresh)
         <div class="text-sm">
           <span
             class="tag"
-            :class="status.cuda.available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'"
+            :class="status.cuda.available ? 'bg-success-soft text-success' : 'bg-raised text-ink-soft'"
           >{{ status.cuda.available ? '可用' : '不可用' }}</span>
-          <div v-if="status.cuda.available" class="mt-1 text-gray-600 text-xs">
+          <div v-if="status.cuda.available" class="mt-1 text-ink-soft text-xs">
             CUDA {{ status.cuda.version }} · {{ status.cuda.gpu_name }}
           </div>
         </div>
@@ -73,10 +73,10 @@ onMounted(refresh)
 
       <section class="section-card">
         <h2 class="font-semibold">Whisper</h2>
-        <div class="text-sm text-gray-600">
-          引擎：<span class="text-gray-800">{{ status.whisper.transcriber_type }}</span>
+        <div class="text-sm text-ink-soft">
+          引擎：<span class="text-ink">{{ status.whisper.transcriber_type }}</span>
           <span v-if="status.whisper.model_size" class="ml-3">
-            模型：<span class="text-gray-800">{{ status.whisper.model_size }}</span>
+            模型：<span class="text-ink">{{ status.whisper.model_size }}</span>
           </span>
         </div>
       </section>

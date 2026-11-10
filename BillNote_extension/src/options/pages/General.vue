@@ -87,14 +87,14 @@ onMounted(async () => {
         v-if="status.text"
         class="text-xs"
         :class="{
-          'text-green-700': status.kind === 'ok',
-          'text-red-600': status.kind === 'err',
-          'text-gray-500': status.kind === 'idle',
+          'text-success': status.kind === 'ok',
+          'text-danger': status.kind === 'err',
+          'text-ink-soft': status.kind === 'idle',
         }"
       >
         {{ status.text }}
       </div>
-      <p class="text-xs text-gray-500">
+      <p class="text-xs text-ink-soft">
         默认 http://localhost:8483 — 需要在该地址先跑起 BiliNote 后端
       </p>
     </section>
@@ -102,7 +102,7 @@ onMounted(async () => {
     <section class="section-card">
       <h2 class="font-semibold">默认供应商与模型</h2>
       <label class="flex flex-col gap-1 text-sm">
-        <span class="text-gray-600">供应商</span>
+        <span class="text-ink-soft">供应商</span>
         <select v-model="settings.providerId" class="input">
           <option value="">— 选择供应商 —</option>
           <option v-for="p in providers" :key="p.id" :value="p.id">
@@ -111,12 +111,12 @@ onMounted(async () => {
         </select>
       </label>
       <label class="flex flex-col gap-1 text-sm">
-        <span class="text-gray-600">模型</span>
+        <span class="text-ink-soft">模型</span>
         <select v-model="settings.modelName" class="input" :disabled="!settings.providerId">
           <option value="">— 选择模型 —</option>
           <option v-for="m in models" :key="m.id" :value="m.model_name">{{ m.model_name }}</option>
         </select>
-        <span v-if="settings.providerId && models.length === 0" class="text-xs text-amber-700">
+        <span v-if="settings.providerId && models.length === 0" class="text-xs text-warning">
           该供应商还没添加可用模型，去「模型供应商」页编辑
         </span>
       </label>
@@ -126,7 +126,7 @@ onMounted(async () => {
       <h2 class="font-semibold">默认生成选项</h2>
       <div class="grid grid-cols-3 gap-3 text-sm">
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">画质</span>
+          <span class="text-ink-soft">画质</span>
           <select v-model="settings.quality" class="input">
             <option value="fast">快速 (32k)</option>
             <option value="medium">中等 (64k)</option>
@@ -134,13 +134,13 @@ onMounted(async () => {
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记场景</span>
+          <span class="text-ink-soft">笔记场景</span>
           <select v-model="settings.scene" class="input">
             <option v-for="s in NOTE_SCENES" :key="s.value" :value="s.value">{{ s.label }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记详略</span>
+          <span class="text-ink-soft">笔记详略</span>
           <select v-model="settings.detail" class="input">
             <option v-for="d in NOTE_DETAILS" :key="d.value" :value="d.value">{{ d.label }}</option>
           </select>
@@ -148,7 +148,7 @@ onMounted(async () => {
       </div>
 
       <div class="flex flex-col gap-1 text-sm">
-        <span class="text-gray-600">输出形式（与 web 端 NoteForm 对齐）</span>
+        <span class="text-ink-soft">输出形式（与 web 端 NoteForm 对齐）</span>
         <div class="flex flex-wrap gap-x-4 gap-y-2">
           <label v-for="f in NOTE_FORMATS" :key="f.value" class="flex items-center gap-2">
             <input
@@ -162,7 +162,7 @@ onMounted(async () => {
       </div>
 
       <label class="flex flex-col gap-1 text-sm">
-        <span class="text-gray-600">额外提示词（追加到 prompt 末尾）</span>
+        <span class="text-ink-soft">额外提示词（追加到 prompt 末尾）</span>
         <textarea
           v-model="settings.extras"
           class="input resize-y"
@@ -174,9 +174,9 @@ onMounted(async () => {
 
     <section class="section-card">
       <h2 class="font-semibold">视频理解（多模态）</h2>
-      <p class="text-xs text-gray-500">
+      <p class="text-xs text-ink-soft">
         启用后会按抽帧间隔截取视频帧拼成网格图，连同字幕一起喂给视觉模型，提升画面相关问题的回答质量。
-        <strong class="text-amber-700">需要选择视觉模型</strong>（GPT-4o / Gemini / Claude 等），文字模型会忽略图片。
+        <strong class="text-warning">需要选择视觉模型</strong>（GPT-4o / Gemini / Claude 等），文字模型会忽略图片。
       </p>
       <label class="flex items-center gap-2 text-sm">
         <input v-model="settings.video_understanding" type="checkbox">
@@ -184,11 +184,11 @@ onMounted(async () => {
       </label>
       <div v-if="settings.video_understanding" class="grid grid-cols-3 gap-3 text-sm">
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">抽帧间隔(秒, 1-30)</span>
+          <span class="text-ink-soft">抽帧间隔(秒, 1-30)</span>
           <input v-model.number="settings.video_interval" type="number" min="1" max="30" class="input">
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">拼图行 (1-10)</span>
+          <span class="text-ink-soft">拼图行 (1-10)</span>
           <input
             :value="settings.grid_size?.[0] ?? 2"
             type="number" min="1" max="10" class="input"
@@ -196,7 +196,7 @@ onMounted(async () => {
           >
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-gray-600">拼图列 (1-10)</span>
+          <span class="text-ink-soft">拼图列 (1-10)</span>
           <input
             :value="settings.grid_size?.[1] ?? 2"
             type="number" min="1" max="10" class="input"

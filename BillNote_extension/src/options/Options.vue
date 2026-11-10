@@ -19,25 +19,29 @@ const ActiveComponent = computed(() => TABS.find(t => t.id === activeTab.value)?
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-50 text-gray-800">
-    <aside class="w-56 shrink-0 border-r bg-white flex flex-col">
-      <div class="px-4 py-4 border-b">
-        <div class="text-lg font-bold">BiliNote</div>
-        <div class="text-xs text-gray-500">浏览器插件设置</div>
+  <div class="flex h-screen bg-canvas text-ink font-sans">
+    <aside class="w-56 shrink-0 border-r border-line bg-surface flex flex-col">
+      <div class="px-4 py-4 border-b border-line">
+        <div class="text-lg font-semibold tracking-tight text-ink">BiliNote</div>
+        <div class="text-xs text-ink-muted mt-0.5">浏览器插件设置</div>
       </div>
-      <nav class="flex-1 overflow-auto py-2">
+      <nav class="flex-1 overflow-auto py-2" aria-label="设置分区">
         <button
           v-for="tab in TABS"
           :key="tab.id"
-          class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-gray-100"
-          :class="activeTab === tab.id ? 'bg-blue-50 text-blue-700 font-medium border-l-2 border-blue-500' : 'text-gray-700'"
+          type="button"
+          class="w-full text-left px-4 min-h-11 text-sm flex items-center gap-2 transition-colors border-l-2"
+          :class="activeTab === tab.id
+            ? 'bg-accent-soft text-accent font-medium border-accent'
+            : 'text-ink-soft border-transparent hover:bg-raised-hover hover:text-ink'"
+          :aria-current="activeTab === tab.id ? 'page' : undefined"
           @click="activeTab = tab.id"
         >
-          <span>{{ tab.icon }}</span>
+          <span aria-hidden="true">{{ tab.icon }}</span>
           <span>{{ tab.label }}</span>
         </button>
       </nav>
-      <div class="px-4 py-2 text-xs text-gray-400 border-t">
+      <div class="px-4 py-2 text-xs text-ink-muted border-t border-line">
         v0.1.0
       </div>
     </aside>
@@ -47,12 +51,3 @@ const ActiveComponent = computed(() => TABS.find(t => t.id === activeTab.value)?
     </main>
   </div>
 </template>
-
-<style>
-.btn-primary { @apply bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm; }
-.btn-secondary { @apply bg-gray-100 text-gray-700 px-3 py-1 rounded hover:bg-gray-200 text-sm disabled:opacity-50; }
-.btn-danger { @apply bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-sm disabled:opacity-50; }
-.tag { @apply text-xs px-1.5 py-0.5 rounded; }
-.input { @apply border rounded px-2 py-1 text-sm; }
-.section-card { @apply bg-white border rounded p-4 mb-4 flex flex-col gap-3; }
-</style>
