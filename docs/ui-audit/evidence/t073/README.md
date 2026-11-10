@@ -63,9 +63,17 @@ popup 在 B 站视频页标签上下文下的 Tab 顺序（`document.activeEleme
 动效阶梯（120/160/180/200/260/300ms），`--font-serif` 同样指向 Source Serif 4。
 `src/__tests__/tokens.test.ts` 守住这几条不变量（含“tokens.css 之外不得出现 hex”）。
 
-## e2e（未跑）
+## e2e（BLOCKED）
 
-`playwright.config.ts` 的 `testDir` 是 `./e2e`，但仓库里没有该目录（只有
-`src/tests/demo.spec.ts` 的示例），`pnpm test:e2e` 会因“没有测试”退出非 0。
-本卡不新增 e2e 用例；补跑需要先写 `BillNote_extension/e2e/*.spec.ts`，然后
-`npx playwright install chromium && pnpm test:e2e`。
+`e2e/basic.spec.ts` 存在三条用例（example test / popup page / options page），
+`pnpm test:e2e` 已验证能启动且确实执行了它们。失败点只有一个：本机 Playwright
+1.46.1 要 `chromium-1129`，而 `%LOCALAPPDATA%\ms-playwright` 里只有
+1148/1169/1181/1208/1234/1248。原样报错：
+
+```
+Error: browserType.launchPersistentContext: Executable doesn't exist at
+C:\Users\Administrator\AppData\Local\ms-playwright\chromium-1129\chrome-win\chrome.exe
+```
+
+补跑：`cd BillNote_extension && pnpm exec playwright install chromium && pnpm test:e2e`。
+（`pnpm exec playwright install chromium` 在本次会话里下载超时被中断，故未标记通过。）

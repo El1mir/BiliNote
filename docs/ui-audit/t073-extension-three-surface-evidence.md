@@ -39,19 +39,46 @@
 
 ## 5. 截图索引（`docs/ui-audit/evidence/t073/`）
 
-- `popup-{light,dark}-400x600.png`、`popup-loading-400x600.png`、`popup-empty-backend-down-400x600.png`、`popup-history-failed-400x600.png`
+四态（本轮重拍，按状态命名）：
+
+- `popup-empty-light-400x600.png` — 空态
+- `popup-ready-light-400x600.png` — 就绪态（三下拉 + 四复选框 + 可点「生成笔记」）
+- `popup-loading-dark-400x600.png` — 进行中（深色，状态胶囊 + 分段进度条）
+- `popup-failed-light-400x600.png` — 失败态（「失败」胶囊 + 后端错误文案）
+- `popup-backend-down-400x600.png` — 后端不可用（HTTP 503 + 去设置）
+- `popup-submitted-light-400x600.png` — 键盘提交后（task_id=t1，进入转写）
+- `popup-touch-coarse-400x600.png` — `(pointer: coarse)` 下的 44px 命中区
+
+三面主题与分区：
+
 - `sidepanel-{light,dark}-360x800.png`、`sidepanel-failed-360x800.png`、`sidepanel-empty-backend-down-360x800.png`
 - `options-{light,dark,touch}-1280x800.png`、`options-{general,providers,transcriber,downloader,monitor}-{light,dark}-1280x800.png`
+
+上一轮留下的 `popup-{light,dark}-400x600.png`、`popup-loading-400x600.png`、
+`popup-failed-400x600.png`、`popup-empty-backend-down-400x600.png`、`popup-history-failed-400x600.png`
+保留不删（已合并分支里的历史证据），索引以本列表为准。
 
 ## 6. 门禁
 
 ```
-pnpm build        exit 0
 pnpm typecheck    exit 0
-CI=1 pnpm exec vitest run → 3 files / 5 tests passed
+CI=1 pnpm exec vitest run → 4 files / 10 tests passed
+pnpm build        exit 0
 ```
 
-`pnpm test:e2e` 未跑：需要 Playwright 浏览器。补跑：`pnpm exec playwright install chromium && pnpm test:e2e`。
+`src/__tests__/tokens.test.ts` 守住 token 镜像：浅色/深色语义名一致、动效阶梯 120/160/180/200/260/300ms、
+`tokens.css` 之外不得出现 hex、`(pointer: coarse)` 有 2.75rem 下限。
+
+`pnpm test:e2e` → **BLOCKED（exit 1）**：本机 Playwright 1.46.1 要 `chromium-1129`，已装的是
+1148/1169/1181/1208/1234/1248。原样报错：
+
+```
+Error: browserType.launchPersistentContext: Executable doesn't exist at
+C:\Users\Administrator\AppData\Local\ms-playwright\chromium-1129\chrome-win\chrome.exe
+```
+
+补跑：`cd BillNote_extension && pnpm exec playwright install chromium && pnpm test:e2e`
+（`e2e/basic.spec.ts` 三条用例：example test / popup page / options page）。
 
 ## 7. 复现
 
