@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { Activity, AudioLines, Cpu, FileText, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
+import { Activity, AudioLines, Cpu, FileText, Globe, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
 import { useI18n } from '@/ember/i18n/context'
 import type { MessageKey } from '@/ember/i18n/strings'
 import { AppShell } from '@/ember/shell/AppShell'
@@ -13,7 +13,9 @@ import { PromptSection } from '@/ember/pages/settings/sections/PromptSection'
 import { MediaSection } from '@/ember/pages/settings/sections/MediaSection'
 import { DownloadSection } from '@/ember/pages/settings/sections/DownloadSection'
 import { MonitorSection } from '@/ember/pages/settings/sections/MonitorSection'
+import { ProxySection } from '@/ember/pages/settings/sections/ProxySection'
 import { AboutSection } from '@/ember/pages/settings/sections/AboutSection'
+import { useHasDraft, useUnsavedCount } from '@/ember/pages/settings/useSectionDraft'
 
 type SectionDef = { id: string; labelKey: MessageKey; icon: React.ReactNode }
 
@@ -25,6 +27,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'prompt', labelKey: 'settings.prompt', icon: <MessageSquareText className="size-4" /> },
   { id: 'media', labelKey: 'settings.media', icon: <HardDrive className="size-4" /> },
   { id: 'download', labelKey: 'settings.download', icon: <DownloadIcon className="size-4" /> },
+  { id: 'proxy', labelKey: 'settings.proxy', icon: <Globe className="size-4" /> },
   { id: 'monitor', labelKey: 'settings.monitor', icon: <Activity className="size-4" /> },
   { id: 'about', labelKey: 'settings.about', icon: <Info className="size-4" /> },
 ]
@@ -34,8 +37,38 @@ const SECTIONS: SectionDef[] = [
  * a vertical list beside the content on wide ones — the same DOM, no duplicate
  * markup, so a viewport change never remounts a section and drops form state.
  */
+/** 单个分区项：草稿角标订阅仓库，所以这里必须是组件（hook 不能在 map 回调里用）。 */
+function SectionLink({ section }: { section: SectionDef }) {
+  const { t } = useI18n()
+  const dirty = useHasDraft(section.id)
+
+  return (
+    <NavLink
+      to={`/settings/${section.id}`}
+      className={({ isActive }) =>
+        cn(
+          'ember-press flex shrink-0 items-center gap-2.5 rounded-control px-3 py-2 text-small font-semibold whitespace-nowrap',
+          isActive ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+        )
+      }
+    >
+      <span className="shrink-0">{section.icon}</span>
+      {t(section.labelKey)}
+      {dirty ? (
+        <span
+          role="status"
+          aria-label={t('settings.unsavedBadge')}
+          title={t('settings.unsavedBadge')}
+          className="ml-auto size-1.5 shrink-0 rounded-full bg-warn"
+        />
+      ) : null}
+    </NavLink>
+  )
+}
+
 export default function SettingsPage() {
   const { t } = useI18n()
+  const unsaved = useUnsavedCount()
 
   return (
     <AppShell
@@ -49,6 +82,9 @@ export default function SettingsPage() {
         <header className="flex flex-col gap-1">
           <h1 className="font-display text-section leading-tight">{t('settings.title')}</h1>
           <p className="text-small text-ink-soft">{t('settings.subtitle')}</p>
+          {unsaved ? (
+            <p className="text-caption text-warn">{t('settings.unsavedHint', { count: unsaved })}</p>
+          ) : null}
         </header>
 
         <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-8">
@@ -57,19 +93,7 @@ export default function SettingsPage() {
             className="ember-scroll-fade-x -mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:w-56 lg:flex-col lg:overflow-visible lg:px-0 lg:[mask-image:none]"
           >
             {SECTIONS.map(section => (
-              <NavLink
-                key={section.id}
-                to={`/settings/${section.id}`}
-                className={({ isActive }) =>
-                  cn(
-                    'ember-press flex shrink-0 items-center gap-2.5 rounded-control px-3 py-2 text-small font-semibold whitespace-nowrap',
-                    isActive ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
-                  )
-                }
-              >
-                <span className="shrink-0">{section.icon}</span>
-                {t(section.labelKey)}
-              </NavLink>
+              <SectionLink key={section.id} section={section} />
             ))}
           </nav>
 
@@ -83,6 +107,7 @@ export default function SettingsPage() {
               <Route path="prompt" element={<PromptSection />} />
               <Route path="media" element={<MediaSection />} />
               <Route path="download" element={<DownloadSection />} />
+              <Route path="proxy" element={<ProxySection />} />
               <Route path="monitor" element={<MonitorSection />} />
               <Route path="about" element={<AboutSection />} />
               <Route path="*" element={<Navigate to="general" replace />} />
