@@ -17,7 +17,6 @@ body:
         - 后端 (backend/)
         - Web 前端 (BillNote_frontend/)
         - 浏览器插件 (BillNote_extension/)
-        - Tauri 桌面端
         - 文档 / 其他
     validations:
       required: true
@@ -37,7 +36,6 @@ body:
         - 源码运行
         - Docker (docker-compose.yml)
         - Docker GPU (docker-compose.gpu.yml)
-        - 桌面端安装包 (Tauri Release)
         - 其他
     validations:
       required: true

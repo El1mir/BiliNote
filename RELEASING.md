@@ -103,10 +103,6 @@ CI 默认会创建 / 更新 `vX.Y.Z` 对应的 Release。如果你想自己写 r
 4. 选择"在 AMO 公开"或"自托管"
 5. 提交审核
 
-### 桌面端 (Tauri)
-
-仓库已有 GitHub Actions 在 `v*` tag 时构建桌面端安装包并自动挂到 GitHub Release，无需额外操作。
-
 ## 7. 清理
 
 ```bash

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BiliNote is an AI video note generation tool. It extracts content from Bilibili video links (single video, multi-part, or a batch of URLs) and generates structured Markdown notes using LLM models. Full-stack app with a FastAPI backend, React frontend, and optional Tauri desktop packaging.
+BiliNote is an AI video note generation tool. It extracts content from Bilibili video links (single video, multi-part, or a batch of URLs) and generates structured Markdown notes using LLM models. Full-stack app with a FastAPI backend, React frontend, and a browser extension. The Tauri desktop build was removed; the product is Web + extension only.
 
 ## Development Commands
 
@@ -36,13 +36,6 @@ pnpm lint         # ESLint
 ```bash
 docker-compose up                              # Web stack (backend + frontend + nginx)
 docker-compose -f docker-compose.gpu.yml up    # GPU variant
-```
-
-### Desktop (Tauri)
-
-```bash
-cd backend && ./build.sh          # Build PyInstaller backend binary
-cd BillNote_frontend && pnpm tauri build
 ```
 
 ### Browser Extension (Vue 3 + vitesse-webext, MV3)
@@ -85,7 +78,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
   - `ember/tokens.css` + `ember/motion.css` — design tokens (terracotta `#c2410c`, warm neutrals, Playfair Display / Source Sans 3 / Fira Code) and the shared motion vocabulary; `src/index.css` is just those two imports.
   - `ember/ui/` — primitives: Button, Card, Input, Textarea, Field, Chip, Badge, Progress, Skeleton, EmptyState, Tabs, Dialog, Drawer, Switch, Checkbox, Select, Tooltip, Spinner.
   - `ember/shell/AppShell.tsx` — 256px sidebar at >=1280px, 76px icon rail at 768–1279px, top bar + Drawer below 768px; content does not remount across breakpoints.
-  - `ember/pages/` — `WorkspacePage`, `SettingsPage` (+ `sections/`), `OnboardingPage`, `OnboardingGuard`, `NotFoundPage`; `ember/EmberApp.tsx` owns routing (`BrowserRouter` on web, `HashRouter` under Tauri).
+  - `ember/pages/` — `WorkspacePage`, `SettingsPage` (+ `sections/`), `OnboardingPage`, `NotFoundPage`; `ember/EmberApp.tsx` owns routing (`BrowserRouter` only - the Tauri HashRouter branch was removed).
   - `ember/features/` — `workspace/` (IntakeForm, BatchImportPanel, TaskList, GroupPanel, TaskProgressCard, `useNoteGroups`, `archive`) and `reader/` (NotePanel with note + transcript tabs, MarkdownNote, TranscriptView, outline).
   - `ember/i18n/` — `strings.ts` (zh-CN / en-US dictionaries, `MessageKey`) + `context.ts` (`useI18n`) + `locale.ts` (`translate` for non-React modules).
 - `store/taskStore/` — the only Zustand store left; tasks carry `revision` and stale status updates are rejected.
@@ -114,7 +107,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 - **Database**: SQLite at `backend/bili_note.db` (`app/db/engine.py` uses the relative `sqlite:///bili_note.db`, so it lands in the backend working directory), auto-initialized on first run
 - **FFmpeg**: Required system dependency for video/audio processing
 - **Vite proxy**: Dev server proxies `/api` and `/static` to backend (configured in `vite.config.ts`, reads env from parent dir; falls back to current dir when `DOCKER_BUILD` is set)
-- **CORS**: `backend/main.py` uses a regex (`CORS_ORIGIN_REGEX`) that allows localhost, `tauri.localhost`, and `chrome-extension://` / `moz-extension://` origins — required for the desktop app and the browser extension.
+- **CORS**: `backend/main.py` uses a regex (`CORS_ORIGIN_REGEX`) that allows localhost and `chrome-extension://` / `moz-extension://` origins — required for the web app and the browser extension.
 
 ## Specs & Tickets
 

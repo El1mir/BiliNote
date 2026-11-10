@@ -9,7 +9,6 @@ const TOTAL_TIMEOUT_MS = 60_000
 const POLL_INTERVAL_MS = 2_000
 const PROBE_TIMEOUT_MS = 5_000
 
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 // 直接用 fetch 而非 utils/request 的共享 axios：那个 axios 装了全局 toast 拦截器，
 // 启动期每次 /sys_check 失败都会弹一个红色 toast，2s 一次轮询会叠出十几个。
@@ -99,13 +98,10 @@ const initialStatus: Status = {
 /**
  * 后端就绪检测。
  *
- * 三路信号汇聚：
- *  1. HTTP 轮询 /sys_check —— 所有平台通用
- *  2. Tauri 'backend-ready' 事件 —— 桌面端 sidecar 探测器先于 HTTP 一步触达
- *  3. Tauri 'backend-terminated' / 'backend-startup-timeout' 事件 —— sidecar 死了或超时
- *     立即进失败态，不再继续轮询（旧实现的 while(true) 就是死在这里）
+ * HTTP 轮询 /sys_check 直到成功、或在 TOTAL_TIMEOUT_MS 内一直失败。
  *
- * 任何一路报「ready」即成功；任何一路报「失败」立即停掉所有轮询。
+ * 桌面端 sidecar 已移除（T-066）：不再有 backend-ready / backend-terminated
+ * 事件通道，就绪与否只有 HTTP 一个真源。
  */
 export const useCheckBackend = (): BackendCheck => {
   const [status, setStatus] = useState<Status>(initialStatus)
@@ -124,18 +120,11 @@ export const useCheckBackend = (): BackendCheck => {
     let timeoutId: ReturnType<typeof setTimeout> | null = null
     let pollTimerId: ReturnType<typeof setTimeout> | null = null
     let cancelled = false
-    const tauriUnsubs: Array<() => void> = []
 
     const markReady = () => {
       if (cancelled || settledRef.current) return
       settledRef.current = true
       setStatus({ loading: false, initialized: true, failed: false, lastError: null, reason: null })
-    }
-
-    const markFailed = (msg: string, reason: BootFailureReason) => {
-      if (cancelled || settledRef.current) return
-      settledRef.current = true
-      setStatus({ loading: false, initialized: false, failed: true, lastError: msg, reason })
     }
 
     const poll = async () => {
@@ -178,33 +167,6 @@ export const useCheckBackend = (): BackendCheck => {
       }))
     }, TOTAL_TIMEOUT_MS)
 
-    // 桌面端订阅 Tauri 事件（动态 import 避免 web 端打包报错）
-    if (isTauri) {
-      import('@tauri-apps/api/event')
-        .then(async ({ listen }) => {
-          if (cancelled) return
-          const offReady = await listen<number>('backend-ready', () => markReady())
-          const offTimeout = await listen<string>('backend-startup-timeout', e => {
-            markFailed(typeof e.payload === 'string' ? e.payload : '后端启动超时', {
-              code: 'startup_timeout',
-              detail: typeof e.payload === 'string' ? e.payload : undefined,
-            })
-          })
-          const offTerm = await listen<number | null>('backend-terminated', e => {
-            const code = e.payload
-            markFailed(`后端进程已退出 (code=${code ?? 'unknown'})`, {
-              code: 'terminated',
-              detail: String(code ?? 'unknown'),
-            })
-          })
-          tauriUnsubs.push(offReady, offTimeout, offTerm)
-        })
-        .catch(err => {
-          // 拿不到 @tauri-apps/api/event 不致命，继续走 HTTP 轮询
-          console.warn('[useCheckBackend] 无法订阅 Tauri 事件:', err)
-        })
-    }
-
     // 立刻开始第一轮轮询
     poll()
 
@@ -212,13 +174,7 @@ export const useCheckBackend = (): BackendCheck => {
       cancelled = true
       if (timeoutId) clearTimeout(timeoutId)
       if (pollTimerId) clearTimeout(pollTimerId)
-      tauriUnsubs.forEach(off => {
-        try {
-          off()
-        } catch {
-          /* noop */
-        }
-      })
+
     }
   }, [tick])
 

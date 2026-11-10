@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### Removed
+
+- **彻底移除 Tauri 桌面端（T-066，⚠️ 破坏性变更）**：产品形态收敛为 Web + 浏览器扩展，不再有桌面安装包。
+  - 前端：删除 `BillNote_frontend/src-tauri/`、`BillNote_frontend/.env.tauri`，以及 `@tauri-apps/api` / `@tauri-apps/plugin-shell` / `@tauri-apps/cli` 三个依赖；`ember/EmberApp.tsx` 只保留 `BrowserRouter`，`__TAURI_INTERNALS__` 检测与 HashRouter 分支一并删除。
+  - 桌面专用模块随之删除：`ember/startup/useBackendEvents.ts`（sidecar 事件流）、`ember/startup/StartupNotice.tsx`（安装路径诊断横幅）、`ember/pages/OnboardingGuard.tsx`（仅拦截桌面首启）。`StartupScreen` 只保留 HTTP 就绪探测的等待 / 失败 / 重试三态；`hooks/useCheckBackend.ts` 去掉 backend-ready、backend-startup-timeout、backend-terminated 三条事件通道，就绪判断只剩 `/sys_check` 轮询。
+  - 构建：删除 `backend/build.bat` / `backend/build.sh`（PyInstaller sidecar，只服务桌面打包）与 `.github/workflows/main.yml`（桌面安装包 Release 流水线）；`vite.config.ts` 的版本号改从 `package.json` 读，`base` 固定为 `/`。
+  - 后端：`CORS_ORIGIN_REGEX` 不再放行 `tauri://localhost` 与 `tauri.localhost`，只保留 localhost 与扩展 origin。
+  - 文档：README / CLAUDE.md / RELEASING.md 移除桌面构建与发布说明。
+
 ### Changed
 
 - **网页表现层重建为 Ember Studio（spec 017，⚠️ 破坏性变更）**：`BillNote_frontend/src/` 下重构前的 `pages/` / `components/` / `layouts/` / `App.tsx` 全部删除，由 `ember/` 接管整个表现层 —— `tokens.css` + `motion.css` 是唯一的设计 token 来源，`ui/` 提供基元，`shell/AppShell.tsx` 做 256px 侧栏 / 76px 图标轨 / 顶栏 + Drawer 三档断点，`pages/` 与 `features/` 承载工作区与阅读器，`i18n/strings.ts` 是 zh-CN / en-US 的扁平字典（`MessageKey` 类型约束，禁止裸 JSX 文案）。

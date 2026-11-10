@@ -5,7 +5,7 @@
 ARG BASE_REGISTRY=docker.io
 FROM ${BASE_REGISTRY}/library/node:20-alpine AS builder
 
-# 可由发布 workflow 从 git tag 注入，用于前端 About 页展示版本；未传时由 Vite 回退读取 tauri.conf.json。
+# 可由发布 workflow 从 git tag 注入，用于前端 About 页展示版本；未传时由 Vite 回退读取 package.json 的 version。
 ARG VITE_APP_VERSION=
 ENV VITE_APP_VERSION=${VITE_APP_VERSION}
 

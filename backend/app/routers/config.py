@@ -606,7 +606,7 @@ async def sys_health():
 async def sys_check():
     """轻量存活判定：后端进程能响应这个 endpoint 就算「起来了」，不查外部依赖。
 
-    给桌面端 useCheckBackend / Tauri ready-probe 用。
+    给前端 useCheckBackend 的就绪探测用。
     """
     return R.success()
 

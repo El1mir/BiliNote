@@ -1,18 +1,15 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useCheckBackend } from '@/hooks/useCheckBackend'
 import { systemCheck } from '@/services/system'
 import { StartupScreen } from '@/ember/startup/StartupScreen'
-import { StartupNotice } from '@/ember/startup/StartupNotice'
 import { ErrorBoundary } from '@/ember/shell/ErrorBoundary'
 import { WorkspacePage } from '@/ember/pages/WorkspacePage'
-import { OnboardingGuard } from '@/ember/pages/OnboardingGuard'
 import { NotFoundPage } from '@/ember/pages/NotFoundPage'
 import { Spinner } from '@/ember/ui/Spinner'
 import { useEffect } from 'react'
 
 const SettingsPage = lazy(() => import('@/ember/pages/settings/SettingsPage'))
-// Lazy so the browser build never downloads the desktop-only setup flow.
 const OnboardingPage = lazy(() =>
   import('@/ember/pages/OnboardingPage').then(module => ({ default: module.OnboardingPage })),
 )
@@ -31,28 +28,21 @@ export function EmberApp() {
 
   if (!initialized) {
     return (
-      <>
-        <StartupNotice />
-        <StartupScreen
-          loading={loading}
-          failed={failed}
-          lastError={lastError}
-          reason={reason}
-          onRetry={retry}
-        />
-      </>
+      <StartupScreen
+        loading={loading}
+        failed={failed}
+        lastError={lastError}
+        reason={reason}
+        onRetry={retry}
+      />
     )
   }
 
-  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-  const Router = isTauri ? HashRouter : BrowserRouter
-
   return (
     <>
-      <StartupNotice />
       {/* Outermost render guard: without it a throw below the router blanks the page. */}
       <ErrorBoundary scope="router">
-        <Router>
+        <BrowserRouter>
           <Suspense
             fallback={
               <div className="grid h-screen place-items-center">
@@ -64,11 +54,7 @@ export function EmberApp() {
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route
                 path="/"
-                element={
-                  <OnboardingGuard>
-                    <WorkspacePage />
-                  </OnboardingGuard>
-                }
+                element={<WorkspacePage />}
               />
               <Route path="/settings" element={<SettingsPage />}>
                 <Route index element={<Navigate to="general" replace />} />
@@ -77,7 +63,7 @@ export function EmberApp() {
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
-        </Router>
+        </BrowserRouter>
       </ErrorBoundary>
     </>
   )

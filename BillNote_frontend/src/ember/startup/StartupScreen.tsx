@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
-import { AlertTriangle, Copy, RefreshCw, RotateCcw, TriangleAlert } from 'lucide-react'
-import { useBackendEvents } from '@/ember/startup/useBackendEvents'
+import { useMemo } from 'react'
+import { RefreshCw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/ember/ui/Button'
 import { Spinner } from '@/ember/ui/Spinner'
 import { LanguageSwitcher } from '@/ember/shell/LanguageSwitcher'
@@ -9,9 +8,6 @@ import type { BootFailureReason } from '@/hooks/useCheckBackend'
 
 /** Mirrors TOTAL_TIMEOUT_MS in useCheckBackend — the readiness budget shown to the user. */
 const READINESS_BUDGET_S = 60
-
-/** How many stderr lines the failure card previews before pointing at Copy. */
-const STDERR_PREVIEW_LINES = 6
 
 type Props = {
   /** The backend is still being probed. */
@@ -22,7 +18,7 @@ type Props = {
   lastError: string | null
   /** Structured cause — rendered through i18n so the card follows the locale. */
   reason?: BootFailureReason | null
-  /** Re-run the readiness probe without restarting the sidecar. */
+  /** Re-run the readiness probe. */
   onRetry?: () => void
 }
 
@@ -34,40 +30,12 @@ type Props = {
  * and the recovery path when the wait fails. It is deliberately chrome-free:
  * one centred column, one card, and the language switcher so a user who cannot
  * read the default locale can still change it before anything else loads.
+ *
+ * 桌面端 sidecar 已移除：这里只处理 HTTP 就绪探测的等待与失败，不再有
+ * 重启进程、复制 stderr、安装路径提示这些 Tauri 专属路径。
  */
 export function StartupScreen({ loading, failed, lastError, reason, onRetry }: Props) {
   const { t } = useI18n()
-  const { isTauri, restart, copyLogs, logs } = useBackendEvents()
-  const [restarting, setRestarting] = useState(false)
-  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle')
-
-  // The hook's own lastError is a summary; the ring buffer usually holds the
-  // Python traceback tail, which names the real failure.
-  const stderrPreview = useMemo(() => {
-    if (!failed || !logs?.length) return []
-    return logs
-      .filter(line => line.level === 'error')
-      .slice(-STDERR_PREVIEW_LINES)
-      .map(line => line.text)
-  }, [failed, logs])
-
-  const handleRestart = async () => {
-    setRestarting(true)
-    try {
-      await restart()
-    } catch {
-      // restart() already appended the failure to the log ring buffer.
-    } finally {
-      setRestarting(false)
-      onRetry?.()
-    }
-  }
-
-  const handleCopy = async () => {
-    const ok = await copyLogs()
-    setCopyState(ok ? 'ok' : 'fail')
-    window.setTimeout(() => setCopyState('idle'), 2000)
-  }
 
   const causes = [
     t('startup.failed.causePath'),
@@ -131,20 +99,6 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
               </div>
 
               <div className="space-y-5 px-5 py-5">
-                {stderrPreview.length > 0 && (
-                  <section>
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                      <h2 className="ember-overline">{t('startup.failed.logTitle')}</h2>
-                      <span className="text-caption text-ink-mute">
-                        {t('startup.failed.logHint')}
-                      </span>
-                    </div>
-                    <pre className="mt-2 max-h-36 overflow-auto rounded-control bg-ink px-3 py-2 font-mono text-caption leading-relaxed text-[#fca5a5]">
-                      {stderrPreview.join('\n')}
-                    </pre>
-                  </section>
-                )}
-
                 <section>
                   <h2 className="ember-overline">{t('startup.failed.causesTitle')}</h2>
                   <ul className="mt-2 space-y-1.5">
@@ -162,27 +116,7 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
               </div>
 
               <div className="flex flex-wrap gap-2 border-t border-line bg-surface px-5 py-4">
-                {isTauri && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleRestart}
-                    loading={restarting}
-                    className="gap-1.5"
-                  >
-                    {!restarting && <RotateCcw className="size-3.5" aria-hidden="true" />}
-                    {restarting ? t('startup.restarting') : t('startup.restart')}
-                  </Button>
-                )}
-                <Button variant="secondary" size="sm" onClick={handleCopy} className="gap-1.5">
-                  <Copy className="size-3.5" aria-hidden="true" />
-                  {copyState === 'ok'
-                    ? t('startup.copied')
-                    : copyState === 'fail'
-                      ? t('startup.copyFailed')
-                      : t('startup.copyLogs')}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onRetry} className="gap-1.5">
+                <Button variant="primary" size="sm" onClick={onRetry} className="gap-1.5">
                   <RefreshCw className="size-3.5" aria-hidden="true" />
                   {t('startup.retry')}
                 </Button>
@@ -205,15 +139,6 @@ export function StartupScreen({ loading, failed, lastError, reason, onRetry }: P
                 <div className="ember-indeterminate h-full w-1/3 rounded-full bg-ember" />
               </div>
             </section>
-          )}
-
-          {/* Install-path advice is a desktop (Tauri) concern: a browser deployment has
-              no install directory, so showing it there is noise the user cannot act on. */}
-          {isTauri && (
-            <p className="mt-6 flex items-start gap-2 text-caption text-ink-mute">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              <span>{t('startup.notice.pathAdvice')}</span>
-            </p>
           )}
         </div>
       </main>
