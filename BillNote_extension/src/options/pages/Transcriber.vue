@@ -84,11 +84,11 @@ onMounted(refresh)
 <template>
   <div class="p-6 max-w-3xl">
     <h1 class="text-xl font-bold mb-1">音频转写配置</h1>
-    <p class="text-xs text-gray-500 mb-4">
+    <p class="text-xs text-ink-soft mb-4">
       选择把视频音频转成文字的引擎。openai 兼容 ASR 走在线接口，Faster Whisper 在本地运行、需要先下载模型。
     </p>
 
-    <div v-if="loading" class="text-sm text-gray-500">加载中…</div>
+    <div v-if="loading" class="text-sm text-ink-soft">加载中…</div>
 
     <template v-else-if="config">
       <section class="section-card">
@@ -111,7 +111,7 @@ onMounted(refresh)
         <h3 class="text-sm font-medium mt-2">下载状态</h3>
         <table class="text-sm w-full">
           <thead>
-            <tr class="text-left text-gray-500">
+            <tr class="text-left text-ink-soft">
               <th class="py-1 font-normal">模型</th>
               <th class="py-1 font-normal">本地</th>
               <th class="py-1 font-normal">操作</th>
@@ -121,9 +121,9 @@ onMounted(refresh)
             <tr v-for="row in currentSizeStatus" :key="row.model_size" class="border-t">
               <td class="py-1">{{ row.model_size }}</td>
               <td class="py-1">
-                <span v-if="row.downloaded" class="tag bg-green-100 text-green-700">已下载</span>
+                <span v-if="row.downloaded" class="tag bg-success-soft text-success">已下载</span>
                 <span v-else-if="row.downloading" class="tag bg-yellow-100 text-yellow-700">下载中…</span>
-                <span v-else class="tag bg-gray-100 text-gray-500">未下载</span>
+                <span v-else class="tag bg-raised text-ink-soft">未下载</span>
               </td>
               <td class="py-1">
                 <button
@@ -140,7 +140,7 @@ onMounted(refresh)
       </section>
 
       <section class="flex items-center gap-3">
-        <button class="btn-primary" :disabled="saving" @click="save">
+        <button class="btn-accent" :disabled="saving" @click="save">
           {{ saving ? '保存中…' : '保存配置' }}
         </button>
         <button class="btn-secondary" @click="refresh">刷新</button>
@@ -148,9 +148,9 @@ onMounted(refresh)
           v-if="message.text"
           class="text-xs"
           :class="{
-            'text-green-700': message.kind === 'ok',
-            'text-red-600': message.kind === 'err',
-            'text-gray-500': message.kind === 'idle',
+            'text-success': message.kind === 'ok',
+            'text-danger': message.kind === 'err',
+            'text-ink-soft': message.kind === 'idle',
           }"
         >{{ message.text }}</span>
       </section>

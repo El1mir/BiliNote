@@ -150,24 +150,24 @@ onMounted(refresh)
         <h1 class="text-xl font-bold">模型供应商</h1>
         <button class="btn-secondary" @click="startCreate">新增</button>
       </div>
-      <div class="bg-white border rounded">
+      <div class="bg-surface border rounded">
         <div
           v-for="p in providers"
           :key="p.id"
-          class="flex items-center justify-between gap-2 px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-gray-50"
-          :class="{ 'bg-blue-50': p.id === selectedId }"
+          class="flex items-center justify-between gap-2 px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-canvas"
+          :class="{ 'bg-accent-soft': p.id === selectedId }"
           @click="select(p.id)"
         >
           <div class="flex items-center gap-2 min-w-0">
             <div class="truncate">{{ p.name }}</div>
             <span
               class="tag"
-              :class="p.type === 'built-in' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'"
+              :class="p.type === 'built-in' ? 'bg-purple-100 text-purple-700' : 'bg-raised text-ink-soft'"
             >{{ p.type === 'built-in' ? '内置' : '自定义' }}</span>
           </div>
           <button
             class="text-xs"
-            :class="p.enabled === 1 ? 'text-green-600' : 'text-gray-400'"
+            :class="p.enabled === 1 ? 'text-success' : 'text-ink-muted'"
             :title="p.enabled === 1 ? '已启用，点击禁用' : '已禁用，点击启用'"
             @click.stop="toggleEnabled(p)"
           >
@@ -178,7 +178,7 @@ onMounted(refresh)
     </aside>
 
     <main class="flex-1 max-w-2xl">
-      <div v-if="!selectedId && !isCreating" class="text-gray-400 text-sm pt-12 text-center">
+      <div v-if="!selectedId && !isCreating" class="text-ink-muted text-sm pt-12 text-center">
         左侧选一个供应商查看 / 编辑，或点「新增」添加新供应商
       </div>
       <div v-else class="flex flex-col gap-4">
@@ -188,32 +188,32 @@ onMounted(refresh)
 
         <section class="section-card">
           <label class="flex items-center gap-3 text-sm">
-            <span class="w-20 text-right text-gray-600">名称</span>
+            <span class="w-20 text-right text-ink-soft">名称</span>
             <input v-model="editing.name" class="input flex-1" :disabled="isBuiltIn">
           </label>
           <label class="flex items-center gap-3 text-sm">
-            <span class="w-20 text-right text-gray-600">API Key</span>
+            <span class="w-20 text-right text-ink-soft">API Key</span>
             <input v-model="editing.api_key" class="input flex-1" type="password">
           </label>
           <label class="flex items-center gap-3 text-sm">
-            <span class="w-20 text-right text-gray-600">API 地址</span>
+            <span class="w-20 text-right text-ink-soft">API 地址</span>
             <input v-model="editing.base_url" class="input flex-1">
           </label>
           <label v-if="!isCreating" class="flex items-center gap-3 text-sm">
-            <span class="w-20 text-right text-gray-600">类型</span>
+            <span class="w-20 text-right text-ink-soft">类型</span>
             <input :value="editing.type" class="input flex-1" disabled>
           </label>
 
           <div class="flex items-center gap-2 pt-2">
-            <button class="btn-primary" @click="save">{{ isCreating ? '创建' : '保存' }}</button>
+            <button class="btn-accent" @click="save">{{ isCreating ? '创建' : '保存' }}</button>
             <button v-if="!isCreating" class="btn-secondary" @click="test">测试连接</button>
             <span
               v-if="message.text"
               class="text-xs"
               :class="{
-                'text-green-700': message.kind === 'ok',
-                'text-red-600': message.kind === 'err',
-                'text-gray-500': message.kind === 'idle',
+                'text-success': message.kind === 'ok',
+                'text-danger': message.kind === 'err',
+                'text-ink-soft': message.kind === 'idle',
               }"
             >{{ message.text }}</span>
           </div>
@@ -226,11 +226,11 @@ onMounted(refresh)
             <button class="btn-secondary" @click="addNewModel">添加模型</button>
           </div>
           <ul class="flex flex-col gap-1">
-            <li v-for="m in models" :key="m.id" class="flex justify-between items-center px-2 py-1 rounded hover:bg-gray-50">
+            <li v-for="m in models" :key="m.id" class="flex justify-between items-center px-2 py-1 rounded hover:bg-canvas">
               <span class="text-sm">{{ m.model_name }}</span>
-              <button class="text-xs text-red-500 hover:text-red-700" @click="removeModel(m.id)">删除</button>
+              <button class="text-xs text-danger hover:text-red-700" @click="removeModel(m.id)">删除</button>
             </li>
-            <li v-if="models.length === 0" class="text-xs text-gray-400">该供应商下还没有模型</li>
+            <li v-if="models.length === 0" class="text-xs text-ink-muted">该供应商下还没有模型</li>
           </ul>
         </section>
       </div>

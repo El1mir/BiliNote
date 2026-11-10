@@ -6,6 +6,8 @@ import { generateNote, getTaskStatus, resolveImageUrl } from '~/logic/api'
 import { fetchBilibiliSubtitle } from '~/logic/bilibili-subtitle'
 import { NOTE_DETAILS, NOTE_FORMATS, NOTE_SCENES, type NoteFormat, type TaskRecord } from '~/logic/types'
 import { getTaskDisplayTitle, normalizeVideoTitle } from '~/logic/task-display'
+import { statusIcon, statusLabel } from '~/logic/task-status-label'
+import { useBackendHealth } from '~/composables/useBackendHealth'
 
 const tabUrl = ref<string>('')
 const tabTitle = ref<string>('')
@@ -13,10 +15,18 @@ const tabId = ref<number | undefined>(undefined)
 const platform = computed(() => detectPlatform(tabUrl.value))
 const supported = computed(() => platform.value !== null)
 
+const { state: backend, detail: backendDetail } = useBackendHealth()
+const booting = ref(true)
+
 const submitting = ref(false)
 const errorMsg = ref('')
 const activeTaskId = ref<string>('')
 const activeTask = computed<TaskRecord | undefined>(() => tasks.value?.find(t => t.taskId === activeTaskId.value))
+
+const backendDown = computed(() => backend.value === 'down')
+const loading = computed(() => booting.value || backend.value === 'checking')
+const canSubmit = computed(() =>
+  supported.value && !submitting.value && !!settings.value.providerId && !backendDown.value)
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -57,6 +67,10 @@ async function poll(taskId: string) {
 
 async function start() {
   errorMsg.value = ''
+  if (backendDown.value) {
+    errorMsg.value = '后端不可用，先启动 BiliNote 后端再试'
+    return
+  }
   if (!supported.value) {
     errorMsg.value = '当前页面不是支持的视频链接'
     return
@@ -158,6 +172,7 @@ function fmtTime(ts?: number) {
 onMounted(async () => {
   await Promise.all([settingsReady, tasksReady])
   await loadActiveTab()
+  booting.value = false
   const running = tasks.value?.find(t => t.status !== 'SUCCESS' && t.status !== 'FAILED')
   if (running) {
     activeTaskId.value = running.taskId
@@ -172,179 +187,201 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="w-[400px] p-3 text-sm text-gray-800 flex flex-col gap-3 bg-white">
-    <header class="flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="font-semibold text-base">BiliNote</span>
+  <main class="w-[400px] max-h-[600px] overflow-y-auto bg-canvas text-ink p-3 flex flex-col gap-3 font-sans">
+    <header class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="font-semibold text-[15px]">BiliNote</span>
         <PlatformBadge :platform="platform" />
       </div>
-      <button class="text-xs text-gray-500 hover:text-gray-800" @click="openOptions">设置</button>
+      <button class="btn-ghost !px-2" aria-label="打开设置" @click="openOptions">
+        设置
+      </button>
     </header>
 
-    <div class="text-xs text-gray-500 truncate" :title="normalizeVideoTitle(tabTitle) || tabUrl">
+    <div class="text-xs text-ink-muted truncate" :title="normalizeVideoTitle(tabTitle) || tabUrl">
       {{ normalizeVideoTitle(tabTitle) || tabUrl || '当前没有打开的标签页' }}
     </div>
 
-    <div v-if="!supported" class="text-xs text-amber-700 bg-amber-50 p-2 rounded">
-      当前页面不是 BiliNote 支持的视频链接（目前只支持哔哩哔哩 Bilibili）
+    <!-- 加载态：读设置 / 探测后端 -->
+    <div v-if="loading" class="flex items-center gap-2 text-xs text-ink-muted" role="status">
+      <span class="spin inline-block" aria-hidden="true">◌</span>
+      正在连接后端…
     </div>
 
-    <fieldset class="border rounded p-2 flex flex-col gap-2" :disabled="!supported || submitting">
-      <div class="grid grid-cols-3 gap-2 text-xs">
-        <label class="flex flex-col gap-1">
-          <span class="text-gray-600">画质</span>
-          <select v-model="settings.quality" class="border rounded px-1 py-0.5">
-            <option value="fast">快速</option>
-            <option value="medium">中等</option>
-            <option value="slow">高质</option>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记场景</span>
-          <select v-model="settings.scene" class="border rounded px-1 py-0.5">
-            <option v-for="s in NOTE_SCENES" :key="s.value" :value="s.value">{{ s.label }}</option>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-gray-600">笔记详略</span>
-          <select v-model="settings.detail" class="border rounded px-1 py-0.5">
-            <option v-for="d in NOTE_DETAILS" :key="d.value" :value="d.value">{{ d.label }}</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="flex flex-col gap-1 text-xs">
-        <span class="text-gray-600">输出形式</span>
-        <div class="flex flex-wrap gap-x-3 gap-y-1">
-          <label v-for="f in NOTE_FORMATS" :key="f.value" class="flex items-center gap-1">
-            <input
-              type="checkbox"
-              :checked="(settings.formats || []).includes(f.value)"
-              @change="toggleFormat(f.value, ($event.target as HTMLInputElement).checked)"
-            >
-            {{ f.label }}
-          </label>
-        </div>
-      </div>
-
-      <details class="text-xs">
-        <summary class="cursor-pointer text-gray-500">高级</summary>
-        <label class="flex flex-col gap-1 mt-2">
-          <span class="text-gray-600">额外提示词（追加到 prompt 末尾）</span>
-          <textarea
-            v-model="settings.extras"
-            class="border rounded px-1 py-1 resize-y"
-            rows="2"
-            placeholder="例如：重点关注游戏开发部分；保留所有专业术语原文"
-          />
-        </label>
-        <label class="flex items-center gap-2 mt-2">
-          <input v-model="settings.video_understanding" type="checkbox">
-          <span class="text-gray-600">启用视频理解（抽帧拼图喂视觉模型）</span>
-        </label>
-        <div v-if="settings.video_understanding" class="grid grid-cols-3 gap-2 mt-2">
-          <label class="flex flex-col gap-1">
-            <span class="text-gray-600">抽帧间隔(秒)</span>
-            <input
-              v-model.number="settings.video_interval"
-              type="number" min="1" max="30"
-              class="border rounded px-1 py-0.5"
-            >
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="text-gray-600">拼图行</span>
-            <input
-              :value="settings.grid_size?.[0] ?? 2"
-              type="number" min="1" max="10"
-              class="border rounded px-1 py-0.5"
-              @input="settings.grid_size = [Number(($event.target as HTMLInputElement).value) || 2, settings.grid_size?.[1] ?? 2]"
-            >
-          </label>
-          <label class="flex flex-col gap-1">
-            <span class="text-gray-600">拼图列</span>
-            <input
-              :value="settings.grid_size?.[1] ?? 2"
-              type="number" min="1" max="10"
-              class="border rounded px-1 py-0.5"
-              @input="settings.grid_size = [settings.grid_size?.[0] ?? 2, Number(($event.target as HTMLInputElement).value) || 2]"
-            >
-          </label>
-        </div>
-        <p v-if="settings.video_understanding" class="text-amber-700 mt-1">
-          ⚠ 需要选择视觉模型（GPT-4o / Gemini / Claude 等），文字模型会忽略图片
-        </p>
-      </details>
-
-      <div class="text-xs text-gray-600">
-        <span v-if="settings.providerId && settings.modelName">
-          模型：{{ settings.modelName }}
-        </span>
-        <span v-else class="text-amber-700">
-          ⚠ 未选择供应商/模型，
-          <button class="underline" @click="openOptions">去设置</button>
-        </span>
-      </div>
-
-      <button class="btn-primary" :disabled="!supported || submitting || !settings.providerId" @click="start">
-        {{ submitting ? '提交中…' : '生成笔记' }}
-      </button>
-    </fieldset>
-
-    <div v-if="errorMsg" class="text-xs text-red-600 break-words">
-      {{ errorMsg }}
+    <!-- 后端不可用 -->
+    <div v-if="backendDown" class="banner banner-danger" role="alert">
+      <span aria-hidden="true">✕</span>
+      <span>
+        后端不可用<template v-if="backendDetail">（{{ backendDetail }}）</template>，
+        <button class="underline" @click="openOptions">去设置后端地址</button>
+      </span>
     </div>
+
+    <div v-if="!supported" class="banner banner-warn" role="status">
+      <span aria-hidden="true">!</span>
+      <span>当前页面不是 BiliNote 支持的视频链接（目前只支持哔哩哔哩 Bilibili）</span>
+    </div>
+
+    <form class="section-card !p-2.5" @submit.prevent="start">
+      <fieldset class="border-0 m-0 p-0 flex flex-col gap-2" :disabled="!supported || submitting || backendDown">
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <label class="flex flex-col gap-1">
+            <span class="text-ink-soft">画质</span>
+            <select v-model="settings.quality" class="input">
+              <option value="fast">快速</option>
+              <option value="medium">中等</option>
+              <option value="slow">高质</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-ink-soft">笔记场景</span>
+            <select v-model="settings.scene" class="input">
+              <option v-for="s in NOTE_SCENES" :key="s.value" :value="s.value">{{ s.label }}</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span class="text-ink-soft">笔记详略</span>
+            <select v-model="settings.detail" class="input">
+              <option v-for="d in NOTE_DETAILS" :key="d.value" :value="d.value">{{ d.label }}</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="flex flex-col gap-1 text-xs">
+          <span class="text-ink-soft">输出形式</span>
+          <div class="flex flex-wrap gap-x-3 gap-y-1.5">
+            <label v-for="f in NOTE_FORMATS" :key="f.value" class="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                class="accent-accent"
+                :checked="(settings.formats || []).includes(f.value)"
+                @change="toggleFormat(f.value, ($event.target as HTMLInputElement).checked)"
+              >
+              {{ f.label }}
+            </label>
+          </div>
+        </div>
+
+        <details class="text-xs">
+          <summary class="cursor-pointer text-ink-soft">高级</summary>
+          <label class="flex flex-col gap-1 mt-2">
+            <span class="text-ink-soft">额外提示词（追加到 prompt 末尾）</span>
+            <textarea
+              v-model="settings.extras"
+              class="input resize-y"
+              rows="2"
+              placeholder="例如：重点关注游戏开发部分；保留所有专业术语原文"
+            />
+          </label>
+          <label class="flex items-center gap-2 mt-2">
+            <input v-model="settings.video_understanding" type="checkbox" class="accent-accent">
+            <span class="text-ink-soft">启用视频理解（抽帧拼图喂视觉模型）</span>
+          </label>
+          <div v-if="settings.video_understanding" class="grid grid-cols-3 gap-2 mt-2">
+            <label class="flex flex-col gap-1">
+              <span class="text-ink-soft">抽帧间隔(秒)</span>
+              <input v-model.number="settings.video_interval" type="number" min="1" max="30" class="input">
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-ink-soft">拼图行</span>
+              <input
+                :value="settings.grid_size?.[0] ?? 2"
+                type="number" min="1" max="10"
+                class="input"
+                @input="settings.grid_size = [Number(($event.target as HTMLInputElement).value) || 2, settings.grid_size?.[1] ?? 2]"
+              >
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-ink-soft">拼图列</span>
+              <input
+                :value="settings.grid_size?.[1] ?? 2"
+                type="number" min="1" max="10"
+                class="input"
+                @input="settings.grid_size = [settings.grid_size?.[0] ?? 2, Number(($event.target as HTMLInputElement).value) || 2]"
+              >
+            </label>
+          </div>
+          <p v-if="settings.video_understanding" class="text-warning mt-1">
+            ⚠ 需要选择视觉模型（GPT-4o / Gemini / Claude 等），文字模型会忽略图片
+          </p>
+        </details>
+
+        <div class="text-xs text-ink-soft">
+          <span v-if="settings.providerId && settings.modelName">
+            模型：{{ settings.modelName }}
+          </span>
+          <span v-else class="text-warning">
+            ⚠ 未选择供应商/模型，
+            <button type="button" class="underline" @click="openOptions">去设置</button>
+          </span>
+        </div>
+
+        <button type="submit" class="btn-accent" :disabled="!canSubmit">
+          {{ submitting ? '提交中…' : '生成笔记' }}
+        </button>
+      </fieldset>
+    </form>
+
+    <div v-if="errorMsg" class="banner banner-danger" role="alert">
+      <span aria-hidden="true">✕</span>
+      <span class="break-words">{{ errorMsg }}</span>
+    </div>
+
+    <!-- 空态 -->
+    <p v-if="!activeTask && !loading" class="text-xs text-ink-muted leading-relaxed">
+      还没有任务。选好供应商和模型后点「生成笔记」，进度会显示在这里。
+    </p>
 
     <section v-if="activeTask" class="flex flex-col gap-2">
-      <div v-if="activeCover || activeTitle" class="flex gap-3 items-start">
+      <div v-if="activeCover || activeTitle" class="flex gap-2.5 items-start">
         <img
           v-if="activeCover"
           :src="resolveImageUrl(activeCover)"
-          class="w-20 h-12 object-cover rounded border bg-gray-100 shrink-0"
-          alt="cover"
+          class="w-20 h-12 object-cover rounded-lg border border-line bg-raised shrink-0"
+          alt=""
           @error="($event.target as HTMLImageElement).style.display = 'none'"
         >
         <div class="flex-1 min-w-0">
           <div class="text-sm font-medium leading-snug line-clamp-2 break-words" :title="activeTitle">
             {{ activeTitle || '（未取到标题）' }}
           </div>
-          <div class="text-xs text-gray-400 mt-0.5">
-            {{ fmtTime(activeTask.updatedAt) }}
-          </div>
+          <div class="text-ink-muted text-xs mt-0.5">{{ fmtTime(activeTask.updatedAt) }}</div>
         </div>
       </div>
 
+      <!-- TaskProgress already renders the badge + message, so a second
+           failure banner here only repeated the same sentence. -->
       <TaskProgress :status="activeTask.status" :message="activeTask.message" />
 
       <button
         v-if="activeTask.status === 'SUCCESS'"
-        class="btn-primary"
+        class="btn-accent"
         @click="openSidePanel"
       >
-        在侧边栏查看笔记 / 思维导图 / AI 问答
+        在侧边栏查看笔记
       </button>
-      <button
-        v-else
-        class="btn-secondary"
-        @click="openSidePanel"
-      >
+      <button v-else class="btn-secondary" @click="openSidePanel">
         在侧边栏看进度
       </button>
     </section>
 
     <details v-if="(tasks?.length ?? 0) > 0" class="text-xs">
-      <summary class="cursor-pointer text-gray-500">最近任务（{{ tasks!.length }}）</summary>
+      <summary class="cursor-pointer text-ink-soft py-1">最近任务（{{ tasks!.length }}）</summary>
       <ul class="mt-1 flex flex-col gap-1 max-h-32 overflow-auto">
         <li
           v-for="t in tasks"
           :key="t.taskId"
-          class="flex justify-between items-center gap-2 px-1 py-0.5 rounded hover:bg-gray-100 cursor-pointer"
-          :class="{ 'bg-blue-50': t.taskId === activeTaskId }"
+          class="flex justify-between items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors"
+          :class="t.taskId === activeTaskId ? 'bg-accent-soft text-ink' : 'hover:bg-raised-hover'"
+          :aria-current="t.taskId === activeTaskId ? 'true' : undefined"
           @click="selectTask(t.taskId)"
         >
           <span class="truncate flex-1" :title="getTaskDisplayTitle(t)">
             {{ getTaskDisplayTitle(t) }}
           </span>
-          <span class="text-gray-500 shrink-0">{{ t.status }}</span>
+          <span class="status" :class="t.status === 'SUCCESS' ? 'status-done' : t.status === 'FAILED' ? 'status-failed' : 'status-running'">
+            {{ statusIcon(t.status) }} {{ statusLabel(t.status) }}
+          </span>
         </li>
       </ul>
     </details>
@@ -352,7 +389,5 @@ onUnmounted(() => {
 </template>
 
 <style>
-.btn-primary { @apply bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm; }
-.btn-secondary { @apply bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 text-xs; }
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
