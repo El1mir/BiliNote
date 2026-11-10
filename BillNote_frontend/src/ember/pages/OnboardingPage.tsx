@@ -190,11 +190,11 @@ export function OnboardingPage() {
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
         <header className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-surface bg-primary font-display text-subhead font-bold text-on-primary">
+            <span className="grid size-10 place-items-center rounded-surface bg-accent font-display text-subhead font-bold text-on-accent">
               B
             </span>
             <div>
-              <p className="ember-overline text-ink-mute">{t('onboarding.overline')}</p>
+              <p className="ember-overline text-ink-muted">{t('onboarding.overline')}</p>
               <h1 className="font-display text-section leading-tight text-ink">{t('onboarding.title')}</h1>
             </div>
           </div>
@@ -212,16 +212,16 @@ export function OnboardingPage() {
                 aria-current={index === step ? 'step' : undefined}
                 className={
                   index < step
-                    ? 'grid size-6 shrink-0 place-items-center rounded-full bg-primary text-caption font-semibold text-on-primary'
+                    ? 'grid size-6 shrink-0 place-items-center rounded-full bg-accent text-caption font-semibold text-on-accent'
                     : index === step
-                      ? 'grid size-6 shrink-0 place-items-center rounded-full border-2 border-primary bg-canvas text-caption font-semibold text-primary'
-                      : 'grid size-6 shrink-0 place-items-center rounded-full border border-line bg-canvas text-caption font-semibold text-ink-mute'
+                      ? 'grid size-6 shrink-0 place-items-center rounded-full border-2 border-accent bg-canvas text-caption font-semibold text-accent'
+                      : 'grid size-6 shrink-0 place-items-center rounded-full border border-line bg-canvas text-caption font-semibold text-ink-muted'
                 }
               >
                 {index < step ? <Check className="size-3.5" aria-hidden="true" /> : index}
               </span>
               {index < TOTAL_STEPS && (
-                <span className={index < step ? 'h-px flex-1 bg-primary' : 'h-px flex-1 bg-line'} />
+                <span className={index < step ? 'h-px flex-1 bg-accent' : 'h-px flex-1 bg-line'} />
               )}
             </li>
           ))}
@@ -233,12 +233,12 @@ export function OnboardingPage() {
               <StepHeading title={t('onboarding.step1.title')} description={t('onboarding.step1.description')} />
               {probing && (
                 <p className="flex items-center gap-2 text-small text-ink-soft">
-                  <Spinner className="size-4 text-primary" />
+                  <Spinner className="size-4 text-accent" />
                   {t('onboarding.step1.checking')}
                 </p>
               )}
               {!probing && backendReady === true && (
-                <p className="rounded-field bg-ok/10 px-3 py-2 text-small text-ink">{t('onboarding.step1.ready')}</p>
+                <p className="rounded-field bg-success/10 px-3 py-2 text-small text-ink">{t('onboarding.step1.ready')}</p>
               )}
               {!probing && backendReady === false && (
                 <p className="flex items-start gap-2 rounded-field bg-danger/10 px-3 py-2 text-small text-ink">
@@ -312,7 +312,7 @@ export function OnboardingPage() {
                       key={option.value}
                       className={
                         active
-                          ? 'ember-press flex cursor-pointer gap-3 rounded-field border border-primary bg-primary-soft p-3'
+                          ? 'ember-press flex cursor-pointer gap-3 rounded-field border border-accent bg-accent-soft p-3'
                           : 'ember-press flex cursor-pointer gap-3 rounded-field border border-line p-3'
                       }
                     >
@@ -325,11 +325,11 @@ export function OnboardingPage() {
                           const value = event.currentTarget.value
                           if (value === 'fast-whisper' || value === 'openai-asr') setTranscriberType(value)
                         }}
-                        className="mt-1 accent-[var(--primary)]"
+                        className="mt-1 accent-[var(--accent)]"
                       />
                       <span className="flex flex-col gap-0.5">
                         <span className="text-small font-semibold text-ink">{t(option.title)}</span>
-                        <span className="text-caption text-ink-mute">{t(option.description)}</span>
+                        <span className="text-caption text-ink-muted">{t(option.description)}</span>
                       </span>
                     </label>
                   )
@@ -361,7 +361,7 @@ export function OnboardingPage() {
           )}
         </Card>
 
-        <p className="text-center text-caption text-ink-mute">{t('onboarding.footer')}</p>
+        <p className="text-center text-caption text-ink-muted">{t('onboarding.footer')}</p>
       </div>
     </div>
   )

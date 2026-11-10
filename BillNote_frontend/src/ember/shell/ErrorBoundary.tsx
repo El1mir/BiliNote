@@ -108,7 +108,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   {title}
                 </h1>
                 {this.props.scope ? (
-                  <p className="mt-0.5 font-mono text-caption text-ink-mute">{this.props.scope}</p>
+                  <p className="mt-0.5 font-mono text-caption text-ink-muted">{this.props.scope}</p>
                 ) : null}
               </div>
             </div>
@@ -121,7 +121,7 @@ export class ErrorBoundary extends Component<Props, State> {
               >
                 {detail}
               </pre>
-              <p className="text-caption text-ink-mute">
+              <p className="text-caption text-ink-muted">
                 {zh
                   ? '页面其余部分仍然可用；若反复出现，请复制日志并反馈。'
                   : 'The rest of the page is unaffected. If this repeats, copy the logs and report it.'}
