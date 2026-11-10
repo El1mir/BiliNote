@@ -7,7 +7,7 @@ import { Badge } from '@/ember/ui/Badge'
 import { Button } from '@/ember/ui/Button'
 import { Card } from '@/ember/ui/Card'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 
 const Row = ({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) => {
   const { t } = useI18n()
@@ -45,7 +45,7 @@ export function MonitorSection() {
       title={t('monitor.title')}
       description={t('monitor.subtitle')}
       actions={
-        <Button size="sm" variant="secondary" onClick={refresh} loading={loading}>
+        <Button size="sm" variant="secondary" onClick={refresh} loading={loading} disabled={loading}>
           <RefreshCw className="size-3.5" />
           {t('common.refresh')}
         </Button>
@@ -54,12 +54,7 @@ export function MonitorSection() {
       {loading ? (
         <Skeleton className="h-56 w-full" />
       ) : health.error ? (
-        <Card className="bg-canvas p-5">
-          <div className="flex items-center gap-2 text-small text-danger">
-            <Activity className="size-4" />
-            {t('monitor.connectError')}
-          </div>
-        </Card>
+        <SettingsLoadError detail={t('monitor.connectError')} onRetry={refresh} />
       ) : (
         <div className="flex flex-col gap-4">
           <Card className="bg-canvas px-4 sm:px-5">
@@ -73,7 +68,14 @@ export function MonitorSection() {
             />
           </Card>
 
-          {deploy.data ? (
+          {deploy.error ? (
+            <Card className="bg-canvas p-5">
+              <div className="flex items-center gap-2 text-small text-danger">
+                <Activity className="size-4" />
+                {t('settings.loadFailed')}
+              </div>
+            </Card>
+          ) : deploy.data ? (
             <Card className="bg-canvas px-4 sm:px-5">
               <Row
                 label="CUDA"

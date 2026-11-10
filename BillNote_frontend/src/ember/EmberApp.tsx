@@ -4,6 +4,7 @@ import { useCheckBackend } from '@/hooks/useCheckBackend'
 import { systemCheck } from '@/services/system'
 import { StartupScreen } from '@/ember/startup/StartupScreen'
 import { StartupNotice } from '@/ember/startup/StartupNotice'
+import { ErrorBoundary } from '@/ember/shell/ErrorBoundary'
 import { WorkspacePage } from '@/ember/pages/WorkspacePage'
 import { OnboardingGuard } from '@/ember/pages/OnboardingGuard'
 import { NotFoundPage } from '@/ember/pages/NotFoundPage'
@@ -49,32 +50,35 @@ export function EmberApp() {
   return (
     <>
       <StartupNotice />
-      <Router>
-        <Suspense
-          fallback={
-            <div className="grid h-screen place-items-center">
-              <Spinner className="size-5 text-ember" />
-            </div>
-          }
-        >
-          <Routes>
-            <Route path="/onboarding" element={<OnboardingPage />} />
-            <Route
-              path="/"
-              element={
-                <OnboardingGuard>
-                  <WorkspacePage />
-                </OnboardingGuard>
-              }
-            />
-            <Route path="/settings" element={<SettingsPage />}>
-              <Route index element={<Navigate to="general" replace />} />
-              <Route path="*" element={<Navigate to="general" replace />} />
-            </Route>
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </Suspense>
-      </Router>
+      {/* Outermost render guard: without it a throw below the router blanks the page. */}
+      <ErrorBoundary scope="router">
+        <Router>
+          <Suspense
+            fallback={
+              <div className="grid h-screen place-items-center">
+                <Spinner className="size-5 text-ember" />
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/onboarding" element={<OnboardingPage />} />
+              <Route
+                path="/"
+                element={
+                  <OnboardingGuard>
+                    <WorkspacePage />
+                  </OnboardingGuard>
+                }
+              />
+              <Route path="/settings" element={<SettingsPage />}>
+                <Route index element={<Navigate to="general" replace />} />
+                <Route path="*" element={<Navigate to="general" replace />} />
+              </Route>
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Suspense>
+        </Router>
+      </ErrorBoundary>
     </>
   )
 }

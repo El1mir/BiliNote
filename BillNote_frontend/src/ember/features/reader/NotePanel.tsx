@@ -7,12 +7,16 @@ import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { EmptyState } from '@/ember/ui/EmptyState'
 import { Tabs } from '@/ember/ui/Tabs'
+import { tabPanelProps } from '@/ember/ui/tabsA11y'
 import { MarkdownNote } from '@/ember/features/reader/MarkdownNote'
 import { scrollToAnchor } from '@/ember/features/reader/anchors'
 import { extractOutline } from '@/ember/features/reader/outline'
 import { TranscriptView } from '@/ember/features/reader/TranscriptView'
 
 type ReaderTab = 'note' | 'transcript'
+
+/** tab 与面板 id 的稳定前缀（见 Tabs 的 idBase 说明）。 */
+const TABS_ID = 'reader-panel'
 
 type NotePanelProps = {
   task: Task | undefined
@@ -87,6 +91,7 @@ export function NotePanel({ task }: NotePanelProps) {
     <div className="flex min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Tabs
+          idBase={TABS_ID}
           value={tab}
           onChange={next => setTab(next as ReaderTab)}
           items={[
@@ -119,43 +124,49 @@ export function NotePanel({ task }: NotePanelProps) {
       </div>
 
       {tab === 'note' ? (
-        markdown ? (
-          <div className="flex min-h-0 gap-6">
-            {outline.length > 2 ? (
-              <aside className="sticky top-4 hidden w-56 shrink-0 self-start xl:block">
-                <p className="ember-overline mb-2 flex items-center gap-1.5">
-                  <ListTree className="size-3" />
-                  {t('note.outline')}
-                </p>
-                <nav className="flex flex-col gap-1 border-l border-line">
-                  {outline.map(item => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => scrollToAnchor(item.id)}
-                      className="truncate border-l-2 border-transparent py-0.5 text-left text-caption text-ink-soft transition-colors hover:border-ember hover:text-ember"
-                      // rem, not px: the rail has to breathe with the user's
-                      // font-size setting instead of staying nailed to 10px steps.
-                      style={{ paddingLeft: `${0.75 + Math.max(0, item.depth - 2) * 0.5}rem` }}
-                    >
-                      {item.text}
-                    </button>
-                  ))}
-                </nav>
-              </aside>
-            ) : null}
-            {/* ~68ch is the comfortable long-form measure. Wider viewports keep
-                the column centred instead of stretching paragraphs to 1400px. */}
-            <div className="mx-auto min-w-0 w-full max-w-[68ch] flex-1">
-              <MarkdownNote markdown={markdown} />
+        <div {...tabPanelProps(TABS_ID, 'note')} className="flex min-h-0 flex-1 flex-col">
+          {markdown ? (
+            <div className="flex min-h-0 gap-6">
+              {outline.length > 2 ? (
+                <aside className="sticky top-4 hidden w-56 shrink-0 self-start xl:block">
+                  <p className="ember-overline mb-2 flex items-center gap-1.5">
+                    <ListTree className="size-3" />
+                    {t('note.outline')}
+                  </p>
+                  <nav className="border-line flex flex-col gap-1 border-l">
+                    {outline.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => scrollToAnchor(item.id)}
+                        className="text-caption text-ink-soft hover:border-ember hover:text-ember truncate border-l-2 border-transparent py-0.5 text-left transition-colors"
+                        // rem, not px: the rail has to breathe with the user's
+                        // font-size setting instead of staying nailed to 10px steps.
+                        style={{ paddingLeft: `${0.75 + Math.max(0, item.depth - 2) * 0.5}rem` }}
+                      >
+                        {item.text}
+                      </button>
+                    ))}
+                  </nav>
+                </aside>
+              ) : null}
+              {/* ~68ch is the comfortable long-form measure. Wider viewports keep
+                  the column centred instead of stretching paragraphs to 1400px. */}
+              <div className="mx-auto min-w-0 w-full max-w-[68ch] flex-1">
+                <MarkdownNote markdown={markdown} />
+              </div>
             </div>
-          </div>
-        ) : (
-          <EmptyState icon={<FileText className="size-6" />} title={t('note.empty')} />
-        )
+          ) : (
+            <EmptyState icon={<FileText className="size-6" />} title={t('note.empty')} />
+          )}
+        </div>
       ) : null}
 
-      {tab === 'transcript' ? <TranscriptView task={task} /> : null}
+      {tab === 'transcript' ? (
+        <div {...tabPanelProps(TABS_ID, 'transcript')} className="flex min-h-0 flex-1 flex-col">
+          <TranscriptView task={task} />
+        </div>
+      ) : null}
     </div>
   )
 }

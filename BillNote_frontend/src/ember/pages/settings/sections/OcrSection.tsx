@@ -12,28 +12,34 @@ import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
 import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+
+/** 草稿在设置页内跨分区保留时用的 key。 */
+const DRAFT_KEY = 'ocr'
 
 /** OCR assist. A failed test shows the upstream body verbatim — that is the only useful diagnostic. */
 export function OcrSection() {
   const { t } = useI18n()
   const { data, loading, reload } = useAsync(getOcrConfig)
-  const [draft, setDraft] = useState<OcrConfigInput>({})
+  // 草稿跨分区保留（切走再切回不丢未保存的 OCR 改动）。
+  const [draft, setDraft] = useSectionDraft<OcrConfigInput>(DRAFT_KEY)
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<OcrTestResult | null>(null)
 
-  const enabled = draft.enabled ?? data?.enabled ?? false
+  const patch: OcrConfigInput = draft ?? {}
+  const enabled = patch.enabled ?? data?.enabled ?? false
   const value = <K extends keyof OcrConfigInput>(key: K): string =>
-    String(draft[key] ?? data?.[key as keyof typeof data] ?? '')
+    String(patch[key] ?? data?.[key as keyof typeof data] ?? '')
 
-  const patch = (next: OcrConfigInput) => setDraft(current => ({ ...current, ...next }))
+  const setPatch = (next: OcrConfigInput) => setDraft(current => ({ ...current, ...next }))
 
   const save = async () => {
     setSaving(true)
     try {
-      await updateOcrConfig(draft)
+      await updateOcrConfig(patch)
       toast.success(t('settings.saved'))
-      setDraft({})
+      setDraft(undefined)
       reload()
     } catch {
       toast.error(t('settings.saveFailed'))
@@ -46,7 +52,7 @@ export function OcrSection() {
     setTesting(true)
     setResult(null)
     try {
-      setResult(await testOcrConfig(draft))
+      setResult(await testOcrConfig(patch))
     } catch (error) {
       setResult({
         ok: false,
@@ -84,7 +90,7 @@ export function OcrSection() {
             hint={t('settings.ocr.enabledHint')}
             control={
               <div className="flex justify-start sm:justify-end">
-                <Switch checked={enabled} label={t('settings.ocr.enabled')} onChange={next => patch({ enabled: next })} />
+                <Switch checked={enabled} label={t('settings.ocr.enabled')} onChange={next => setPatch({ enabled: next })} />
               </div>
             }
           />
@@ -104,7 +110,7 @@ export function OcrSection() {
                 id="ocr-url"
                 value={value('base_url')}
                 placeholder={data?._defaults.base_url}
-                onChange={event => patch({ base_url: event.target.value })}
+                onChange={event => setPatch({ base_url: event.target.value })}
               />
             </Field>
             <Field label={t('settings.ocr.apiKey')} htmlFor="ocr-key">
@@ -112,7 +118,7 @@ export function OcrSection() {
                 id="ocr-key"
                 type="password"
                 value={value('api_key')}
-                onChange={event => patch({ api_key: event.target.value })}
+                onChange={event => setPatch({ api_key: event.target.value })}
               />
             </Field>
             <Field label={t('settings.ocr.model')} htmlFor="ocr-model">
@@ -120,7 +126,7 @@ export function OcrSection() {
                 id="ocr-model"
                 value={value('model_name')}
                 placeholder={data?._defaults.model_name}
-                onChange={event => patch({ model_name: event.target.value })}
+                onChange={event => setPatch({ model_name: event.target.value })}
               />
             </Field>
             <Field label="timeout" htmlFor="ocr-timeout">
@@ -129,7 +135,7 @@ export function OcrSection() {
                 type="number"
                 min={1}
                 value={value('timeout')}
-                onChange={event => patch({ timeout: Number(event.target.value) })}
+                onChange={event => setPatch({ timeout: Number(event.target.value) })}
               />
             </Field>
             <Field label="max_file_mb" htmlFor="ocr-size">
@@ -138,7 +144,7 @@ export function OcrSection() {
                 type="number"
                 min={1}
                 value={value('max_file_mb')}
-                onChange={event => patch({ max_file_mb: Number(event.target.value) })}
+                onChange={event => setPatch({ max_file_mb: Number(event.target.value) })}
               />
             </Field>
             <Field label="max_pages" htmlFor="ocr-pages">
@@ -147,7 +153,7 @@ export function OcrSection() {
                 type="number"
                 min={1}
                 value={value('max_pages')}
-                onChange={event => patch({ max_pages: Number(event.target.value) })}
+                onChange={event => setPatch({ max_pages: Number(event.target.value) })}
               />
             </Field>
           </div>

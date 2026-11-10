@@ -1,0 +1,15 @@
+# S2 深链验证 — Web（BrowserRouter）
+环境：vite dev 3035（VITE_API_BASE_URL 走默认 /api，经 vite proxy 转发到本地 mock 后端 8483）
+样本任务：deeplink-task-0001「S2 深链验证样本」（mock 后端固定返回 SUCCESS + markdown）
+判据：正文是否出现「这条笔记用来验证」
+
+WEB 启动 URL: http://127.0.0.1:3035/
+WEB 点击任务后 URL: http://127.0.0.1:3035/?task=deeplink-task-0001
+WEB 阅读区显示笔记正文: true
+WEB 刷新后 URL: http://127.0.0.1:3035/?task=deeplink-task-0001 / 正文仍在: true
+WEB 新标签直接深链 http://127.0.0.1:3035/?task=deeplink-task-0001 → 正文可见: true
+WEB 无效 id：root 子节点数=2（未白屏）
+  页面文本: BiliNote | ... | 找不到这条笔记 | 链接里的任务不存在，可能已被删除。回到工作区挑一条已有笔记。 | 查看任务列表 | 分组 | 0/20 | 全部笔记 | 2 | 未分组 | 2 | ...
+pageerror(web): []
+
+截图：s2-web-deeplink.png（深链打开后的阅读区）、s2-web-invalid-id.png（无效 id 的回退空态）

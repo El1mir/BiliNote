@@ -241,3 +241,29 @@
 闸门实测（2026-10-05，在 `flow/T-012` 合入 `master` 之后的 master 工作树复跑）：后端 `pytest` **953 passed, 1 warning, 15 subtests passed**（收口前 934，新增 19 条全是本批用例）；前端 `pnpm test` 14 文件 / 78 用例、`tsc -b`、`pnpm lint`、`pnpm build`（built in 24.50s，仅 markdown chunk 795.41 kB 的体积告警）全部 exit 0；`scripts/i18n-contract.cjs` 报 "501 keys, zh-CN and en-US aligned"。
 
 分支落地（2026-10-05）：工单 08/10/11/12 与死代码清理的四个提交 `49522d7` / `6538a41` / `9b81067` / `442ecbf` 原本只落在 `flow/T-012`，以 `git merge --ff-only flow/T-012` 快进并入 `master`（merge-base `7471c35`，无冲突、不 squash，保留四个独立提交），此后 `git merge-base --is-ancestor 442ecbf master` 为 true。
+
+## 13. 2026-11-10 修订：UI 原语的键盘与读屏契约（T-059 / W1）
+
+来源：`docs/ui-audit/ui-rationality-plan.md` §11 的 W1 派工卡（父卡 T-057）。范围只限 `BillNote_frontend/src/ember/ui/` 的表单与浮层原语，不动调用点业务逻辑，不引入第三方 a11y 库。
+
+### 13.1 已定决策
+
+1. **Field 负责发号，控件负责挂属性**：`Field` 用 `useId()` 派生 `controlId`（有 `htmlFor` 时以它为准）与 `messageId = \`\${controlId}-message\``，通过 `FieldContext`（`ui/fieldContext.ts`）下发 `{controlId, describedBy, invalid}`。`Input` / `Textarea` / `Select` 自己写 `aria-describedby` 与 `aria-invalid`，调用方显式传入的值优先。不用 `cloneElement`，因为 `Select` 外面套了定位 div，克隆会漏掉包装层。
+2. **焦点环只给键盘**：`Input` / `Select` 的 `focus:` 类统一改为 `focus-visible:`（边框转 ember + 3px ring），`disabled` 弱化程度与 `Button` 对齐（`disabled:opacity-50`）。按钮类元素的焦点环继续由 `tokens.css` 的全局 `:focus-visible { outline: 2px solid var(--ember) }` 提供。**注意**：CSS 规范规定文本输入类控件（input / textarea / select）只要获得焦点就匹配 `:focus-visible`，所以鼠标点击输入框仍会显示焦点环 —— 这是规范行为，不是缺陷；`focus-visible:` 区分的是按钮等非文本控件。
+3. **overlay 焦点行为抽成一处**：`lib/overlayFocus.ts` 的 `useOverlayFocus({open, onClose, panelRef, restoreFocus})` 负责记住触发元素、打开时聚焦首个可聚焦元素（没有则聚焦面板本身）、Tab / Shift+Tab 只在边界回绕时拦截、Escape 关闭、锁 `body.style.overflow`，关闭后把焦点还给触发元素。`Dialog` 与 `Drawer` 共用，`Drawer` 因此第一次获得焦点陷阱与滚动锁。
+4. **tabs 的 id 约定与键盘映射是纯函数**：`ui/tabsA11y.ts` 提供 `tabId` / `panelId` / `tabPanelProps` / `resolveTabKey`（ArrowRight / ArrowLeft 回绕、Home / End、其它键返回 null）。`Tabs` 负责 tablist 一侧（`aria-selected`、`aria-controls`、roving `tabIndex`、方向键移动并聚焦），面板一侧由调用方挂 `tabPanelProps`。调用方必须给稳定的 `idBase` 字面量，否则每次挂载 `useId` 都会变、`aria-controls` 会指向旧节点。
+5. **Progress 必须有可读名字**：`label` 缺省时依次回退到 i18n 的 `task.progress`（若在 `I18nContext` 内）与字面量 `'Progress'`，不再输出 `aria-label="undefined"`。
+6. **组件文件只导出组件**：context 与纯函数分别落在 `fieldContext.ts` / `tabsA11y.ts` / `lib/overlayFocus.ts`，以保持 `react-refresh/only-export-components` 零警告。
+
+### 13.2 测试要点
+
+- `tests/005-modern-dark-ui/uiPrimitivesA11y.test.tsx`：Field 的 `aria-invalid` / `aria-describedby` 指向错误节点、仅 hint 时不置 invalid、无 `htmlFor` 时 label 与控件 id 一致；`nextFocusIndex` 与 `trapDecision` 的边界回绕；`FOCUSABLE_SELECTOR` 排除 disabled 与隐藏输入。
+- `tests/005-modern-dark-ui/tabsAndProgressA11y.test.tsx`：roving tabindex 只有一个 0、`aria-controls` 与面板 id 互相指认、`aria-selected` 唯一、`resolveTabKey` 全键位、Progress 无 label 时 `aria-label` 非空且不为 `"undefined"`、有 provider 时回退 `进度`。
+- 环境限制：本仓库测试栈没有 jsdom / happy-dom，只能做 SSR 与纯函数断言；焦点陷阱、焦点归还与键盘切换用真实浏览器验证（见 §13.3）。
+
+### 13.3 闸门实测（2026-11-10，`flow/T-059`）
+
+`cd BillNote_frontend && pnpm exec vitest run` → **19 files / 121 tests passed**（基线 17 / 100）；`pnpm exec tsc -b` → exit 0；`pnpm lint` → exit 0（0 error 0 warning）。
+
+浏览器实测（vite dev 3021，真实按键）：带 error 的 Field 渲染出 `aria-describedby="h-url-message"` / `aria-invalid="true"` 且错误节点文本为「链接格式不对」；无 label 的 Progress `aria-label="Progress"`；Tabs 连按 ArrowRight 两次与 Home，`aria-selected`、roving `tabIndex` 与面板 id 同步切换；Dialog 打开后焦点落在面板内的关闭按钮（`aria-labelledby` → 「删除确认」，`aria-describedby` → 「确定要删除吗？」，`body.overflow=hidden`），连按 4 次 Tab 焦点在 关闭 / 输入 / 确定 之间回绕不逃逸，Escape 关闭后焦点回到触发按钮且 overflow 复位。
+
