@@ -45,6 +45,9 @@ const zhCN = {
   'shell.theme.label': '主题',
   'shell.theme.toDark': '切换到深色主题',
   'shell.theme.toLight': '切换到浅色主题',
+  'shell.backend.online': '后端已连接',
+  'shell.backend.offline': '后端未连接',
+  'shell.backend.checking': '检查后端…',
 
   'workspace.title': '工作区',
   'workspace.subtitle': '粘贴视频链接，生成结构化笔记',
@@ -655,6 +658,9 @@ const enUS: Dictionary = {
   'shell.theme.label': 'Theme',
   'shell.theme.toDark': 'Switch to dark theme',
   'shell.theme.toLight': 'Switch to light theme',
+  'shell.backend.online': 'Backend connected',
+  'shell.backend.offline': 'Backend unreachable',
+  'shell.backend.checking': 'Checking backend…',
 
   'workspace.title': 'Workspace',
   'workspace.subtitle': 'Paste a video link and get structured notes',

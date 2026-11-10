@@ -5,6 +5,7 @@ import { Button } from '@/ember/ui/Button'
 import { Drawer } from '@/ember/ui/Drawer'
 import { LanguageSwitcher } from '@/ember/shell/LanguageSwitcher'
 import { ThemeToggle } from '@/ember/shell/ThemeToggle'
+import { Topbar } from '@/ember/shell/Topbar'
 import { useEmberNav } from '@/ember/shell/useEmberNav'
 import { cn } from '@/ember/lib/cn'
 import { useState } from 'react'
@@ -107,6 +108,10 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
             {sidebarFooter ? <div className="border-t border-line pt-3">{sidebarFooter}</div> : null}
           </div>
         </Drawer>
+
+        {/* Desktop chrome: location + backend liveness + global switches. The
+            mobile header above already carries the same switches. */}
+        <Topbar label={nav.find(isActive)?.label ?? nav[0]?.label ?? ''} />
 
         <main className="min-w-0 flex-1">
           {rail ? (

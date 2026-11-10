@@ -12,7 +12,7 @@ const PROBE_TIMEOUT_MS = 5_000
 
 // 直接用 fetch 而非 utils/request 的共享 axios：那个 axios 装了全局 toast 拦截器，
 // 启动期每次 /sys_check 失败都会弹一个红色 toast，2s 一次轮询会叠出十几个。
-function getBackendBase(): string {
+export function getBackendBase(): string {
   const fromEnv = import.meta.env.VITE_API_BASE_URL
   return (fromEnv && fromEnv.length > 0 ? fromEnv : '/api').replace(/\/$/, '')
 }

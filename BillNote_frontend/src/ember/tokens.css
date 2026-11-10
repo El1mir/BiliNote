@@ -221,6 +221,21 @@
     color: var(--ink);
   }
 
+  /* Touch pointers get 44px targets without inflating desktop density: the
+     rule only applies where the pointer is a finger. Inline links are exempt
+     (WCAG 2.5.8) and are not covered here. */
+  @media (pointer: coarse) {
+    button,
+    [role='button'],
+    select {
+      min-height: 2.75rem;
+    }
+    button,
+    [role='button'] {
+      min-width: 2.75rem;
+    }
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;
