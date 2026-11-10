@@ -7,6 +7,7 @@ import { Input, Textarea } from '@/ember/ui/Input'
 import { Select } from '@/ember/ui/Select'
 import { Switch } from '@/ember/ui/Switch'
 import { Tabs } from '@/ember/ui/Tabs'
+import { tabPanelProps } from '@/ember/ui/tabsA11y'
 import type { GenerationSettings } from './generationSettings'
 
 /**
@@ -133,6 +134,7 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
                 {label('workspace.samplingMode')}
               </span>
               <Tabs
+                idBase={id('sampling')}
                 value={samplingMode}
                 onChange={next =>
                   onChange({ sampling_mode: next as GenerationSettings['sampling_mode'] })
@@ -149,7 +151,9 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {/* interval 只留一个旋钮：帧预算和秒数间隔会为同一批帧打架。 */}
+              {/* 三个模式各是一个 tabpanel；className="contents" 让面板不参与布局，grid 仍由父级决定。 */}
               {samplingMode === 'interval' ? (
+                <div className="contents" {...tabPanelProps(id('sampling'), 'interval')}>
                 <Field
                   label={label('workspace.interval')}
                   htmlFor={id('interval')}
@@ -166,10 +170,11 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
                     }
                   />
                 </Field>
+                </div>
               ) : null}
 
               {samplingMode === 'smart' ? (
-                <>
+                <div className="contents" {...tabPanelProps(id('sampling'), 'smart')}>
                   <Field
                     label={label('workspace.frameLimitMode')}
                     htmlFor={id('frame-limit')}
@@ -223,10 +228,11 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
                       />
                     </Field>
                   )}
-                </>
+                </div>
               ) : null}
 
               {samplingMode === 'hybrid' ? (
+                <div className="contents" {...tabPanelProps(id('sampling'), 'hybrid')}>
                 <Field
                   label={label('workspace.maxFrames')}
                   htmlFor={id('max-frames')}
@@ -242,6 +248,7 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
                     }
                   />
                 </Field>
+                </div>
               ) : null}
 
               <Field
