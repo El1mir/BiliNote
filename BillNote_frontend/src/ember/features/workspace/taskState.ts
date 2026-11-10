@@ -31,6 +31,17 @@ export const statusKey = (status: TaskStatus | string | undefined): MessageKey =
   return 'task.status.running'
 }
 
+/** Icon kind paired with `statusKey` — the second channel next to the colour. */
+export type StatusIconKind = 'queued' | 'running' | 'done' | 'failed'
+
+export const statusIconKind = (status: TaskStatus | string | undefined): StatusIconKind => {
+  const value = String(status ?? 'PENDING')
+  if (value === 'SUCCESS') return 'done'
+  if (value === 'FAILED' || value === 'FAILD') return 'failed'
+  if (value === 'PENDING') return 'queued'
+  return 'running'
+}
+
 /** True while the task is still being produced — used to gate SSE subscriptions. */
 export const isTaskActive = (task: Task | undefined): boolean => {
   if (!task) return false

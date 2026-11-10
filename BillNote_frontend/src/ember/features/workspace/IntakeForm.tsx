@@ -195,7 +195,7 @@ export function IntakeForm({ onMultiPart }: Props = {}) {
   const label = (key: MessageKey) => t(key)
 
   return (
-    <Card className="bg-canvas">
+    <Card>
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">
         <div className="flex flex-col gap-3 p-4 sm:p-5">
           <Field label={label('workspace.urlLabel')} htmlFor="video-url" error={urlError} required>
@@ -214,6 +214,8 @@ export function IntakeForm({ onMultiPart }: Props = {}) {
               />
             </div>
           </Field>
+
+          <p className="text-caption text-ink-muted">{label('workspace.urlHint')}</p>
 
           <div className="flex items-center gap-2">
             <Button

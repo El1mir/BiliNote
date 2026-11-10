@@ -102,7 +102,7 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
   return (
     <section
       aria-label={t('group.title')}
-      className="rounded-surface border-line bg-canvas flex shrink-0 flex-col gap-2 border p-2.5"
+      className="flex shrink-0 flex-col gap-2 rounded-surface border border-line bg-surface p-3"
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-display text-small text-ink flex items-baseline gap-1.5 font-semibold">
@@ -159,7 +159,9 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
           aria-pressed={activeGroupId === null}
           className={cn(
             ROW,
-            activeGroupId === null ? 'bg-primary-soft text-ink' : 'text-ink-soft hover:bg-surface'
+            activeGroupId === null
+              ? 'bg-accent-soft font-semibold text-ink'
+              : 'text-ink-soft hover:bg-raised'
           )}
         >
           <span className="text-small flex-1 truncate font-semibold">{t('group.all')}</span>
@@ -174,9 +176,9 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
               key={group.id}
               {...dropProps(group.id)}
               className={cn(
-                'group/row rounded-control flex items-center gap-1.5 px-1 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
-                active && 'bg-primary-soft',
-                dropping && 'bg-primary-soft ring-primary/50 ring-1'
+                'group/row flex items-center gap-1.5 rounded-control px-1 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
+                active && 'bg-accent-soft',
+                dropping && 'bg-accent-soft ring-1 ring-accent/60'
               )}
             >
               <Checkbox
@@ -280,8 +282,8 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
           {...dropProps(UNGROUPED_ID)}
           className={cn(
             'rounded-control flex items-center gap-1.5 px-1 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
-            activeGroupId === UNGROUPED_ID && 'bg-primary-soft',
-            dropTargetId === UNGROUPED_ID && 'bg-primary-soft ring-primary/50 ring-1'
+            activeGroupId === UNGROUPED_ID && 'bg-accent-soft',
+            dropTargetId === UNGROUPED_ID && 'bg-accent-soft ring-1 ring-accent/60'
           )}
         >
           <Checkbox

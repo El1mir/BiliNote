@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Archive, CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Archive, CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
 import { useTaskStore, type Task } from '@/store/taskStore'
@@ -18,12 +18,17 @@ import { UNGROUPED_ID } from '@/services/noteGroup'
 import { retryScopeForGroup } from '@/ember/features/workspace/retryFailed'
 import { readTaskId, writeTaskId } from '@/ember/lib/taskUrl'
 import { RetryFailedAction } from '@/ember/features/workspace/RetryFailedAction'
+import { listDisplay } from '@/ember/features/workspace/listStates'
 
 type Filter = 'all' | 'ready' | 'running' | 'failed'
 
 type TaskListProps = {
   /** True until the first server list lands, so we show skeletons instead of an empty state. */
   loading?: boolean
+  /** 上一次列表请求的失败原因；非空时列表区换成错误态，绝不给用户看"还没有历史记录"。 */
+  error?: string | null
+  /** 错误态的重试按钮：再拉一次列表。 */
+  onReload?: () => void
   className?: string
   /** null shows every task; UNGROUPED_ID shows only tasks with no group; otherwise that group. */
   activeGroupId?: string | null
@@ -49,9 +54,15 @@ const isRunning = (task: Task) => !isReady(task) && !isFailed(task)
  * nesting it, because a nested tree inside a 340px rail hides most of the content.
  * Dragging a card onto a group row files it; select mode offers the same move as a
  * menu for keyboard and touch.
+ *
+ * 列表有四种"没有卡片"的样子，必须分开：还在加载（骨架）、请求失败（可重试的
+ * 错误）、筛选/搜索没有命中（清空筛选）、真的一条都没有（引导去生成）。
+ * 把它们折叠成一个空态，用户就分不清"后端挂了"和"我还没建过笔记"。
  */
 export function TaskList({
   loading,
+  error,
+  onReload,
   className,
   activeGroupId = null,
   onDragTasks,
@@ -74,6 +85,8 @@ export function TaskList({
   const [selected, setSelected] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
   const [moving, setMoving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const selectedFailedCount = selected.filter(id => {
     const task = tasks.find(item => item.id === id)
     if (!task || !isFailed(task)) return false
@@ -105,6 +118,17 @@ export function TaskList({
       })
   }, [tasks, filter, query, activeGroupId])
 
+  const narrowed = filter !== 'all' || Boolean(query.trim())
+  const count = tasks.length
+  // 四态判定抽成纯函数（listStates.ts），渲染只负责画：顺序写错就是把"加载中"
+  // 闪成"还没有历史记录"，或者把后端故障伪装成空列表。
+  const display = listDisplay({
+    loading: Boolean(loading) && !tasks.length,
+    error,
+    count: visible.length,
+    narrowed,
+  })
+
   const toggleSelected = (id: string) =>
     setSelected(current =>
       current.includes(id) ? current.filter(item => item !== id) : [...current, id]
@@ -115,10 +139,22 @@ export function TaskList({
     setSelected([])
   }
 
+  const clearFilters = () => {
+    setFilter('all')
+    setQuery('')
+  }
+
+  /** 删除是唯一不可撤销的批量操作，所以必须过一道确认框。 */
   const deleteSelected = async () => {
-    if (!selected.length) return
-    await removeTasks(selected)
-    exitSelection()
+    if (!selected.length || deleting) return
+    setDeleting(true)
+    try {
+      await removeTasks(selected)
+      setConfirmDelete(false)
+      exitSelection()
+    } finally {
+      setDeleting(false)
+    }
   }
 
   /**
@@ -173,9 +209,16 @@ export function TaskList({
 
   return (
     <div className={cn('flex min-h-0 flex-col gap-3', className)}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-display text-subhead">{t('history.title')}</h2>
-        <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2 className="font-display text-subhead text-ink">{t('history.title')}</h2>
+          {count ? (
+            <span className="shrink-0 text-caption tabular-nums text-ink-muted">
+              {t('history.count', { count })}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {selecting ? (
             <>
               <Button size="sm" variant="ghost" onClick={exitSelection}>
@@ -188,7 +231,7 @@ export function TaskList({
                   disabled={!selected.length}
                   onClick={() => setMoving(true)}
                 >
-                  <FolderInput className="size-3.5" />
+                  <FolderInput className="size-3.5" aria-hidden="true" />
                   {t('group.move')}
                 </Button>
               ) : null}
@@ -207,16 +250,16 @@ export function TaskList({
                 loading={exporting}
                 onClick={() => void exportSelected()}
               >
-                <Archive className="size-3.5" />
+                <Archive className="size-3.5" aria-hidden="true" />
                 {t('history.exportSelected')}
               </Button>
               <Button
                 size="sm"
                 variant="destructive"
                 disabled={!selected.length}
-                onClick={deleteSelected}
+                onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-3.5" aria-hidden="true" />
                 {selected.length
                   ? t('history.selected', { count: selected.length })
                   : t('common.delete')}
@@ -229,7 +272,7 @@ export function TaskList({
               onClick={() => setSelecting(true)}
               disabled={!tasks.length}
             >
-              <CheckSquare className="size-3.5" />
+              <CheckSquare className="size-3.5" aria-hidden="true" />
               {t('common.more')}
             </Button>
           )}
@@ -239,7 +282,7 @@ export function TaskList({
       <div className="relative">
         <Search
           aria-hidden="true"
-          className="text-ink-mute pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
         />
         <Input
           value={query}
@@ -253,9 +296,9 @@ export function TaskList({
             type="button"
             aria-label={t('common.clear')}
             onClick={() => setQuery('')}
-            className="ember-press rounded-control text-ink-mute hover:bg-raised absolute top-1/2 right-1 flex size-11 -translate-y-1/2 items-center justify-center"
+            className="ember-press absolute top-1/2 right-1 flex size-11 -translate-y-1/2 items-center justify-center rounded-control text-ink-muted hover:bg-raised"
           >
-            <X className="size-3.5" />
+            <X className="size-3.5" aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -274,13 +317,26 @@ export function TaskList({
       </div>
 
       <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
-        {loading && !tasks.length ? (
+        {display === 'loading' ? (
           <>
             <Skeleton className="h-[92px] w-full" />
             <Skeleton className="h-[92px] w-full" />
             <Skeleton className="h-[92px] w-full" />
           </>
-        ) : visible.length ? (
+        ) : display === 'error' ? (
+          <EmptyState
+            icon={<AlertTriangle className="size-6" aria-hidden="true" />}
+            title={t('history.loadFailed')}
+            description={t('history.loadFailedHint')}
+            action={
+              onReload ? (
+                <Button size="sm" variant="secondary" onClick={onReload}>
+                  {t('common.retry')}
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : display === 'list' ? (
           visible.map(task => {
             const active = task.id === (urlTaskId ?? currentTaskId)
             const checked = selected.includes(task.id)
@@ -315,6 +371,17 @@ export function TaskList({
               />
             )
           })
+        ) : display === 'emptySearch' ? (
+          <EmptyState
+            icon={<Search className="size-6" aria-hidden="true" />}
+            title={t('history.emptySearch')}
+            description={t('history.emptySearchHint')}
+            action={
+              <Button size="sm" variant="secondary" onClick={clearFilters}>
+                {t('history.clearFilters')}
+              </Button>
+            }
+          />
         ) : (
           <EmptyState title={t('history.empty')} description={t('workspace.noTaskDescription')} />
         )}
@@ -333,22 +400,40 @@ export function TaskList({
               key={group.id}
               type="button"
               onClick={() => void moveSelected(group.id)}
-              className="rounded-control text-small text-ink-soft hover:bg-surface hover:text-ink flex items-center gap-2 px-2 py-1.5 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
+              className="flex items-center gap-2 rounded-control px-2 py-1.5 text-left text-small text-ink-soft transition-colors duration-[var(--dur-hover)] ease-[var(--ease)] hover:bg-surface hover:text-ink"
             >
-              <FolderInput className="size-3.5 shrink-0" />
+              <FolderInput className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{group.name}</span>
             </button>
           ))}
           <button
             type="button"
             onClick={() => void moveSelected(UNGROUPED_ID)}
-            className="rounded-control text-small text-ink-soft hover:bg-surface hover:text-ink flex items-center gap-2 px-2 py-1.5 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
+            className="flex items-center gap-2 rounded-control px-2 py-1.5 text-left text-small text-ink-soft transition-colors duration-[var(--dur-hover)] ease-[var(--ease)] hover:bg-surface hover:text-ink"
           >
-            <FolderInput className="size-3.5 shrink-0" />
+            <FolderInput className="size-3.5 shrink-0" aria-hidden="true" />
             <span className="truncate">{t('group.moveToNone')}</span>
           </button>
         </div>
       </Dialog>
+
+      <Dialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        size="sm"
+        title={t('history.deleteTitle')}
+        description={t('history.deleteBody', { count: selected.length })}
+        footer={
+          <>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" variant="destructive" loading={deleting} onClick={() => void deleteSelected()}>
+              {t('common.delete')}
+            </Button>
+          </>
+        }
+      />
     </div>
   )
 }
