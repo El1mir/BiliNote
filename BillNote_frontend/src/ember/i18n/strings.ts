@@ -331,6 +331,15 @@ const zhCN = {
   'startup.copied': '已复制',
   'startup.copyFailed': '复制失败',
   'startup.retry': '重新检测',
+
+  // Error boundary (render-time crash fallback) --------------------------
+  'boundary.title': '页面遇到问题',
+  'boundary.description': '这个页面在渲染时抛出了异常。你可以重试，或复制错误信息反馈给我们。',
+  'boundary.retry': '重试',
+  'boundary.copyLogs': '复制日志',
+  'boundary.copied': '已复制',
+  'boundary.copyFailed': '复制失败',
+
   'startup.notice.pathTitle': '检测到可能导致后端启动失败的安装路径',
   'startup.notice.pathNonAscii': '安装路径包含非 ASCII 字符（中文 / 日文等）',
   'startup.notice.pathSpace': '安装路径包含空格',
@@ -901,6 +910,15 @@ const enUS: Dictionary = {
   'startup.copied': 'Copied',
   'startup.copyFailed': 'Copy failed',
   'startup.retry': 'Check again',
+
+  // Error boundary (render-time crash fallback) --------------------------
+  'boundary.title': 'Something went wrong',
+  'boundary.description': 'This page threw while rendering. You can retry, or copy the error and report it.',
+  'boundary.retry': 'Try again',
+  'boundary.copyLogs': 'Copy logs',
+  'boundary.copied': 'Copied',
+  'boundary.copyFailed': 'Copy failed',
+
   'startup.notice.pathTitle': 'Install path may prevent the backend from starting',
   'startup.notice.pathNonAscii': 'The install path contains non-ASCII characters',
   'startup.notice.pathSpace': 'The install path contains spaces',

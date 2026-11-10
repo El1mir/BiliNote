@@ -4,7 +4,7 @@ import { cn } from '@/ember/lib/cn'
 type CardProps = HTMLAttributes<HTMLDivElement> & {
   /** Terracotta 4px stripe on the leading edge — marks the active/selected item. */
   stripe?: string
-  /** 2px terracotta left border for the selected state. */
+  /** Selected state — terracotta inset ring. Never changes the box, so content cannot shift by a pixel. */
   selected?: boolean
   /** Lift 2px with a soft shadow on pointer-fine hover. */
   interactive?: boolean
@@ -23,7 +23,9 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
       ref={ref}
       className={cn(
         'relative overflow-hidden rounded-surface border border-line bg-surface',
-        selected && 'border-l-2 border-l-ember',
+        // A left border would eat 2px out of the 1px box and shift every child.
+        // An inset ring paints inside the existing border without touching layout.
+        selected && 'border-ember ring-1 ring-ember ring-inset',
         interactive && 'ember-lift cursor-pointer',
         className,
       )}
