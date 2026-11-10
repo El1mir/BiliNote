@@ -5,6 +5,7 @@ import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { EmptyState } from '@/ember/ui/EmptyState'
 import { Input } from '@/ember/ui/Input'
+import { filterTranscript } from '@/ember/features/reader/transcriptSearch'
 import { cn } from '@/ember/lib/cn'
 
 const formatTime = (seconds: number): string => {
@@ -24,11 +25,8 @@ export function TranscriptView({ task }: { task: Task | undefined }) {
   // Memoised: `?? []` would hand useMemo a fresh array on every render and defeat it.
   const segments = useMemo(() => task?.transcript?.segments ?? [], [task?.transcript?.segments])
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return segments
-    return segments.filter(segment => segment.text.toLowerCase().includes(needle))
-  }, [segments, query])
+  const needle = query.trim()
+  const visible = useMemo(() => filterTranscript(segments, query), [segments, query])
 
   if (!segments.length) {
     return <EmptyState icon={<Clock className="size-6" />} title={t('common.empty')} />
@@ -46,6 +44,13 @@ export function TranscriptView({ task }: { task: Task | undefined }) {
           aria-label={t('common.search')}
         />
       </div>
+      {/* 命中数：过滤后只剩几行、原文共几行，读者一眼能判断是「没搜到」
+          还是「这段确实说得少」。aria-live 让屏幕阅读器跟着更新。 */}
+      {needle ? (
+        <p className="text-caption text-ink-muted" aria-live="polite">
+          {t('transcript.matchCount', { matched: visible.length, total: segments.length })}
+        </p>
+      ) : null}
       {visible.length ? (
         <div className="flex flex-col divide-y divide-line/70 rounded-surface border border-line bg-surface">
           {visible.map((segment, index) => (

@@ -1,0 +1,40 @@
+{
+  "runAt": "2026-11-11",
+  "harness": "playwright(chromium-1181, headless=new) + vite 3015 + mock backend 8499",
+  "light1440": {
+    "columnWidthPx": 506,
+    "viewportPx": 1440,
+    "preOverflowX": "auto",
+    "imgMaxWidth": "100%",
+    "triggerAriaLabel": "查看大图：截图说明"
+  },
+  "light1024": {
+    "columnWidthPx": 522,
+    "viewportPx": 1024,
+    "docScrollWidth": 1014,
+    "clientWidth": 1014,
+    "pageOverflow": false
+  },
+  "dark": {
+    "htmlClass": "dark",
+    "datasetTheme": "dark",
+    "bodyBackground": "rgb(17, 23, 25)",
+    "codeTokenColor": "rgb(198, 120, 221)",
+    "blockquoteInk": "rgb(192, 207, 206)",
+    "tableCellInk": "rgb(237, 244, 243)"
+  },
+  "lightbox": {
+    "focusMovesIntoDialog": true,
+    "closesOnEscape": true,
+    "focusRestoresToTrigger": true,
+    "closesOnOverlayClick": true
+  },
+  "transcript": {
+    "query": "react",
+    "counter": "匹配 2 / 5 条转写",
+    "emptyQuery": "不存在的词zzz",
+    "emptyCounter": "匹配 0 / 5 条转写",
+    "emptyState": "没有匹配「不存在的词zzz」的转写 / 换个关键词试试，共 5 条转写内容。"
+  },
+  "failedChecks": 0
+}

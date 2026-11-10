@@ -51,9 +51,13 @@
 - [x] `ui/**` 18 原语改用语义 token，hex 仅剩 BilibiliMark
 - [x] `docs/ui-audit/021/`：对比度脚本与输出
 - [x] `tests/021-workbench-redesign/`：token 与主题回归测试
+- [x] T-070 阅读区：`reader.css` 衬线 16/28、68ch 列、代码块主题映射（`codeTheme.ts`）、
+      灯箱改 `Dialog`（Escape/遮罩/焦点回归）、转写搜索命中数（`transcriptSearch.ts`）
+- [x] `tests/021-workbench-redesign/reader.test.tsx`：10 例静态/纯函数回归
 
 ## 验收证据
 
 - `node docs/ui-audit/021/contrast-audit.mjs` → all pairs pass（双主题 26 对）
 - `pnpm exec vitest run tests/021-workbench-redesign` → 2 files / 7 tests
-- 全量门禁：vitest 25 files、tsc、lint、i18n contract、build 全 exit 0
+- 全量门禁：vitest 28 files / 177 tests、tsc、lint、i18n contract（572 keys）、build 全 exit 0
+- T-070 阅读区浏览器证据：`docs/ui-audit/evidence/t070/`（1440/1024、浅/深、灯箱、转写搜索与空态）

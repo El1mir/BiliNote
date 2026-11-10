@@ -78,7 +78,19 @@
 - Topbar：面包屑 + 后端存活状态 + 主题 + 语言，高 48px，粘性。
 - 主题：三态 `light` / `dark` / `system`，`localStorage['bilinote-theme']`，`initTheme()` 在 React 挂载前写 `<html class="dark">` 与 `color-scheme`，刷新无闪白。
 
-## 6. 校验
+## 6. 阅读区（W2）
+
+- 正文列 `max-w-[68ch]`，居中；桌面 ≥1280px 时左侧 56 宽 sticky 大纲（标题 >2 条才出现）。
+- 正文与标题衬线（`--font-serif`），正文 1rem / 行高 1.75（`reader.css` 的 `.ember-markdown` 规则）；
+  表格外层 `overflow-x-auto`，代码块 `pre { overflow-x: auto }`，图片 `max-width: 100%`。
+- 标题 `[id]` 带 `scroll-margin-top: 6rem`，给粘性顶栏让位。
+- 代码配色跟随主题：`prismStyleFor(resolved)`（light→oneLight、dark→oneDark）。
+- 图片点开是 `Dialog`（`useOverlayFocus`）：Escape、遮罩点击关闭，关闭后焦点回到
+  `button.ember-zoom-trigger`。不使用 react-medium-image-zoom。
+- 转写搜索在 `filterTranscript()` 上做纯过滤，非空查询显示 匹配 {matched} / {total} 条转写
+  （`aria-live='polite'`），零命中走带「清除搜索」的空态。
+
+## 7. 校验
 
 ```bash
 node docs/ui-audit/021/contrast-audit.mjs      # 双主题全部对比度
@@ -86,3 +98,7 @@ cd BillNote_frontend && pnpm exec vitest run tests/021-workbench-redesign
 ```
 
 `tokens.test.ts` 读取 `tokens.css` 原文，断言 12 个语义名在两套主题都存在、对比度达标、`ui/` 与 `shell/` 无 hex 残留（BilibiliMark 品牌色除外）。
+
+`reader.test.tsx` 钉住阅读区布局契约（68ch、sticky 大纲、表格/代码横向滚动、图片触发按钮与
+aria-label、复制/下载/归档入口、空态）、`reader.css` 的衬线正文与锚点偏移、Prism 主题映射与
+转写过滤计数。Escape / 焦点回归等 DOM 行为见 `docs/ui-audit/evidence/t070/README.md`。
