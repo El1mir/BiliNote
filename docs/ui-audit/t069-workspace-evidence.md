@@ -24,11 +24,14 @@ worktree 根 `.env.local` 写 `VITE_API_BASE_URL=http://127.0.0.1:8496`。
 | workspace-delete-confirm-1024-light | 批量删除确认框 | 0 | false |
 | workspace-empty-search-1024-light | 搜索无结果 | 0 | false |
 | workspace-loading-1024-light | 列表请求延迟 6s | 0 | false |
+| workspace-backend-down-1024-light | 后端未启动 | 0 | false |
 
 四态证据：加载（.ember-pulse 骨架 3 个）、空（无搜索无任务）、无搜索结果
-（clearFilters 按钮）、失败（AlertTriangle + 重试）——后两张直接截图，
-错误态由 `TaskList` 的 `error` 分支承担，源级断言在
-`tests/021-workbench-redesign/workspace.test.tsx`。
+（clearFilters 按钮）三张是实测截图。列表请求失败态（AlertTriangle + 重试）
+由 `TaskList` 的 `error` 分支承担，断言在
+`tests/021-workbench-redesign/workspace.test.tsx`；浏览器里真正让列表接口
+失败时会先被 AppShell 的启动页拦住（"正在启动后端服务"），所以补了一张
+`workspace-backend-down-1024-light` 记录后端整体不可达时的实际界面。
 
 删除确认：选择模式 → 勾选一条 → 点“已选 1 条” → 标题“删除选中的笔记 /
 将删除 1 条任务记录与已生成的笔记，无法撤销”。截图时取消，未真的删。
