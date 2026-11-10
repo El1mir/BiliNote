@@ -1,0 +1,43 @@
+/*
+ * Reader typography hooks.
+ *
+ * `.ember-markdown` is the contract the reader probes rely on
+ * (scripts/ember-reader-probe.cjs, ember-outline-probe.cjs, probe-images2.cjs
+ * query `.ember-markdown h2[id]` / `.ember-markdown img`). The class existed in
+ * the markup with no rule behind it, so a broken selector could pass unnoticed.
+ * These rules are deliberately layout-safe: no font sizes, no margins beyond
+ * first/last-child trimming — the element overrides in MarkdownNote.tsx own the
+ * rhythm. Anything here must keep the class name and element structure intact.
+ */
+
+.ember-markdown {
+  color: var(--color-ink);
+  /* Long unbroken strings (URLs, model output) must wrap instead of pushing
+     the column wider than its measure. */
+  overflow-wrap: break-word;
+}
+
+/* The column caps the measure; wide children scroll inside it rather than
+   widening it — tables already get a scroll container in MarkdownNote.tsx. */
+.ember-markdown pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.ember-markdown img {
+  height: auto;
+  max-width: 100%;
+}
+
+.ember-markdown > :first-child {
+  margin-top: 0;
+}
+
+.ember-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* Anchor targets must clear the sticky top bar when the outline jumps to them. */
+.ember-markdown :is(h1, h2, h3, h4, h5, h6)[id] {
+  scroll-margin-top: 6rem;
+}
