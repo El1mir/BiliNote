@@ -217,6 +217,10 @@ const zhCN = {
   'workspace.multimodalHint': '提示：画面理解必须使用多模态模型。',
   'workspace.submitSuccess': '笔记生成任务已提交',
   'workspace.submitFailed': '提交失败，请稍后重试',
+  'workspace.taskMissingTitle': '找不到这条笔记',
+  'workspace.taskMissingDescription':
+    '链接里的任务不存在，可能已被删除。回到工作区挑一条已有笔记。',
+  'workspace.taskMissingAction': '查看任务列表',
   'workspace.noTaskTitle': '还没有笔记',
   'workspace.noTaskDescription': '粘贴一个视频链接，开始生成你的第一条笔记。',
   'workspace.transcriberMissing': '尚未下载转写模型，先去配置',
@@ -825,6 +829,10 @@ const enUS: Dictionary = {
   'workspace.multimodalHint': 'Note: visual understanding requires a multimodal model.',
   'workspace.submitSuccess': 'Note generation submitted',
   'workspace.submitFailed': 'Submission failed, try again later',
+  'workspace.taskMissingTitle': 'Note not found',
+  'workspace.taskMissingDescription':
+    'The task in this link does not exist — it may have been deleted. Head back to the workspace to pick another note.',
+  'workspace.taskMissingAction': 'Show task list',
   'workspace.noTaskTitle': 'No notes yet',
   'workspace.noTaskDescription': 'Paste a video link to generate your first note.',
   'workspace.transcriberMissing': 'The transcriber is not downloaded yet — configure it first',

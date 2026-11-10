@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { useTaskStore, type Task } from '@/store/taskStore'
 import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
@@ -13,6 +14,7 @@ import { TaskCard } from '@/ember/features/workspace/TaskCard'
 import { Dialog } from '@/ember/ui/Dialog'
 import { UNGROUPED_ID } from '@/services/noteGroup'
 import { retryScopeForGroup } from '@/ember/features/workspace/retryFailed'
+import { readTaskId, writeTaskId } from '@/ember/lib/taskUrl'
 import { RetryFailedAction } from '@/ember/features/workspace/RetryFailedAction'
 
 type Filter = 'all' | 'ready' | 'running' | 'failed'
@@ -56,6 +58,9 @@ export function TaskList({
   const tasks = useTaskStore(state => state.tasks)
   const currentTaskId = useTaskStore(state => state.currentTaskId)
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 列表高亮以地址栏为准：store 只是镜像，URL 才是刷新/分享后仍然有效的那一份。
+  const urlTaskId = readTaskId(searchParams.toString())
   const removeTasks = useTaskStore(state => state.removeTasks)
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
@@ -209,7 +214,7 @@ export function TaskList({
           </>
         ) : visible.length ? (
           visible.map(task => {
-            const active = task.id === currentTaskId
+            const active = task.id === (urlTaskId ?? currentTaskId)
             const checked = selected.includes(task.id)
             return (
               <TaskCard
@@ -219,7 +224,18 @@ export function TaskList({
                 selecting={selecting}
                 checked={checked}
                 draggable={!selecting && Boolean(onDragTasks)}
-                onClick={() => (selecting ? toggleSelected(task.id) : setCurrentTask(task.id))}
+                onClick={() => {
+                  if (selecting) {
+                    toggleSelected(task.id)
+                    return
+                  }
+                  // 选中态写进地址栏，store 只跟着走（S2：刷新/分享都不能丢当前任务）。
+                  setCurrentTask(task.id)
+                  setSearchParams(
+                    prev => new URLSearchParams(writeTaskId(prev.toString(), task.id)),
+                    { replace: false }
+                  )
+                }}
                 onDragStart={event => {
                   // Dragging in select mode takes the whole checked set; otherwise just this card.
                   const ids = selecting && checked ? [...selected] : [task.id]
