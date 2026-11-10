@@ -62,9 +62,8 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             markdown: ['react-markdown', 'react-syntax-highlighter', 'remark-gfm', 'remark-math', 'rehype-katex'],
             vendor: ['react', 'react-dom', 'react-router-dom'],
-            ui: ['antd', '@ant-design/x', '@radix-ui/react-dialog', 'lucide-react'],
+            ui: ['@radix-ui/react-dialog', 'lucide-react'],
             math: ['katex'],
-            animation: ['lottie-react', '@lottiefiles/dotlottie-react'],
           },
         },
       },
