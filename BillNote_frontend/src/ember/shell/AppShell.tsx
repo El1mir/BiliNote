@@ -52,7 +52,8 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
             )}
           >
             <span className={cn('shrink-0', active ? 'text-ember' : 'text-ink-mute')}>{item.icon}</span>
-            <span className="truncate xl:inline">{item.label}</span>
+            {/* 76px rail (md–lg) has no room for labels; hidden, not truncated. */}
+            <span className="hidden truncate xl:inline">{item.label}</span>
           </Link>
         )
       })}
@@ -98,8 +99,13 @@ export function AppShell({ nav, sidebarFooter, rail, railWidth = 340, children }
         <main className="min-w-0 flex-1">
           {rail ? (
             <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:gap-8 lg:py-8">
-              <div className="min-w-0 flex-1">{children}</div>
-              <div className="shrink-0 lg:w-[var(--rail-w)]" style={{ ['--rail-w' as string]: `${railWidth}px` }}>
+              {/* Below lg the history rail comes first (it is the way back into a task);
+                  from lg up it returns to the right-hand column. */}
+              <div className="order-2 min-w-0 flex-1 lg:order-1">{children}</div>
+              <div
+                className="order-1 shrink-0 lg:order-2 lg:w-[var(--rail-w)]"
+                style={{ ['--rail-w' as string]: `${railWidth}px` }}
+              >
                 {rail}
               </div>
             </div>

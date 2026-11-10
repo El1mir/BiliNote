@@ -18,3 +18,19 @@ $ grep -rn "Tooltip" --include=*.tsx --include=*.ts src/ember
 
 $ ls src/ember/ui/Tooltip.tsx
 ls: cannot access 'BillNote_frontend/src/ember/ui/Tooltip.tsx': No such file or directory
+
+# W5 after-merge — 2026-11-10 10:39（merge master ce76e1c）
+# 口径修正：上一段 `duration-[0-9]*` 的 [0-9]* 可匹配零位数字，会把 token 形式也算进去；
+# 这里改用 + 只抓真正的字面数值时长。
+$ grep -rhoE "duration-[0-9]+" --include=*.tsx src/ember | wc -l
+0
+
+$ grep -rhoE "duration-\[var\(--dur-[a-z]+\)\]" --include=*.tsx src/ember | sort | uniq -c
+     15 duration-[var(--dur-hover)]
+      1 duration-[var(--dur-press)]
+
+$ grep -rno "animate-spin" --include=*.tsx src/ember | wc -l
+0
+
+$ grep -rno "ember-spin" --include=*.tsx src/ember | wc -l
+2

@@ -1,0 +1,16 @@
+source: BillNote_frontend\src\ember\tokens.css
+palette: {"canvas":"#fafaf9","surface":"#f5f5f4","raised":"#e7e5e4","raised-hover":"#dcd9d6","line":"#918a85","ink":"#1c1917","ink-soft":"#57534e","ink-mute":"#665f5a","ok":"#166534","warn":"#92400e","danger":"#b91c1c","ember":"#c2410c"}
+line/canvas          3.25 >= 3.0 PASS
+line/surface         3.12 >= 3.0 PASS
+warn/surface         6.50 >= 4.5 PASS
+ok/surface           6.54 >= 4.5 PASS
+danger/surface       5.93 >= 4.5 PASS
+ink-mute/surface     5.75 >= 4.5 PASS
+ink-mute/raised      4.99 >= 4.5 PASS
+ink/canvas           16.74 >= 4.5 PASS
+ink-soft/surface     6.99 >= 4.5 PASS
+ember/canvas         4.96 >= 4.5 PASS
+ink-mute/canvas      6.00 >= 4.5 PASS
+raised luminance       0.7863
+raised-hover luminance 0.6970 DARKER (hover darkens) PASS
+ALL CONTRAST CHECKS PASS

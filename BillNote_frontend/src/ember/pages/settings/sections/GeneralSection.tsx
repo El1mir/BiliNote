@@ -12,7 +12,11 @@ import { Card } from '@/ember/ui/Card'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
-import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+
+/** 草稿在设置页内跨分区保留时用的 key。 */
+const DRAFT_KEY = 'general'
 
 /** Byte counts are shown as-is with a hint: a GB-precision field would silently lose exactness. */
 const MiB = 1024 * 1024
@@ -58,24 +62,28 @@ type NumericField =
  */
 export function GeneralSection() {
   const { t } = useI18n()
-  const { data, loading, reload } = useAsync(getGeneralSettings)
+  const { data, loading, error, reload } = useAsync(getGeneralSettings)
   const [saving, setSaving] = useState(false)
-  const [draft, setDraft] = useState<GeneralSettingsPatch>({})
+  // 草稿存在跨卸载的仓库里：切到别的分区看一眼再回来，改过的数值还在。
+  const [draft, setDraft] = useSectionDraft<GeneralSettingsPatch>(DRAFT_KEY)
 
-  const num = (key: NumericField) => (draft[key] as number | undefined) ?? data?.[key] ?? 0
+  const patch = draft ?? {}
+  const num = (key: NumericField) => (patch[key] as number | undefined) ?? data?.[key] ?? 0
   const setNum = (key: NumericField, raw: string) =>
-    setDraft(current => ({ ...current, [key]: Number(raw) }))
+    setDraft(next => ({ ...(next ?? {}), [key]: Number(raw) }))
   const mib = (key: 'llm_max_request_bytes' | 'llm_judge_image_budget_bytes') => toMiB(num(key))
   const setMiB = (key: 'llm_max_request_bytes' | 'llm_judge_image_budget_bytes', raw: string) =>
-    setDraft(current => ({ ...current, [key]: Math.round(Number(raw) * MiB) }))
-  const flag = (key: 'asr_silence_split') => draft[key] ?? data?.[key] ?? false
+    setDraft(next => ({ ...(next ?? {}), [key]: Math.round(Number(raw) * MiB) }))
+  const flag = (key: 'asr_silence_split') => patch[key] ?? data?.[key] ?? false
 
   const save = async () => {
+    // 读失败时每个 num() 都会回落成 0，保存会把 26 个数值字段写成 0。
+    if (error) return
     setSaving(true)
     try {
-      await updateGeneralSettings(draft)
+      await updateGeneralSettings(patch)
       toast.success(t('settings.saved'))
-      setDraft({})
+      setDraft(undefined)
       reload()
     } catch {
       toast.error(t('settings.saveFailed'))
@@ -93,6 +101,14 @@ export function GeneralSection() {
     )
   }
 
+  if (error) {
+    return (
+      <SettingsSection title={t('settings.general')} description={t('settings.general.description')}>
+        <SettingsLoadError onRetry={reload} />
+      </SettingsSection>
+    )
+  }
+
   return (
     <SettingsSection
       title={t('settings.general')}
@@ -102,7 +118,7 @@ export function GeneralSection() {
           variant="primary"
           onClick={save}
           loading={saving}
-          disabled={!Object.keys(draft).length}
+          disabled={!Object.keys(patch).length || Boolean(error)}
         >
           {t('common.save')}
         </Button>
@@ -200,7 +216,7 @@ export function GeneralSection() {
                 <Switch
                   checked={flag('asr_silence_split')}
                   onChange={checked =>
-                    setDraft(current => ({ ...current, asr_silence_split: checked }))
+                    setDraft(next => ({ ...(next ?? {}), asr_silence_split: checked }))
                   }
                   label={t('settings.general.silenceSplit')}
                 />

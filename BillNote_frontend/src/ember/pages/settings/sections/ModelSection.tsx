@@ -11,7 +11,7 @@ import { Dialog } from '@/ember/ui/Dialog'
 import { EmptyState } from '@/ember/ui/EmptyState'
 import { Badge } from '@/ember/ui/Badge'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsSection } from '@/ember/pages/settings/Section'
+import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 import { ProviderDialog } from '@/ember/pages/settings/sections/ProviderDialog'
 import { ProviderModels } from '@/ember/pages/settings/sections/ProviderModels'
 import { GlobalModelPicker } from '@/ember/pages/settings/sections/GlobalModelPicker'
@@ -31,7 +31,7 @@ import {
  */
 export function ModelSection() {
   const { t } = useI18n()
-  const { data, loading, reload } = useAsync(getProviderList)
+  const { data, loading, error, reload } = useAsync(getProviderList)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<ProviderSummary | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -81,6 +81,8 @@ export function ModelSection() {
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
         </div>
+      ) : error ? (
+        <SettingsLoadError onRetry={reload} />
       ) : providers.length ? (
         <div className="flex flex-col gap-3">
           {providers.map(provider => (

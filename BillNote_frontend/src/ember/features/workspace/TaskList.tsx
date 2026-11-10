@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
-import { CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import { Archive, CheckSquare, FolderInput, Search, Trash2, X } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
 import { useTaskStore, type Task } from '@/store/taskStore'
+import { downloadNoteArchives } from '@/services/note'
 import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { Chip } from '@/ember/ui/Chip'
@@ -13,6 +16,7 @@ import { TaskCard } from '@/ember/features/workspace/TaskCard'
 import { Dialog } from '@/ember/ui/Dialog'
 import { UNGROUPED_ID } from '@/services/noteGroup'
 import { retryScopeForGroup } from '@/ember/features/workspace/retryFailed'
+import { readTaskId, writeTaskId } from '@/ember/lib/taskUrl'
 import { RetryFailedAction } from '@/ember/features/workspace/RetryFailedAction'
 
 type Filter = 'all' | 'ready' | 'running' | 'failed'
@@ -60,11 +64,15 @@ export function TaskList({
   const tasks = useTaskStore(state => state.tasks)
   const currentTaskId = useTaskStore(state => state.currentTaskId)
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 列表高亮以地址栏为准：store 只是镜像，URL 才是刷新/分享后仍然有效的那一份。
+  const urlTaskId = readTaskId(searchParams.toString())
   const removeTasks = useTaskStore(state => state.removeTasks)
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
+  const [exporting, setExporting] = useState(false)
   const [moving, setMoving] = useState(false)
   const selectedFailedCount = selected.filter(id => {
     const task = tasks.find(item => item.id === id)
@@ -111,6 +119,35 @@ export function TaskList({
     if (!selected.length) return
     await removeTasks(selected)
     exitSelection()
+  }
+
+  /**
+   * Zips the selected notes' folders into one download. The endpoint answers
+   * HTTP 200 with a JSON body when none of the ids has a finished note, so the
+   * failure has to reach the user as a toast rather than an empty file.
+   */
+  const exportSelected = async () => {
+    if (!selected.length || exporting) return
+    setExporting(true)
+    try {
+      const blob = await downloadNoteArchives(selected)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `bilinote-notes-${selected.length}.zip`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      toast.success(t('group.archiveDone', { count: selected.length }))
+      exitSelection()
+    } catch (error) {
+      toast.error(
+        t('note.exportFailed', {
+          detail: error instanceof Error && error.message ? error.message : t('common.error'),
+        })
+      )
+    } finally {
+      setExporting(false)
+    }
   }
 
   const moveSelected = async (groupId: string | null) => {
@@ -163,6 +200,16 @@ export function TaskList({
                   onRetry={() => void retryFailedInScope()}
                 />
               ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!selected.length}
+                loading={exporting}
+                onClick={() => void exportSelected()}
+              >
+                <Archive className="size-3.5" />
+                {t('history.exportSelected')}
+              </Button>
               <Button
                 size="sm"
                 variant="destructive"
@@ -235,7 +282,7 @@ export function TaskList({
           </>
         ) : visible.length ? (
           visible.map(task => {
-            const active = task.id === currentTaskId
+            const active = task.id === (urlTaskId ?? currentTaskId)
             const checked = selected.includes(task.id)
             return (
               <TaskCard
@@ -245,7 +292,18 @@ export function TaskList({
                 selecting={selecting}
                 checked={checked}
                 draggable={!selecting && Boolean(onDragTasks)}
-                onClick={() => (selecting ? toggleSelected(task.id) : setCurrentTask(task.id))}
+                onClick={() => {
+                  if (selecting) {
+                    toggleSelected(task.id)
+                    return
+                  }
+                  // 选中态写进地址栏，store 只跟着走（S2：刷新/分享都不能丢当前任务）。
+                  setCurrentTask(task.id)
+                  setSearchParams(
+                    prev => new URLSearchParams(writeTaskId(prev.toString(), task.id)),
+                    { replace: false }
+                  )
+                }}
                 onDragStart={event => {
                   // Dragging in select mode takes the whole checked set; otherwise just this card.
                   const ids = selecting && checked ? [...selected] : [task.id]
