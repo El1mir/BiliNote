@@ -18,7 +18,9 @@ import { Dialog } from '@/ember/ui/Dialog'
 import { Input } from '@/ember/ui/Input'
 import { scopeExpiredOnly, type CleanupScope } from '@/ember/pages/settings/cleanupScopes'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 const RESOURCE_TYPES = ['video', 'audio', 'screenshot']
 
@@ -34,34 +36,30 @@ export function MediaSection() {
   const { t } = useI18n()
   const retention = useAsync(getRetentionSettings)
   const runs = useAsync(getRecentCleanupRuns)
-  const [draft, setDraft] = useState<Record<string, number>>({})
+  // 保留天数草稿跨分区保留：切去 Prompt 看一眼再回来，改过的天数还在。
+  const [draft, setDraft] = useSectionDraft<Record<string, number>>('media')
   const [preview, setPreview] = useState<{ scope: CleanupScope; data: CleanupPreview } | null>(null)
   const [busy, setBusy] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
   /** 待确认的动作；非 null 时弹出确认框。清理会删文件，不能只有一次点击。 */
   const [pending, setPending] = useState<CleanupScope | null>(null)
 
-  const screenshotDays = draft.screenshot_retention_days ?? retention.data?.screenshot_retention_days ?? 0
-  const mediaDays = draft.media_retention_days ?? retention.data?.media_retention_days ?? 0
+  const screenshotDays = draft?.screenshot_retention_days ?? retention.data?.screenshot_retention_days ?? 0
+  const mediaDays = draft?.media_retention_days ?? retention.data?.media_retention_days ?? 0
 
   const readFailed = Boolean(retention.error)
 
   const save = async () => {
     // 读失败时 retention_days 会回落成 0，保存等于把保留期改成 0（立即过期）。
     if (readFailed) return
-    setBusy(true)
-    try {
+    await runSave(async () => {
       await saveRetentionSettings({
         screenshot_retention_days: screenshotDays,
         media_retention_days: mediaDays,
       })
-      toast.success(t('settings.saved'))
-      setDraft({})
+      setDraft(undefined)
       retention.reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   const refreshPreview = async (scope: CleanupScope) => {
@@ -113,9 +111,12 @@ export function MediaSection() {
         title={t('settings.media.retention')}
         description={t('settings.media.retentionHint')}
         actions={
-          <Button size="sm" variant="primary" onClick={save} loading={busy} disabled={readFailed}>
-            {t('common.save')}
-          </Button>
+          <>
+            <SaveStatus state={saveState} />
+            <Button size="sm" variant="primary" onClick={save} loading={saving} disabled={readFailed}>
+              {t('common.save')}
+            </Button>
+          </>
         }
       >
         <Card className="bg-canvas px-4 sm:px-5">

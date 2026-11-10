@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import toast from 'react-hot-toast'
 import { CheckCircle2, ScanText, XCircle } from 'lucide-react'
 import { getOcrConfig, testOcrConfig, updateOcrConfig, type OcrConfigInput, type OcrTestResult } from '@/services/ocr'
 import { useAsync } from '@/ember/lib/useAsync'
@@ -11,8 +10,9 @@ import { Field } from '@/ember/ui/Field'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
-import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 /** 草稿在设置页内跨分区保留时用的 key。 */
 const DRAFT_KEY = 'ocr'
@@ -20,11 +20,11 @@ const DRAFT_KEY = 'ocr'
 /** OCR assist. A failed test shows the upstream body verbatim — that is the only useful diagnostic. */
 export function OcrSection() {
   const { t } = useI18n()
-  const { data, loading, reload } = useAsync(getOcrConfig)
+  const { data, loading, error, reload } = useAsync(getOcrConfig)
   // 草稿跨分区保留（切走再切回不丢未保存的 OCR 改动）。
   const [draft, setDraft] = useSectionDraft<OcrConfigInput>(DRAFT_KEY)
   const [testing, setTesting] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
   const [result, setResult] = useState<OcrTestResult | null>(null)
 
   const patch: OcrConfigInput = draft ?? {}
@@ -35,17 +35,13 @@ export function OcrSection() {
   const setPatch = (next: OcrConfigInput) => setDraft(current => ({ ...current, ...next }))
 
   const save = async () => {
-    setSaving(true)
-    try {
+    // 读失败时 patch 是全空，保存等于把服务商地址/密钥清空，所以直接拦住。
+    if (error) return
+    await runSave(async () => {
       await updateOcrConfig(patch)
-      toast.success(t('settings.saved'))
       setDraft(undefined)
       reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   const test = async () => {
@@ -68,16 +64,31 @@ export function OcrSection() {
 
   if (loading && !data) return <Skeleton className="h-72 w-full" />
 
+  if (error) {
+    return (
+      <SettingsSection title={t('settings.ocr')} description={t('settings.ocr.enabledHint')}>
+        <SettingsLoadError onRetry={reload} />
+      </SettingsSection>
+    )
+  }
+
   return (
     <SettingsSection
       title={t('settings.ocr')}
       description={t('settings.ocr.enabledHint')}
       actions={
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={test} loading={testing}>
+          <SaveStatus state={saveState} />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={test}
+            loading={testing}
+            aria-busy={testing}
+          >
             {t('settings.ocr.test')}
           </Button>
-          <Button size="sm" variant="primary" onClick={save} loading={saving}>
+          <Button size="sm" variant="primary" onClick={save} loading={saving} disabled={Boolean(error)}>
             {t('common.save')}
           </Button>
         </div>

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import toast from 'react-hot-toast'
 import { Braces, Eye, EyeOff, RotateCcw } from 'lucide-react'
 import { getGeneralSettings, updateGeneralSettings } from '@/services/general'
 import { useAsync } from '@/ember/lib/useAsync'
@@ -11,7 +10,8 @@ import { Dialog } from '@/ember/ui/Dialog'
 import { Field } from '@/ember/ui/Field'
 import { Textarea } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
 
 /** 草稿在设置页内跨分区保留时用的 key。 */
@@ -34,7 +34,7 @@ export function PromptSection() {
   const { data, loading, error, reload } = useAsync(getGeneralSettings)
   // 草稿放仓库：切到别的分区再回来，未保存的模板还在（undefined = 没有改动）。
   const [draft, setDraft] = useSectionDraft<string>(DRAFT_KEY)
-  const [saving, setSaving] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
   const [showDefault, setShowDefault] = useState(false)
 
   const value = draft ?? data?.base_prompt_override ?? ''
@@ -47,17 +47,11 @@ export function PromptSection() {
   const save = async () => {
     // 读失败时 data 为空，value 会是空串；照常保存就会用空串覆盖 base_prompt_override。
     if (error) return
-    setSaving(true)
-    try {
+    await runSave(async () => {
       await updateGeneralSettings({ base_prompt_override: value })
-      toast.success(t('settings.saved'))
       setDraft(undefined)
       reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   /** 恢复默认只改本地草稿，但会把整段自定义模板从眼前抹掉，所以先确认。 */
@@ -86,6 +80,7 @@ export function PromptSection() {
       description={t('settings.prompt.description')}
       actions={
         <div className="flex items-center gap-2">
+          <SaveStatus state={saveState} />
           <Button
             size="sm"
             variant="secondary"

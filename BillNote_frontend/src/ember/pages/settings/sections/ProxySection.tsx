@@ -1,6 +1,4 @@
-import { useState } from 'react'
 import { Globe, Info } from 'lucide-react'
-import toast from 'react-hot-toast'
 import { getProxyConfig, updateProxyConfig } from '@/services/proxy'
 import { canSaveProxy, proxyUrlError, type ProxyDraft } from '@/ember/pages/settings/proxyUrl'
 import { useAsync } from '@/ember/lib/useAsync'
@@ -12,8 +10,9 @@ import { Field } from '@/ember/ui/Field'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
-import { SettingsLoadError, SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingsLoadError, SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
 import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 /** 草稿在设置页内跨分区保留时用的 key。 */
 const DRAFT_KEY = 'proxy'
@@ -30,7 +29,7 @@ export function ProxySection() {
   const { t } = useI18n()
   const { data, loading, error, reload } = useAsync(getProxyConfig)
   const [draft, setDraft] = useSectionDraft<ProxyDraft>(DRAFT_KEY)
-  const [saving, setSaving] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
 
   // draft !== undefined 表示用户改过（url 允许为空串）；没改过就跟随后端值。
   const current: ProxyDraft = draft ?? { enabled: data?.enabled ?? false, url: data?.url ?? '' }
@@ -38,17 +37,11 @@ export function ProxySection() {
 
   const save = async () => {
     if (error || !canSaveProxy(current)) return
-    setSaving(true)
-    try {
+    await runSave(async () => {
       await updateProxyConfig({ enabled: current.enabled, url: current.url })
-      toast.success(t('settings.saved'))
       setDraft(undefined)
       reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   if (loading && !data) return <Skeleton className="h-64 w-full" />
@@ -75,15 +68,18 @@ export function ProxySection() {
       title={t('settings.proxy')}
       description={t('settings.proxy.description')}
       actions={
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={save}
-          loading={saving}
-          disabled={Boolean(error) || !canSaveProxy(current)}
-        >
-          {t('common.save')}
-        </Button>
+        <>
+          <SaveStatus state={saveState} />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={save}
+            loading={saving}
+            disabled={Boolean(error) || !canSaveProxy(current)}
+          >
+            {t('common.save')}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-4">

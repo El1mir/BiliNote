@@ -26,7 +26,13 @@ import { Input } from '@/ember/ui/Input'
 import { Select } from '@/ember/ui/Select'
 import { Switch } from '@/ember/ui/Switch'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
+import {
+  SaveStatus,
+  SettingRow,
+  SettingsLoadError,
+  SettingsSection,
+} from '@/ember/pages/settings/Section'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 /** 端点行类型直接从服务层推导：同一份形状只声明一次，改接口时这里自动跟着变。 */
 type AsrEndpoint = NonNullable<
@@ -58,7 +64,7 @@ export function TranscriberSection() {
   const { t } = useI18n()
   const config = useAsync(getTranscriberConfig)
   const status = useAsync(getModelsStatus)
-  const [saving, setSaving] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
   const [editor, setEditor] = useState<AsrEndpoint | 'new' | null>(null)
   const [pendingDelete, setPendingDelete] = useState<AsrEndpoint | null>(null)
 
@@ -74,16 +80,12 @@ export function TranscriberSection() {
   const data: TranscriberConfig | undefined = config.data
 
   const apply = async (patch: Parameters<typeof updateTranscriberConfig>[0]) => {
-    setSaving(true)
-    try {
+    // 读失败时 data 为空，选择框是空值；此时写配置会把引擎/模型尺寸一起改坏。
+    if (config.error) return
+    await runSave(async () => {
       await updateTranscriberConfig(patch)
-      toast.success(t('settings.saved'))
       config.reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   const download = async (modelSize: string) => {
@@ -101,6 +103,14 @@ export function TranscriberSection() {
 
   if (config.loading && !data) return <Skeleton className="h-72 w-full" />
 
+  if (config.error) {
+    return (
+      <SettingsSection title={t('settings.transcriber')} description={t('settings.transcriber.engine')}>
+        <SettingsLoadError onRetry={config.reload} />
+      </SettingsSection>
+    )
+  }
+
   const endpoints: AsrEndpoint[] = data?.openai_asr_endpoints ?? []
   const modelStatus = statusFor(status.data?.whisper, data?.whisper_model_size ?? '')
 
@@ -108,6 +118,7 @@ export function TranscriberSection() {
     <SettingsSection
       title={t('settings.transcriber')}
       description={t('settings.transcriber.engine')}
+      actions={<SaveStatus state={saveState} />}
     >
       <div className="flex flex-col gap-4">
         <Card className="bg-canvas px-4 sm:px-5">

@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import toast from 'react-hot-toast'
 import { getDownloaderCookie, updateDownloaderCookie } from '@/services/downloader'
 import { useAsync } from '@/ember/lib/useAsync'
 import { useI18n } from '@/ember/i18n/context'
@@ -9,7 +7,9 @@ import { Field } from '@/ember/ui/Field'
 import { Textarea } from '@/ember/ui/Input'
 import { Badge } from '@/ember/ui/Badge'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 /** Only Bilibili remains in the generation chain, so this is a single field. */
 export function DownloadSection() {
@@ -18,8 +18,9 @@ export function DownloadSection() {
     const value = await getDownloaderCookie('bilibili')
     return typeof value === 'string' ? value : ((value as { cookie?: string })?.cookie ?? '')
   })
-  const [draft, setDraft] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  // 草稿跨分区保留：Cookie 往往是从浏览器里粘出来的长串，切走丢一次就得重新复制。
+  const [draft, setDraft] = useSectionDraft<string>('download')
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
 
   const value = draft ?? cookie.data ?? ''
   // 读失败时 cookie.data 是 undefined、value 会回落成空串，
@@ -28,15 +29,11 @@ export function DownloadSection() {
 
   const save = async () => {
     if (blocked) return
-    setSaving(true)
-    try {
+    await runSave(async () => {
       await updateDownloaderCookie({ cookie: value, platform: 'bilibili' })
-      toast.success(t('settings.download.saved'))
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+      setDraft(undefined)
+      cookie.reload()
+    })
   }
 
   if (cookie.loading && !cookie.data) {
@@ -60,15 +57,18 @@ export function DownloadSection() {
       title={t('settings.download')}
       description={t('settings.download.cookieHint')}
       actions={
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={save}
-          loading={saving}
-          disabled={blocked}
-        >
-          {t('common.save')}
-        </Button>
+        <>
+          <SaveStatus state={saveState} />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={save}
+            loading={saving}
+            disabled={blocked}
+          >
+            {t('common.save')}
+          </Button>
+        </>
       }
     >
       <Card className="bg-canvas p-4 sm:p-5">
