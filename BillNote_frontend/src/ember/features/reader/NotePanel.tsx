@@ -139,7 +139,7 @@ export function NotePanel({ task }: NotePanelProps) {
                         key={item.id}
                         type="button"
                         onClick={() => scrollToAnchor(item.id)}
-                        className="text-caption text-ink-soft hover:border-ember hover:text-ember truncate border-l-2 border-transparent py-0.5 text-left transition-colors"
+                        className="text-caption text-ink-soft hover:border-ember hover:text-ember truncate border-l-2 border-transparent py-0.5 text-left transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                         // rem, not px: the rail has to breathe with the user's
                         // font-size setting instead of staying nailed to 10px steps.
                         style={{ paddingLeft: `${0.75 + Math.max(0, item.depth - 2) * 0.5}rem` }}

@@ -115,7 +115,7 @@ export function ModelSection() {
                   aria-label={t('settings.model.editProvider')}
                   title={t('settings.model.editProvider')}
                   onClick={() => setEditing(provider)}
-                  className="rounded-control text-ink-mute hover:bg-raised hover:text-ink p-1.5 transition-colors duration-150"
+                  className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-ink inline-flex size-11 shrink-0 items-center justify-center transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                 >
                   <Pencil className="size-3.5" />
                 </button>

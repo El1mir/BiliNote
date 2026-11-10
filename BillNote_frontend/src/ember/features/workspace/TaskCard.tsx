@@ -58,26 +58,31 @@ export function TaskCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'ember-press group relative flex w-full flex-col gap-1.5 rounded-surface border px-3 py-2.5 text-left transition-colors',
-        active ? 'border-ember/40 bg-ember-soft/60' : 'border-line bg-surface hover:border-ink-mute/40',
+        'ember-press group rounded-surface relative flex w-full flex-col gap-1.5 border px-3 py-2.5 text-left',
+        active
+          ? 'border-ember/40 bg-ember-soft/60'
+          : 'border-line bg-surface hover:border-ink-mute/40'
       )}
     >
       <span className="flex items-start gap-2">
         {selecting ? (
           checked ? (
-            <CheckSquare className="mt-0.5 size-4 shrink-0 text-ember" />
+            <CheckSquare className="text-ember mt-0.5 size-4 shrink-0" />
           ) : (
-            <Square className="mt-0.5 size-4 shrink-0 text-ink-mute" />
+            <Square className="text-ink-mute mt-0.5 size-4 shrink-0" />
           )
         ) : null}
-        <span className="line-clamp-2 min-w-0 flex-1 text-small font-semibold text-ink">
+        <span className="text-small text-ink line-clamp-2 min-w-0 flex-1 font-semibold">
           {taskTitle(task)}
         </span>
         <Badge tone={statusTone(task.status)}>{t(statusKey(task.status))}</Badge>
       </span>
 
       {stageLabel || detail ? (
-        <span className="flex items-center gap-2 text-caption text-ink-soft" data-testid="task-card-stage">
+        <span
+          className="text-caption text-ink-soft flex items-center gap-2"
+          data-testid="task-card-stage"
+        >
           {stageLabel ? <span className="truncate">{stageLabel}</span> : null}
           {detail ? (
             <>
@@ -90,7 +95,7 @@ export function TaskCard({
 
       {showProgress ? <Progress value={taskProgress(task)} /> : null}
 
-      <span className="flex items-center gap-2 text-caption text-ink-mute">
+      <span className="text-caption text-ink-mute flex items-center gap-2">
         <span className="shrink-0 whitespace-nowrap tabular-nums">
           {relativeTime(task.createdAt, locale)}
         </span>

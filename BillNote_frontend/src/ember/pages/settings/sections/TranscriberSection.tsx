@@ -29,7 +29,9 @@ import { Skeleton } from '@/ember/ui/Skeleton'
 import { SettingRow, SettingsSection } from '@/ember/pages/settings/Section'
 
 /** 端点行类型直接从服务层推导：同一份形状只声明一次，改接口时这里自动跟着变。 */
-type AsrEndpoint = NonNullable<Awaited<ReturnType<typeof getTranscriberConfig>>["openai_asr_endpoints"]>[number]
+type AsrEndpoint = NonNullable<
+  Awaited<ReturnType<typeof getTranscriberConfig>>['openai_asr_endpoints']
+>[number]
 
 const ENGINE_LABELS: Record<string, MessageKey> = {
   'fast-whisper': 'settings.transcriber.engine.local',
@@ -118,7 +120,12 @@ export function TranscriberSection() {
                   value: item.value,
                   label: ENGINE_LABELS[item.value] ? t(ENGINE_LABELS[item.value]) : item.label,
                 }))}
-                onChange={event => apply({ transcriber_type: event.target.value, whisper_model_size: data?.whisper_model_size })}
+                onChange={event =>
+                  apply({
+                    transcriber_type: event.target.value,
+                    whisper_model_size: data?.whisper_model_size,
+                  })
+                }
                 disabled={saving}
               />
             }
@@ -139,14 +146,24 @@ export function TranscriberSection() {
                 <div className="flex items-center gap-2">
                   <Select
                     value={data?.whisper_model_size ?? ''}
-                    options={(data?.whisper_model_sizes ?? []).map(size => ({ value: size, label: size }))}
+                    options={(data?.whisper_model_sizes ?? []).map(size => ({
+                      value: size,
+                      label: size,
+                    }))}
                     onChange={event =>
-                      apply({ transcriber_type: data?.transcriber_type ?? '', whisper_model_size: event.target.value })
+                      apply({
+                        transcriber_type: data?.transcriber_type ?? '',
+                        whisper_model_size: event.target.value,
+                      })
                     }
                     disabled={saving}
                   />
                   {modelStatus && !modelStatus.downloaded ? (
-                    <Button size="sm" variant="secondary" onClick={() => download(modelStatus.model_size)}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => download(modelStatus.model_size)}
+                    >
                       <Download className="size-3.5" />
                     </Button>
                   ) : null}
@@ -172,8 +189,10 @@ export function TranscriberSection() {
                 <Card key={endpoint.id} className="bg-canvas" selected={active}>
                   <div className="flex flex-wrap items-center gap-3 px-4 py-3">
                     <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-small font-semibold text-ink">{endpoint.name}</span>
-                      <span className="truncate text-caption text-ink-soft">
+                      <span className="text-small text-ink truncate font-semibold">
+                        {endpoint.name}
+                      </span>
+                      <span className="text-caption text-ink-soft truncate">
                         {endpoint.base_url} · {endpoint.model}
                       </span>
                     </div>
@@ -187,7 +206,10 @@ export function TranscriberSection() {
                         size="sm"
                         variant="ghost"
                         onClick={() =>
-                          apply({ transcriber_type: data?.transcriber_type ?? '', openai_asr_id: endpoint.id })
+                          apply({
+                            transcriber_type: data?.transcriber_type ?? '',
+                            openai_asr_id: endpoint.id,
+                          })
                         }
                       >
                         {t('common.confirm')}
@@ -211,7 +233,7 @@ export function TranscriberSection() {
                       type="button"
                       aria-label={t('settings.transcriber.editEndpoint')}
                       title={t('settings.transcriber.editEndpoint')}
-                      className="rounded-control p-1 text-ink-mute transition-colors duration-150 hover:bg-raised hover:text-ink"
+                      className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-ink inline-flex size-11 shrink-0 items-center justify-center transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                       onClick={() => setEditor(endpoint)}
                     >
                       <Pencil className="size-3.5" />
@@ -220,7 +242,7 @@ export function TranscriberSection() {
                       type="button"
                       aria-label={t('settings.transcriber.deleteEndpoint')}
                       title={t('settings.transcriber.deleteEndpoint')}
-                      className="rounded-control p-1 text-ink-mute transition-colors duration-150 hover:bg-raised hover:text-danger"
+                      className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-danger inline-flex size-11 shrink-0 items-center justify-center transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]"
                       onClick={() => setPendingDelete(endpoint)}
                     >
                       <Trash2 className="size-3.5" />
@@ -238,7 +260,11 @@ export function TranscriberSection() {
       <Dialog
         open={editor !== null}
         onClose={() => setEditor(null)}
-        title={editor === 'new' ? t('settings.transcriber.addEndpoint') : t('settings.transcriber.editEndpoint')}
+        title={
+          editor === 'new'
+            ? t('settings.transcriber.addEndpoint')
+            : t('settings.transcriber.editEndpoint')
+        }
         size="md"
       >
         {editor !== null ? (
@@ -257,7 +283,9 @@ export function TranscriberSection() {
         onClose={() => setPendingDelete(null)}
         title={t('settings.transcriber.deleteEndpoint')}
         description={
-          pendingDelete ? t('settings.transcriber.endpointDeleteBody', { name: pendingDelete.name }) : undefined
+          pendingDelete
+            ? t('settings.transcriber.endpointDeleteBody', { name: pendingDelete.name })
+            : undefined
         }
         size="sm"
         footer={
@@ -296,7 +324,9 @@ function EndpointDialog({ endpoint, onDone }: { endpoint?: AsrEndpoint; onDone: 
   const [baseUrl, setBaseUrl] = useState(endpoint?.base_url ?? '')
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState(endpoint?.model ?? '')
-  const [style, setStyle] = useState<AsrEndpoint['api_style']>(endpoint?.api_style ?? 'transcriptions')
+  const [style, setStyle] = useState<AsrEndpoint['api_style']>(
+    endpoint?.api_style ?? 'transcriptions'
+  )
   const [saving, setSaving] = useState(false)
   // 端点级事务参数。每一项都对应后端 `_normalize_endpoint` 的默认值：留空 = 用默认，
   // 所以新增端点时不填也能保存。这些值直接决定「一次请求能发多大、能并发多少」，
@@ -339,7 +369,10 @@ function EndpointDialog({ endpoint, onDone }: { endpoint?: AsrEndpoint; onDone: 
         ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
       }
       if (endpoint) {
-        await updateOpenaiAsr(endpoint.id, { ...payload, api_key: payload.api_key ?? endpoint.api_key })
+        await updateOpenaiAsr(endpoint.id, {
+          ...payload,
+          api_key: payload.api_key ?? endpoint.api_key,
+        })
       } else {
         await addOpenaiAsr({ ...payload, api_key: apiKey })
       }
@@ -374,10 +407,15 @@ function EndpointDialog({ endpoint, onDone }: { endpoint?: AsrEndpoint; onDone: 
         <Input id="asr-model" value={model} onChange={event => setModel(event.target.value)} />
       </Field>
       <Field label={t('settings.transcriber.style')} htmlFor="asr-style">
-        <Select id="asr-style" value={style} options={STYLES} onChange={event => setStyle(event.target.value as AsrEndpoint['api_style'])} />
+        <Select
+          id="asr-style"
+          value={style}
+          options={STYLES}
+          onChange={event => setStyle(event.target.value as AsrEndpoint['api_style'])}
+        />
       </Field>
 
-      <div className="flex flex-col gap-1 border-t border-line/70 pt-4">
+      <div className="border-line/70 flex flex-col gap-1 border-t pt-4">
         <span className="ember-overline text-ink-mute">{t('settings.transcriber.limits')}</span>
         <p className="text-caption text-ink-soft">{t('settings.transcriber.limitsHint')}</p>
       </div>
@@ -470,9 +508,10 @@ function EndpointDialog({ endpoint, onDone }: { endpoint?: AsrEndpoint; onDone: 
           {t('settings.transcriber.silenceGlobalNow', {
             noise: general.data?.asr_silence_noise_db ?? -30,
             silence: general.data?.asr_min_silence_seconds ?? 0.5,
-            split: general.data?.asr_silence_split === false
-              ? t('settings.transcriber.silenceOff')
-              : t('settings.transcriber.silenceOn'),
+            split:
+              general.data?.asr_silence_split === false
+                ? t('settings.transcriber.silenceOff')
+                : t('settings.transcriber.silenceOn'),
           })}
         </p>
       ) : null}
@@ -491,7 +530,12 @@ function EndpointDialog({ endpoint, onDone }: { endpoint?: AsrEndpoint; onDone: 
       />
 
       <div className="flex justify-end">
-        <Button variant="primary" onClick={submit} loading={saving} disabled={!name.trim() || !baseUrl.trim() || !model.trim()}>
+        <Button
+          variant="primary"
+          onClick={submit}
+          loading={saving}
+          disabled={!name.trim() || !baseUrl.trim() || !model.trim()}
+        >
           {t('common.save')}
         </Button>
       </div>

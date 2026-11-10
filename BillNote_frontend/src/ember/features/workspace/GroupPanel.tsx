@@ -17,7 +17,7 @@ type GroupPanelProps = {
 }
 
 const ROW =
-  'flex w-full items-center gap-1.5 rounded-control px-1.5 py-1 text-left transition-colors duration-150'
+  'flex w-full items-center gap-1.5 rounded-control px-1.5 py-1 text-left transition-colors ease-[var(--ease)] duration-[var(--dur-hover)]'
 
 /**
  * Note groups above the history list. Rows act as filters (click) and as drop
@@ -52,7 +52,11 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
   const [draft, setDraft] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; count: number } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string
+    name: string
+    count: number
+  } | null>(null)
   const [deleteTasks, setDeleteTasks] = useState(false)
 
   const atLimit = groups.length >= maxGroups
@@ -101,16 +105,16 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
       className="rounded-surface border-line bg-canvas flex shrink-0 flex-col gap-2 border p-2.5"
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="flex items-baseline gap-1.5 font-display text-small font-semibold text-ink">
+        <h3 className="font-display text-small text-ink flex items-baseline gap-1.5 font-semibold">
           {t('group.title')}
-          <span className="text-caption font-normal tabular-nums text-ink-mute">
+          <span className="text-caption text-ink-mute font-normal tabular-nums">
             {groups.length}/{maxGroups}
           </span>
         </h3>
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 gap-1 px-2 text-caption"
+          className="text-caption h-7 gap-1 px-2"
           disabled={!checkedGroupIds.length}
           loading={downloading}
           onClick={() => void downloadCheckedGroups()}
@@ -128,9 +132,11 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
           onChange={event => setDraft(event.target.value)}
           maxLength={maxNameLength}
           disabled={atLimit || busy}
-          placeholder={atLimit ? t('group.limit', { count: maxGroups }) : t('group.namePlaceholder')}
+          placeholder={
+            atLimit ? t('group.limit', { count: maxGroups }) : t('group.namePlaceholder')
+          }
           aria-label={t('history.group.new')}
-          className="h-8 px-2.5 text-small"
+          className="text-small h-8 px-2.5"
         />
         <Button
           type="submit"
@@ -144,17 +150,20 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
         </Button>
       </form>
 
-            {/* spec 020：分组多时这块必须能滚，且高度跟着视口走 ——
+      {/* spec 020：分组多时这块必须能滚，且高度跟着视口走 ——
           固定 264px 在 900px 高的窗口里会把最后一行切一半，看起来像「不能滚」。 */}
       <div className="-mx-1 flex max-h-[min(45vh,420px)] flex-col gap-0.5 overflow-y-auto overscroll-contain px-1">
         <button
           type="button"
           onClick={() => setActiveGroupId(null)}
           aria-pressed={activeGroupId === null}
-          className={cn(ROW, activeGroupId === null ? 'bg-ember-soft text-ink' : 'text-ink-soft hover:bg-surface')}
+          className={cn(
+            ROW,
+            activeGroupId === null ? 'bg-ember-soft text-ink' : 'text-ink-soft hover:bg-surface'
+          )}
         >
-          <span className="flex-1 truncate text-small font-semibold">{t('group.all')}</span>
-          <span className="shrink-0 text-caption tabular-nums text-ink-mute">{totalCount}</span>
+          <span className="text-small flex-1 truncate font-semibold">{t('group.all')}</span>
+          <span className="text-caption text-ink-mute shrink-0 tabular-nums">{totalCount}</span>
         </button>
 
         {groups.map(group => {
@@ -165,9 +174,9 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
               key={group.id}
               {...dropProps(group.id)}
               className={cn(
-                'group/row flex items-center gap-1.5 rounded-control px-1 py-0.5 transition-colors duration-150',
+                'group/row rounded-control flex items-center gap-1.5 px-1 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
                 active && 'bg-ember-soft',
-                dropping && 'bg-ember-soft ring-1 ring-ember/50',
+                dropping && 'bg-ember-soft ring-ember/50 ring-1'
               )}
             >
               <Checkbox
@@ -176,7 +185,10 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
                 label={group.name}
               />
               {renamingId === group.id ? (
-                <form onSubmit={event => void submitRename(event, group.id)} className="flex min-w-0 flex-1 items-center gap-1">
+                <form
+                  onSubmit={event => void submitRename(event, group.id)}
+                  className="flex min-w-0 flex-1 items-center gap-1"
+                >
                   <Input
                     autoFocus
                     value={renameDraft}
@@ -189,12 +201,25 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
                     }}
                     maxLength={maxNameLength}
                     aria-label={t('history.group.rename')}
-                    className="h-7 px-2 text-small"
+                    className="text-small h-7 px-2"
                   />
-                  <Button type="submit" size="sm" variant="ghost" className="h-7 px-1.5" aria-label={t('common.save')}>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-1.5"
+                    aria-label={t('common.save')}
+                  >
                     <Check className="size-3.5" />
                   </Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5" aria-label={t('common.cancel')} onClick={() => setRenamingId(null)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-1.5"
+                    aria-label={t('common.cancel')}
+                    onClick={() => setRenamingId(null)}
+                  >
                     <X className="size-3.5" />
                   </Button>
                 </form>
@@ -205,27 +230,27 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
                     onClick={() => setActiveGroupId(active ? null : group.id)}
                     aria-pressed={active}
                     className={cn(
-                      'flex min-w-0 flex-1 items-center gap-1.5 rounded-control px-1 py-0.5 text-left',
-                      active ? 'text-ink' : 'text-ink-soft hover:text-ink',
+                      'rounded-control flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left',
+                      active ? 'text-ink' : 'text-ink-soft hover:text-ink'
                     )}
                   >
-                    <span className="truncate text-small font-semibold">{group.name}</span>
-                    <span className="ml-auto shrink-0 text-caption tabular-nums text-ink-mute">
+                    <span className="text-small truncate font-semibold">{group.name}</span>
+                    <span className="text-caption text-ink-mute ml-auto shrink-0 tabular-nums">
                       {group.task_count ?? 0}
                     </span>
                   </button>
                   <div
                     className={cn(
-                      'flex shrink-0 items-center gap-0.5 transition-opacity duration-150',
-                      'focus-within:opacity-100 group-hover/row:opacity-100',
-                      active ? 'opacity-100' : 'opacity-0',
+                      'flex shrink-0 items-center gap-0.5 transition-opacity duration-[var(--dur-hover)] ease-[var(--ease)]',
+                      'group-hover/row:opacity-100 focus-within:opacity-100',
+                      active ? 'opacity-100' : 'opacity-0'
                     )}
                   >
                     <button
                       type="button"
                       aria-label={t('history.group.rename')}
                       onClick={() => startRename(group.id, group.name)}
-                      className="rounded-control p-1 text-ink-mute hover:bg-raised hover:text-ink"
+                      className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-ink inline-flex size-11 shrink-0 items-center justify-center"
                     >
                       <Pencil className="size-3" />
                     </button>
@@ -234,9 +259,13 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
                       aria-label={t('history.group.delete')}
                       onClick={() => {
                         setDeleteTasks(false)
-                        setPendingDelete({ id: group.id, name: group.name, count: group.task_count ?? 0 });
+                        setPendingDelete({
+                          id: group.id,
+                          name: group.name,
+                          count: group.task_count ?? 0,
+                        })
                       }}
-                      className="rounded-control p-1 text-ink-mute hover:bg-raised hover:text-danger"
+                      className="ember-press rounded-control text-ink-mute hover:bg-raised hover:text-danger inline-flex size-11 shrink-0 items-center justify-center"
                     >
                       <Trash2 className="size-3" />
                     </button>
@@ -244,15 +273,15 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
                 </>
               )}
             </div>
-          );
+          )
         })}
 
         <div
           {...dropProps(UNGROUPED_ID)}
           className={cn(
-            'flex items-center gap-1.5 rounded-control px-1 py-0.5 transition-colors duration-150',
+            'rounded-control flex items-center gap-1.5 px-1 py-0.5 transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
             activeGroupId === UNGROUPED_ID && 'bg-ember-soft',
-            dropTargetId === UNGROUPED_ID && 'bg-ember-soft ring-1 ring-ember/50',
+            dropTargetId === UNGROUPED_ID && 'bg-ember-soft ring-ember/50 ring-1'
           )}
         >
           <Checkbox
@@ -265,18 +294,22 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
             onClick={() => setActiveGroupId(activeGroupId === UNGROUPED_ID ? null : UNGROUPED_ID)}
             aria-pressed={activeGroupId === UNGROUPED_ID}
             className={cn(
-              'flex min-w-0 flex-1 items-center gap-1.5 rounded-control px-1 py-0.5 text-left',
-              activeGroupId === UNGROUPED_ID ? 'text-ink' : 'text-ink-soft hover:text-ink',
+              'rounded-control flex min-w-0 flex-1 items-center gap-1.5 px-1 py-0.5 text-left',
+              activeGroupId === UNGROUPED_ID ? 'text-ink' : 'text-ink-soft hover:text-ink'
             )}
           >
-            <span className="truncate text-small font-semibold">{t('history.group.ungrouped')}</span>
-            <span className="ml-auto shrink-0 text-caption tabular-nums text-ink-mute">{ungroupedCount}</span>
+            <span className="text-small truncate font-semibold">
+              {t('history.group.ungrouped')}
+            </span>
+            <span className="text-caption text-ink-mute ml-auto shrink-0 tabular-nums">
+              {ungroupedCount}
+            </span>
           </button>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-2 px-1">
-        <label className="flex items-center gap-1.5 text-caption text-ink-soft">
+        <label className="text-caption text-ink-soft flex items-center gap-1.5">
           <Checkbox
             checked={allChecked}
             onChange={setAllChecked}
@@ -285,7 +318,7 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
           />
           <span>{t('group.selectAll')}</span>
         </label>
-        <span className="truncate text-caption text-ink-mute">{t('group.dragHint')}</span>
+        <span className="text-caption text-ink-mute truncate">{t('group.dragHint')}</span>
       </div>
 
       <Dialog
@@ -317,8 +350,12 @@ export function GroupPanel({ state, totalCount }: GroupPanelProps) {
           </>
         }
       >
-        <label className="flex items-center gap-2 text-small text-ink-soft">
-          <Checkbox checked={deleteTasks} onChange={setDeleteTasks} label={t('history.group.deleteAlsoTasks')} />
+        <label className="text-small text-ink-soft flex items-center gap-2">
+          <Checkbox
+            checked={deleteTasks}
+            onChange={setDeleteTasks}
+            label={t('history.group.deleteAlsoTasks')}
+          />
           <span>{t('history.group.deleteAlsoTasks')}</span>
         </label>
       </Dialog>

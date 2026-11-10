@@ -25,10 +25,16 @@ export function Checkbox({ checked, onChange, disabled, id, label, className }: 
         'ember-press inline-flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border',
         checked ? 'border-ember bg-ember text-white' : 'border-line bg-surface',
         disabled && 'cursor-not-allowed opacity-50',
-        className,
+        className
       )}
     >
-      <Check className={cn('size-3 transition-opacity duration-150', checked ? 'opacity-100' : 'opacity-0')} strokeWidth={3} />
+      <Check
+        className={cn(
+          'size-3 transition-opacity duration-[var(--dur-hover)] ease-[var(--ease)]',
+          checked ? 'opacity-100' : 'opacity-0'
+        )}
+        strokeWidth={3}
+      />
     </button>
   )
 }

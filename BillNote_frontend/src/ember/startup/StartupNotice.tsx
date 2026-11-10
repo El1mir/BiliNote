@@ -130,12 +130,12 @@ export function StartupNotice() {
   return (
     <div
       role="status"
-      className={`ember-enter fixed inset-x-0 top-0 z-50 flex items-start gap-3 border-b px-4 py-3 shadow-raise sm:px-6 ${TONE[view.severity]}`}
+      className={`ember-enter shadow-raise fixed inset-x-0 top-0 z-50 flex items-start gap-3 border-b px-4 py-3 sm:px-6 ${TONE[view.severity]}`}
     >
       <Icon className={`mt-0.5 size-4 shrink-0 ${ICON_TONE[view.severity]}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-small font-semibold">{view.title}</p>
-        <pre className="mt-0.5 font-sans text-caption break-words whitespace-pre-wrap text-ink-soft">
+        <pre className="text-caption text-ink-soft mt-0.5 font-sans break-words whitespace-pre-wrap">
           {view.detail}
         </pre>
       </div>
@@ -144,7 +144,7 @@ export function StartupNotice() {
           type="button"
           onClick={() => setDismissed(true)}
           aria-label={t('startup.notice.dismiss')}
-          className="ember-press -mr-1 grid size-7 shrink-0 place-items-center rounded-control text-ink-mute hover:bg-white/60 hover:text-ink"
+          className="ember-press rounded-control text-ink-mute hover:text-ink -mr-1 grid size-11 shrink-0 place-items-center hover:bg-white/60"
         >
           <X className="size-3.5" aria-hidden="true" />
         </button>
