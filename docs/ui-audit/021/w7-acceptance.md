@@ -100,13 +100,16 @@
 | 前端 `vitest run` | 0 · 30 files / 197 tests |
 | 前端 `tsc -b` | 0 |
 | 前端 `lint` | 0 |
-| 前端 `build` | 0（10.74s） |
+| 前端 `i18n-contract` | 0 · 572 keys（zh-CN / en-US 对齐） |
+| 前端 `build` | 0（收口轮复跑 14.96s） |
 | 扩展 `typecheck` | 0（修 tsconfig types 后；首跑 exit 2，见 `gates.md`） |
 | 扩展 `vitest run` | 0 · 4 files / 10 tests |
-| 扩展 `build` | 0（1.03s） |
+| 扩展 `build` | 0（收口轮复跑 1.48s） |
 | 扩展 `test:e2e` | **1（红）** · 3 failed，原因是 `e2e/basic.spec.ts` 仍是 vitesse-webext 模板断言（「Open Options」按钮、`img alt="extension icon"`），UI 已在 spec 017 重写；另 chromium-1129 未安装、官方下载在本机无进展 |
 
-**结论：partial** —— 前端四条 + 扩展 typecheck/test/build 绿；`test:e2e` 红，已定位为陈旧模板用例而非产品回归，需单独修复卡（改写 `e2e/basic.spec.ts` 断言 popup「生成笔记」与 options「后端地址」）。
+命令级输出与对比度脚本原文都贴在 `docs/ui-audit/021/gates.md`（含收口轮复跑的 exit code 表）。
+
+**结论：partial** —— 前端五条 + 扩展 typecheck/test/build 绿；`test:e2e` 红，已定位为陈旧模板用例而非产品回归，需单独修复卡（改写 `e2e/basic.spec.ts` 断言 popup「生成笔记」与 options「后端地址」）。
 
 ## 证据文件清单（本卡新增）
 

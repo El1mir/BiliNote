@@ -17,6 +17,7 @@
 | `pnpm exec vitest run` | 0 | Test Files 30 passed (30) · Tests 197 passed (197) · Duration 5.18s |
 | `pnpm exec tsc -b` | 0 | 无诊断输出 |
 | `pnpm lint` | 0 | `eslint .` 无 error / warning |
+| `node scripts/i18n-contract.cjs` | 0 | `i18n contract OK — 572 keys, zh-CN and en-US aligned` |
 | `pnpm build` | 0 | `✓ built in 10.74s`；仅有 rollup chunk-size 提示，非失败 |
 
 ## 扩展（BillNote_extension）
@@ -63,6 +64,67 @@ basic.spec.ts:19  await expect(page.locator('img')).toHaveAttribute('alt', 'exte
 pnpm exec playwright install chromium
 CI=1 pnpm test:e2e
 ```
+
+## 收口轮复跑（同一 worktree，HEAD f657ab2，T-075 最后一轮）
+
+在把 W7 工件提交前重跑一遍，确认数字与上文记录一致（下表为复跑实测，不是引用上一轮）：
+
+| 命令 | exit | 输出摘要 |
+|---|---|---|
+| `pnpm exec vitest run`（BillNote_frontend） | 0 | Test Files 30 passed · Tests 197 passed |
+| `pnpm exec tsc -b` | 0 | `TypeScript: No errors found` |
+| `pnpm lint` | 0 | `ESLint: No issues found` |
+| `node scripts/i18n-contract.cjs` | 0 | `i18n contract OK — 572 keys, zh-CN and en-US aligned` |
+| `pnpm build` | 0 | `✓ built in 14.96s`（仅 rollup chunk-size 提示） |
+| `pnpm typecheck`（BillNote_extension） | 0 | `tsc --noEmit` 无诊断 |
+| `CI=1 pnpm exec vitest run` | 0 | Test Files 4 passed · Tests 10 passed |
+| `pnpm build` | 0 | `✓ built in 1.48s` |
+
+`test:e2e` 本轮未复跑：浏览器版本缺失的阻塞与上一轮相同，结论维持「红 / BLOCKED」，见下节。
+
+## 对比度审计输出（原文粘贴）
+
+命令：`node docs/ui-audit/021/contrast-audit.mjs` · exit 0 · 结论 `Result: all pairs pass`（13 对 × 2 主题；正文 ≥4.5:1、非文本控件 ≥3:1）。
+
+```
+## light
+| pair | ratio | required | verdict | role |
+|---|---|---|---|---|
+| ink on canvas | 15.11:1 | 4.5:1 | PASS | body text on the page |
+| ink on surface | 16.38:1 | 4.5:1 | PASS | body text on a card |
+| ink on raised | 15.94:1 | 4.5:1 | PASS | body text on a raised panel |
+| ink-soft on surface | 6.42:1 | 4.5:1 | PASS | secondary text |
+| ink-muted on canvas | 4.93:1 | 4.5:1 | PASS | muted helper text |
+| ink on accent-soft | 14.45:1 | 4.5:1 | PASS | current nav item text |
+| on-accent on accent | 5.55:1 | 4.5:1 | PASS | label on a solid accent button |
+| success on surface | 5.41:1 | 4.5:1 | PASS | success text |
+| warning on surface | 5.34:1 | 4.5:1 | PASS | warning text |
+| danger on surface | 6.57:1 | 4.5:1 | PASS | error text |
+| info on surface | 5.77:1 | 4.5:1 | PASS | info text |
+| line-strong on surface | 3.40:1 | 3:1 | PASS | control border (non-text) |
+| accent on surface | 5.55:1 | 3:1 | PASS | focus ring / accent marks (non-text) |
+
+## dark
+| pair | ratio | required | verdict | role |
+|---|---|---|---|---|
+| ink on canvas | 16.23:1 | 4.5:1 | PASS | body text on the page |
+| ink on surface | 14.69:1 | 4.5:1 | PASS | body text on a card |
+| ink on raised | 13.02:1 | 4.5:1 | PASS | body text on a raised panel |
+| ink-soft on surface | 10.19:1 | 4.5:1 | PASS | secondary text |
+| ink-muted on canvas | 6.88:1 | 4.5:1 | PASS | muted helper text |
+| ink on accent-soft | 12.47:1 | 4.5:1 | PASS | current nav item text |
+| on-accent on accent | 8.18:1 | 4.5:1 | PASS | label on a solid accent button |
+| success on surface | 7.95:1 | 4.5:1 | PASS | success text |
+| warning on surface | 10.19:1 | 4.5:1 | PASS | warning text |
+| danger on surface | 7.28:1 | 4.5:1 | PASS | error text |
+| info on surface | 9.02:1 | 4.5:1 | PASS | info text |
+| line-strong on surface | 3.89:1 | 3:1 | PASS | control border (non-text) |
+| accent on surface | 7.87:1 | 3:1 | PASS | focus ring / accent marks (non-text) |
+
+Result: all pairs pass
+```
+
+后续复核以本段输出为准；`contrast.txt` 是同一脚本早先一次运行的落盘副本。
 
 ## 偏差与限制
 
