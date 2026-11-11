@@ -1,0 +1,36 @@
+
+## light
+| pair | ratio | required | verdict | role |
+|---|---|---|---|---|
+| ink on canvas | 15.11:1 | 4.5:1 | PASS | body text on the page |
+| ink on surface | 16.38:1 | 4.5:1 | PASS | body text on a card |
+| ink on raised | 15.94:1 | 4.5:1 | PASS | body text on a raised panel |
+| ink-soft on surface | 6.42:1 | 4.5:1 | PASS | secondary text |
+| ink-muted on canvas | 4.93:1 | 4.5:1 | PASS | muted helper text |
+| ink on accent-soft | 14.45:1 | 4.5:1 | PASS | current nav item text |
+| on-accent on accent | 5.55:1 | 4.5:1 | PASS | label on a solid accent button |
+| success on surface | 5.41:1 | 4.5:1 | PASS | success text |
+| warning on surface | 5.34:1 | 4.5:1 | PASS | warning text |
+| danger on surface | 6.57:1 | 4.5:1 | PASS | error text |
+| info on surface | 5.77:1 | 4.5:1 | PASS | info text |
+| line-strong on surface | 3.40:1 | 3:1 | PASS | control border (non-text) |
+| accent on surface | 5.55:1 | 3:1 | PASS | focus ring / accent marks (non-text) |
+
+## dark
+| pair | ratio | required | verdict | role |
+|---|---|---|---|---|
+| ink on canvas | 16.23:1 | 4.5:1 | PASS | body text on the page |
+| ink on surface | 14.69:1 | 4.5:1 | PASS | body text on a card |
+| ink on raised | 13.02:1 | 4.5:1 | PASS | body text on a raised panel |
+| ink-soft on surface | 10.19:1 | 4.5:1 | PASS | secondary text |
+| ink-muted on canvas | 6.88:1 | 4.5:1 | PASS | muted helper text |
+| ink on accent-soft | 12.47:1 | 4.5:1 | PASS | current nav item text |
+| on-accent on accent | 8.18:1 | 4.5:1 | PASS | label on a solid accent button |
+| success on surface | 7.95:1 | 4.5:1 | PASS | success text |
+| warning on surface | 10.19:1 | 4.5:1 | PASS | warning text |
+| danger on surface | 7.28:1 | 4.5:1 | PASS | error text |
+| info on surface | 9.02:1 | 4.5:1 | PASS | info text |
+| line-strong on surface | 3.89:1 | 3:1 | PASS | control border (non-text) |
+| accent on surface | 7.87:1 | 3:1 | PASS | focus ring / accent marks (non-text) |
+
+Result: all pairs pass

@@ -12,9 +12,25 @@
 
 .ember-markdown {
   color: var(--color-ink);
+  /* Reading copy is set in the serif face - a note reader should read like a
+     document, not like a dashboard. UI chrome around it stays in Inter. */
+  font-family: var(--font-serif);
   /* Long unbroken strings (URLs, model output) must wrap instead of pushing
      the column wider than its measure. */
   overflow-wrap: break-word;
+}
+
+/* Serif at 14px is cramped; paragraphs and list items step up to 16/28.
+   Plain CSS beats the text-body utility (unlayered rules win over @layer), so
+   the components stay untouched. */
+.ember-markdown :is(p, li, blockquote) {
+  font-size: 1rem;
+  line-height: 1.75;
+}
+
+.ember-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
 }
 
 /* The column caps the measure; wide children scroll inside it rather than

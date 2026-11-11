@@ -1,5 +1,3 @@
-import { useState } from 'react'
-import toast from 'react-hot-toast'
 import {
   getGeneralSettings,
   updateGeneralSettings,
@@ -12,8 +10,9 @@ import { Card } from '@/ember/ui/Card'
 import { Input } from '@/ember/ui/Input'
 import { Skeleton } from '@/ember/ui/Skeleton'
 import { Switch } from '@/ember/ui/Switch'
-import { SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingRow, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
 import { useSectionDraft } from '@/ember/pages/settings/useSectionDraft'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 
 /** 草稿在设置页内跨分区保留时用的 key。 */
 const DRAFT_KEY = 'general'
@@ -63,7 +62,7 @@ type NumericField =
 export function GeneralSection() {
   const { t } = useI18n()
   const { data, loading, error, reload } = useAsync(getGeneralSettings)
-  const [saving, setSaving] = useState(false)
+  const { state: saveState, saving, run: runSave } = useSaveFeedback()
   // 草稿存在跨卸载的仓库里：切到别的分区看一眼再回来，改过的数值还在。
   const [draft, setDraft] = useSectionDraft<GeneralSettingsPatch>(DRAFT_KEY)
 
@@ -79,17 +78,11 @@ export function GeneralSection() {
   const save = async () => {
     // 读失败时每个 num() 都会回落成 0，保存会把 26 个数值字段写成 0。
     if (error) return
-    setSaving(true)
-    try {
+    await runSave(async () => {
       await updateGeneralSettings(patch)
-      toast.success(t('settings.saved'))
       setDraft(undefined)
       reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSaving(false)
-    }
+    })
   }
 
   if (loading && !data) {
@@ -114,14 +107,17 @@ export function GeneralSection() {
       title={t('settings.general')}
       description={t('settings.general.description')}
       actions={
-        <Button
-          variant="primary"
-          onClick={save}
-          loading={saving}
-          disabled={!Object.keys(patch).length || Boolean(error)}
-        >
-          {t('common.save')}
-        </Button>
+        <>
+          <SaveStatus state={saveState} />
+          <Button
+            variant="primary"
+            onClick={save}
+            loading={saving}
+            disabled={!Object.keys(patch).length || Boolean(error)}
+          >
+            {t('common.save')}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-col gap-6">

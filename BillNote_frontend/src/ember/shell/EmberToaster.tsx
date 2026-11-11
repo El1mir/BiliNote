@@ -21,8 +21,8 @@ export function EmberToaster() {
         duration: 4000,
         className:
           'rounded-surface border border-line bg-canvas px-3.5 py-2.5 text-small text-ink shadow-float',
-        success: { className: 'border-ok/30', iconTheme: { primary: '#16a34a', secondary: '#ffffff' } },
-        error: { className: 'border-danger/30', iconTheme: { primary: '#dc2626', secondary: '#ffffff' } },
+        success: { className: 'border-ok/30', iconTheme: { primary: 'var(--success)', secondary: 'var(--surface)' } },
+        error: { className: 'border-danger/30', iconTheme: { primary: 'var(--danger)', secondary: 'var(--surface)' } },
       }}
     />
   )

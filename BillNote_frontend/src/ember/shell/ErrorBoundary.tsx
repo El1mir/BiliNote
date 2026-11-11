@@ -99,7 +99,7 @@ export class ErrorBoundary extends Component<Props, State> {
             aria-labelledby="boundary-title"
             className="w-full max-w-[560px] overflow-hidden rounded-surface border border-line bg-canvas shadow-raise"
           >
-            <div className="flex items-start gap-3 border-b border-line bg-[#fef2f2] px-5 py-4">
+            <div className="flex items-start gap-3 border-b border-line bg-danger-soft px-5 py-4">
               <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-danger/10 text-danger">
                 <TriangleAlert className="size-4" aria-hidden="true" />
               </span>
@@ -108,7 +108,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   {title}
                 </h1>
                 {this.props.scope ? (
-                  <p className="mt-0.5 font-mono text-caption text-ink-mute">{this.props.scope}</p>
+                  <p className="mt-0.5 font-mono text-caption text-ink-muted">{this.props.scope}</p>
                 ) : null}
               </div>
             </div>
@@ -117,11 +117,11 @@ export class ErrorBoundary extends Component<Props, State> {
               <p className="text-small text-ink-soft">{body}</p>
               <pre
                 data-boundary-detail
-                className="max-h-40 overflow-auto rounded-control bg-ink px-3 py-2 font-mono text-caption leading-relaxed text-[#fca5a5]"
+                className="max-h-40 overflow-auto rounded-control bg-raised px-3 py-2 font-mono text-caption leading-relaxed text-danger"
               >
                 {detail}
               </pre>
-              <p className="text-caption text-ink-mute">
+              <p className="text-caption text-ink-muted">
                 {zh
                   ? '页面其余部分仍然可用；若反复出现，请复制日志并反馈。'
                   : 'The rest of the page is unaffected. If this repeats, copy the logs and report it.'}

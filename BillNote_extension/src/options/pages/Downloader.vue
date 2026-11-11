@@ -76,7 +76,7 @@ onMounted(() => {
     <div class="flex items-center justify-between mb-4">
       <div>
         <h1 class="text-xl font-bold">下载配置</h1>
-        <p class="text-xs text-gray-500 mt-1">
+        <p class="text-xs text-ink-soft mt-1">
           每平台的 cookie 写入后端 (config/downloader.json)；下载时由对应 downloader 读取注入 yt-dlp。
         </p>
       </div>
@@ -94,9 +94,9 @@ onMounted(() => {
         <h2 class="font-semibold">{{ PLATFORM_LABELS[p] }}</h2>
         <span
           v-if="rows[p]?.cookie"
-          class="tag bg-green-100 text-green-700"
+          class="tag bg-success-soft text-success"
         >已配置</span>
-        <span v-else class="tag bg-gray-100 text-gray-500">未配置</span>
+        <span v-else class="tag bg-raised text-ink-soft">未配置</span>
       </div>
 
       <textarea
@@ -106,7 +106,7 @@ onMounted(() => {
       />
 
       <div class="flex items-center gap-2">
-        <button class="btn-primary" :disabled="rows[p]?.busy" @click="syncFromBrowser(p)">
+        <button class="btn-accent" :disabled="rows[p]?.busy" @click="syncFromBrowser(p)">
           {{ rows[p]?.busy ? '处理中…' : '从浏览器同步' }}
         </button>
         <button class="btn-secondary" :disabled="rows[p]?.busy" @click="saveManual(p)">
@@ -116,9 +116,9 @@ onMounted(() => {
           v-if="rows[p]?.status?.text"
           class="text-xs"
           :class="{
-            'text-green-700': rows[p].status.kind === 'ok',
-            'text-red-600': rows[p].status.kind === 'err',
-            'text-gray-500': rows[p].status.kind === 'idle',
+            'text-success': rows[p].status.kind === 'ok',
+            'text-danger': rows[p].status.kind === 'err',
+            'text-ink-soft': rows[p].status.kind === 'idle',
           }"
         >{{ rows[p].status.text }}</span>
       </div>

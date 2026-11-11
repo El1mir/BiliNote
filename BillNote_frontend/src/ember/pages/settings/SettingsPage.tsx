@@ -1,10 +1,11 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { Activity, AudioLines, Cpu, FileText, Globe, HardDrive, Info, MessageSquareText, ScanText, Settings as SettingsIcon, SlidersHorizontal, Download as DownloadIcon } from 'lucide-react'
+import { useSyncExternalStore } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { FileText, Settings as SettingsIcon } from 'lucide-react'
 import { useI18n } from '@/ember/i18n/context'
-import type { MessageKey } from '@/ember/i18n/strings'
 import { AppShell } from '@/ember/shell/AppShell'
 import { LanguageSwitcher } from '@/ember/shell/LanguageSwitcher'
 import { cn } from '@/ember/lib/cn'
+import { Select } from '@/ember/ui/Select'
 import { GeneralSection } from '@/ember/pages/settings/sections/GeneralSection'
 import { ModelSection } from '@/ember/pages/settings/sections/ModelSection'
 import { TranscriberSection } from '@/ember/pages/settings/sections/TranscriberSection'
@@ -15,46 +16,38 @@ import { DownloadSection } from '@/ember/pages/settings/sections/DownloadSection
 import { MonitorSection } from '@/ember/pages/settings/sections/MonitorSection'
 import { ProxySection } from '@/ember/pages/settings/sections/ProxySection'
 import { AboutSection } from '@/ember/pages/settings/sections/AboutSection'
-import { useHasDraft, useUnsavedCount } from '@/ember/pages/settings/useSectionDraft'
+import { useUnsavedCount } from '@/ember/pages/settings/useSectionDraft'
+import {
+  SECTIONS,
+  sectionIdFromPath,
+  sectionOptions,
+  type SectionDef,
+  type SectionId,
+} from '@/ember/pages/settings/sections'
+import {
+  draftsVersion,
+  draftKeys,
+  subscribeDrafts,
+} from '@/ember/pages/settings/drafts'
 
-type SectionDef = { id: string; labelKey: MessageKey; icon: React.ReactNode }
-
-const SECTIONS: SectionDef[] = [
-  { id: 'general', labelKey: 'settings.general', icon: <SlidersHorizontal className="size-4" /> },
-  { id: 'model', labelKey: 'settings.model', icon: <Cpu className="size-4" /> },
-  { id: 'transcriber', labelKey: 'settings.transcriber', icon: <AudioLines className="size-4" /> },
-  { id: 'ocr', labelKey: 'settings.ocr', icon: <ScanText className="size-4" /> },
-  { id: 'prompt', labelKey: 'settings.prompt', icon: <MessageSquareText className="size-4" /> },
-  { id: 'media', labelKey: 'settings.media', icon: <HardDrive className="size-4" /> },
-  { id: 'download', labelKey: 'settings.download', icon: <DownloadIcon className="size-4" /> },
-  { id: 'proxy', labelKey: 'settings.proxy', icon: <Globe className="size-4" /> },
-  { id: 'monitor', labelKey: 'settings.monitor', icon: <Activity className="size-4" /> },
-  { id: 'about', labelKey: 'settings.about', icon: <Info className="size-4" /> },
-]
-
-/**
- * Settings. The section list is a horizontal scroll strip on narrow screens and
- * a vertical list beside the content on wide ones — the same DOM, no duplicate
- * markup, so a viewport change never remounts a section and drops form state.
- */
-/** 单个分区项：草稿角标订阅仓库，所以这里必须是组件（hook 不能在 map 回调里用）。 */
-function SectionLink({ section }: { section: SectionDef }) {
+/** 单个分区项：草稿角标要订阅仓库，所以这里必须是组件（hook 不能在 map 回调里用）。 */
+export function SectionLink({ section }: { section: SectionDef }) {
   const { t } = useI18n()
-  const dirty = useHasDraft(section.id)
+  const dirty = useDraftKeys()
 
   return (
     <NavLink
       to={`/settings/${section.id}`}
       className={({ isActive }) =>
         cn(
-          'ember-press flex shrink-0 items-center gap-2.5 rounded-control px-3 py-2 text-small font-semibold whitespace-nowrap',
-          isActive ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+          'ember-press flex min-h-11 shrink-0 items-center gap-2.5 rounded-control px-3 py-2 text-small font-semibold whitespace-nowrap',
+          isActive ? 'bg-primary-soft text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
         )
       }
     >
-      <span className="shrink-0">{section.icon}</span>
+      <section.icon className="size-4 shrink-0" aria-hidden="true" />
       {t(section.labelKey)}
-      {dirty ? (
+      {dirty.has(section.id) ? (
         <span
           role="status"
           aria-label={t('settings.unsavedBadge')}
@@ -66,9 +59,55 @@ function SectionLink({ section }: { section: SectionDef }) {
   )
 }
 
+function useDraftKeys(): ReadonlySet<string> {
+  useSyncExternalStore(subscribeDrafts, draftsVersion, () => 0)
+  return new Set(draftKeys())
+}
+
+/**
+ * 分区导航：宽屏是左侧竖排列表，窄屏收成原生下拉。
+ *
+ * 以前窄屏是横向滚动条——10 个分区只露出前 3 个，用户得先猜右边还有东西。
+ * 原生 select 一颗控件装下全部选项、自带键盘与移动端行为，且不需要额外的
+ * 抽屉状态。两条分支都只切路由；分区切换不卸载草稿（drafts 仓库在 React 之外）。
+ */
+export function SettingsNav({ current }: { current: SectionId }) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const dirty = useDraftKeys()
+
+  return (
+    <>
+      <div className="lg:hidden">
+        <label htmlFor="settings-section" className="sr-only">
+          {t('settings.title')}
+        </label>
+        <Select
+          id="settings-section"
+          className="h-11"
+          value={current}
+          options={sectionOptions(t, dirty)}
+          onChange={event => navigate(`/settings/${event.target.value}`)}
+        />
+      </div>
+
+      <nav
+        aria-label={t('settings.title')}
+        className="hidden shrink-0 flex-col gap-1 lg:flex lg:w-56"
+      >
+        {SECTIONS.map(section => (
+          <SectionLink key={section.id} section={section} />
+        ))}
+      </nav>
+    </>
+  )
+}
+
 export default function SettingsPage() {
   const { t } = useI18n()
   const unsaved = useUnsavedCount()
+  const location = useLocation()
+  const current = sectionIdFromPath(location.pathname)
 
   return (
     <AppShell
@@ -88,16 +127,11 @@ export default function SettingsPage() {
         </header>
 
         <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:gap-8">
-          <nav
-            aria-label={t('settings.title')}
-            className="ember-scroll-fade-x -mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 pb-1 lg:mx-0 lg:w-56 lg:flex-col lg:overflow-visible lg:px-0 lg:[mask-image:none]"
-          >
-            {SECTIONS.map(section => (
-              <SectionLink key={section.id} section={section} />
-            ))}
-          </nav>
+          <SettingsNav current={current} />
 
-          <div className="min-w-0 flex-1">
+          {/* 触控设备上输入框也要 44px：tokens.css 的 coarse 规则只兜了 button/select，
+              设置页表单几乎全是 input，所以在这里按 pointer 类型补一刀。 */}
+          <div className="min-w-0 flex-1 pointer-coarse:[&_input]:min-h-11 pointer-coarse:[&_textarea]:min-h-11">
             <Routes>
               <Route index element={<Navigate to="general" replace />} />
               <Route path="general" element={<GeneralSection />} />

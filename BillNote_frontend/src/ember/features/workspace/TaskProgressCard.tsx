@@ -1,23 +1,18 @@
-import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import type { Task } from '@/store/taskStore'
 import { useI18n } from '@/ember/i18n/context'
 import { Card } from '@/ember/ui/Card'
 import { Progress } from '@/ember/ui/Progress'
 import { Button } from '@/ember/ui/Button'
-import { Badge } from '@/ember/ui/Badge'
 import { Spinner } from '@/ember/ui/Spinner'
-import {
-  detailSummary,
-  stageKey,
-  statusKey,
-  statusTone,
-  taskProgress,
-  taskTitle,
-} from '@/ember/features/workspace/taskState'
+import { StatusBadge } from './StatusBadge'
+import { detailSummary, stageKey, statusKey, taskProgress, taskTitle } from './taskState'
 
 type TaskProgressCardProps = {
   task: Task
-  onRetry?: () => void
+  /** 重试失败任务；返回的 promise 结束前按钮保持 busy。 */
+  onRetry?: () => void | Promise<void>
 }
 
 /**
@@ -27,9 +22,13 @@ type TaskProgressCardProps = {
  * 阶段行优先显示后端写的 `stage_label`（"音频转写""拼接网格图"这种），回落到
  * 前端 14 阶段映射，最后才回落到状态文案 —— 三档回退保证任何一条历史记录都
  * 不会出现空行。`detail` 里的计数（切片/帧/网格）单独一行，只在认得出来时渲染。
+ *
+ * 重试按钮自带 busy：重试接口按"范围内所有失败任务"排队，双击会让同一批失败
+ * 任务排两次队。`retrying` 同时挡住第二次点击并把按钮切到 loading。
  */
 export function TaskProgressCard({ task, onRetry }: TaskProgressCardProps) {
   const { t } = useI18n()
+  const [retrying, setRetrying] = useState(false)
   const value = taskProgress(task)
   const running = !['SUCCESS', 'FAILED', 'FAILD'].includes(String(task.status))
   const failed = ['FAILED', 'FAILD'].includes(String(task.status))
@@ -40,34 +39,35 @@ export function TaskProgressCard({ task, onRetry }: TaskProgressCardProps) {
   // 只显示阶段名，不伪造一个 0% 或 100%。
   const showProgress = task.progress !== null && task.progress !== undefined
 
+  const retry = async () => {
+    if (!onRetry || retrying) return
+    setRetrying(true)
+    try {
+      await onRetry()
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   return (
-    <Card className="bg-canvas">
-      <div className="flex flex-col gap-3 p-4 sm:p-5">
+    <Card>
+      <div className="flex flex-col gap-3 p-4 sm:p-6">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 shrink-0">
-            {failed ? (
-              <AlertTriangle className="text-danger size-4" />
-            ) : running ? (
-              <Loader2 className="ember-spin text-ember size-4" />
-            ) : (
-              <CheckCircle2 className="text-ok size-4" />
-            )}
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <p className="text-small text-ink line-clamp-1 font-semibold">{taskTitle(task)}</p>
-            <p className="text-caption text-ink-soft line-clamp-1" data-testid="task-stage">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="ember-overline text-ink-muted">{t('workspace.title')}</span>
+            <p className="line-clamp-1 text-card leading-snug font-semibold text-ink">
+              {taskTitle(task)}
+            </p>
+            <p className="line-clamp-1 text-caption text-ink-soft" data-testid="task-stage">
               {stageLabel}
             </p>
             {detail ? (
-              <p
-                className="text-caption text-ink-mute truncate tabular-nums"
-                data-testid="task-detail"
-              >
+              <p className="truncate text-caption tabular-nums text-ink-muted" data-testid="task-detail">
                 {detail}
               </p>
             ) : null}
           </div>
-          <Badge tone={statusTone(task.status)}>{t(statusKey(task.status))}</Badge>
+          <StatusBadge status={task.status} className="shrink-0" />
         </div>
 
         {showProgress ? (
@@ -78,12 +78,23 @@ export function TaskProgressCard({ task, onRetry }: TaskProgressCardProps) {
           <Spinner label={t('task.progressIndeterminate')} className="text-ink-soft" />
         ) : null}
 
-        {task.message ? <p className="text-caption text-ink-soft">{task.message}</p> : null}
+        {task.message ? (
+          <p className="rounded-control border border-danger/20 bg-danger-soft px-3 py-2 text-caption text-danger">
+            {task.message}
+          </p>
+        ) : null}
 
         {failed && onRetry ? (
           <div>
-            <Button size="sm" variant="secondary" onClick={onRetry}>
-              {t('common.retry')}
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={retrying}
+              aria-busy={retrying || undefined}
+              onClick={retry}
+            >
+              <RotateCcw className="size-3.5" aria-hidden="true" />
+              {t('task.retryFailed')}
             </Button>
           </div>
         ) : null}

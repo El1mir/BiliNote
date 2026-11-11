@@ -2,17 +2,10 @@ import type { DragEvent } from 'react'
 import { CheckSquare, Square } from 'lucide-react'
 import type { Task } from '@/store/taskStore'
 import { useI18n } from '@/ember/i18n/context'
-import { Badge } from '@/ember/ui/Badge'
 import { Progress } from '@/ember/ui/Progress'
 import { cn } from '@/ember/lib/cn'
-import {
-  detailSummary,
-  stageKey,
-  statusKey,
-  statusTone,
-  taskProgress,
-  taskTitle,
-} from '@/ember/features/workspace/taskState'
+import { StatusBadge } from './StatusBadge'
+import { detailSummary, stageKey, taskProgress, taskTitle } from './taskState'
 
 type TaskCardProps = {
   task: Task
@@ -32,6 +25,9 @@ type TaskCardProps = {
  * 一屏十几条任务里只看得到一排"生成中"。阶段文案优先用后端写的 `stage_label`，
  * 回落前端映射；计数（切片/帧/网格）来自 `detail`；`progress` 为 null 时
  * 不画进度条，因为一条停在 0% 的条比没有条更误导。
+ *
+ * 选中态用"左侧 3px 强调条 + 染色底"表达，不用整块描边：列表里同时有 hover、
+ * 拖拽目标和选中三种状态，抢眼的粗边框会让它们互相淹没。
  */
 export function TaskCard({
   task,
@@ -58,31 +54,36 @@ export function TaskCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       className={cn(
-        'ember-press group rounded-surface relative flex w-full flex-col gap-1.5 border px-3 py-2.5 text-left',
+        'ember-press group relative flex w-full cursor-pointer flex-col gap-1.5 rounded-control border py-2.5 pr-3 pl-3 text-left',
+        'transition-colors duration-[var(--dur-hover)] ease-[var(--ease)]',
         active
-          ? 'border-ember/40 bg-ember-soft/60'
-          : 'border-line bg-surface hover:border-ink-mute/40'
+          ? 'border-accent/40 bg-accent-soft pl-3.5'
+          : 'border-line bg-surface hover:border-line-strong hover:bg-raised/60'
       )}
     >
+      {active ? (
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent"
+        />
+      ) : null}
+
       <span className="flex items-start gap-2">
         {selecting ? (
           checked ? (
-            <CheckSquare className="text-ember mt-0.5 size-4 shrink-0" />
+            <CheckSquare className="mt-0.5 size-4 shrink-0 text-accent" />
           ) : (
-            <Square className="text-ink-mute mt-0.5 size-4 shrink-0" />
+            <Square className="mt-0.5 size-4 shrink-0 text-ink-muted" />
           )
         ) : null}
-        <span className="text-small text-ink line-clamp-2 min-w-0 flex-1 font-semibold">
+        <span className="line-clamp-2 min-w-0 flex-1 text-card leading-snug font-semibold text-ink">
           {taskTitle(task)}
         </span>
-        <Badge tone={statusTone(task.status)}>{t(statusKey(task.status))}</Badge>
+        <StatusBadge status={task.status} className="shrink-0 translate-y-[1px]" />
       </span>
 
       {stageLabel || detail ? (
-        <span
-          className="text-caption text-ink-soft flex items-center gap-2"
-          data-testid="task-card-stage"
-        >
+        <span className="flex items-center gap-2 text-caption text-ink-soft" data-testid="task-card-stage">
           {stageLabel ? <span className="truncate">{stageLabel}</span> : null}
           {detail ? (
             <>
@@ -95,7 +96,7 @@ export function TaskCard({
 
       {showProgress ? <Progress value={taskProgress(task)} /> : null}
 
-      <span className="text-caption text-ink-mute flex items-center gap-2">
+      <span className="flex items-center gap-2 text-caption text-ink-muted">
         <span className="shrink-0 whitespace-nowrap tabular-nums">
           {relativeTime(task.createdAt, locale)}
         </span>

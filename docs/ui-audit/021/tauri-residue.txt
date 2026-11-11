@@ -1,0 +1,53 @@
+# Tauri 残留判据（W7 集成验收）
+
+命令 1：`git grep -il tauri`（全仓文件列表，期望只剩迁移说明与历史证据）
+```
+CHANGELOG.md
+CLAUDE.md
+README.md
+backend/main.py
+backend/tests/014-backend-cache-optimization/after-result.json
+backend/tests/014-backend-cache-optimization/make_after_report.py
+docs/ui-audit/evidence/s2-tauri-log.txt
+docs/ui-audit/evidence/t064-dependency-grep.txt
+docs/ui-audit/evidence/w5-hit-area.txt
+docs/ui-audit/t072-onboarding-startup-evidence.md
+docs/ui-audit/t074-tauri-removal-evidence.md
+docs/ui-audit/ui-rationality-plan.md
+specs/005-modern-dark-ui-and-task-progress/spec.md
+specs/014-backend-cache-optimization/spec.md
+specs/014-backend-cache-optimization/tickets/05-readonly-endpoint-ttl.md
+specs/017-web-rebuild-and-architecture/spec.md
+specs/018-single-batch-and-merged-note/spec.md
+specs/021-workbench-redesign/spec.md
+wayfinder/015-web-rebuild-architecture/README.md
+wayfinder/015-web-rebuild-architecture/tickets/002-task-read-model-and-update-transport.md
+wayfinder/015-web-rebuild-architecture/tickets/008-frontend-workspace-data-module.md
+wayfinder/016-frontend-backend-mapping/wp4b-onboarding-verification.md
+```
+
+命令 2：`Test-Path src-tauri` / `Test-Path BillNote_frontend/src-tauri` / `Test-Path BillNote_frontend/node_modules/@tauri-apps`
+```
+False
+False
+False
+```
+
+命令 3：`git grep -n -E 'HashRouter|__TAURI_INTERNALS__|isTauri' -- BillNote_frontend/src`（期望 0 行）
+```
+(0 hits)
+```
+
+命令 4：`git grep -n tauri -- BillNote_frontend/package.json BillNote_frontend/pnpm-lock.yaml`（期望 0 行）
+```
+(0 hits)
+```
+
+命令 5：`git grep -n BrowserRouter -- BillNote_frontend/src/ember/EmberApp.tsx`
+```
+BillNote_frontend/src/ember/EmberApp.tsx:2:import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+BillNote_frontend/src/ember/EmberApp.tsx:45:        <BrowserRouter>
+BillNote_frontend/src/ember/EmberApp.tsx:66:        </BrowserRouter>
+```
+
+注：`BillNote_frontend/src/ember/features/reader/MarkdownNote.tsx` 与 `vite.config.ts` 只剩注释中的迁移说明；`src-tauri/`、`@tauri-apps` 依赖、Tauri 脚本均不存在。

@@ -1,16 +1,17 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BiliNote - 强大的AI视频笔记神器</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600&display=swap"
-    />
+    <meta name="color-scheme" content="light dark" />
+    <!--
+      Fonts are self-hosted through @fontsource and imported in src/fonts.ts:
+      no third-party request on first paint, no CDN dependency for an offline
+      or air-gapped install. Latin subsets only — CJK falls back to the system
+      stack declared in tokens.css.
+    -->
   </head>
   <body>
     <div id="root"></div>

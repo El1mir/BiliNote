@@ -10,7 +10,7 @@ type CheckboxProps = {
   className?: string
 }
 
-/** Terracotta check mark on a warm surface; the mark fades in, nothing moves. */
+/** Accent check mark on a surface; the mark fades in, nothing moves. */
 export function Checkbox({ checked, onChange, disabled, id, label, className }: CheckboxProps) {
   return (
     <button
@@ -23,7 +23,7 @@ export function Checkbox({ checked, onChange, disabled, id, label, className }: 
       onClick={() => onChange(!checked)}
       className={cn(
         'ember-press inline-flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border',
-        checked ? 'border-ember bg-ember text-white' : 'border-line bg-surface',
+        checked ? 'border-primary bg-primary text-on-primary' : 'border-line-strong bg-surface',
         disabled && 'cursor-not-allowed opacity-50',
         className
       )}

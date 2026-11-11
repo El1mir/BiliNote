@@ -29,7 +29,7 @@ export function Field({ label, htmlFor, hint, error, required, className, childr
     <div className={cn('flex flex-col gap-1.5', className)}>
       <label htmlFor={controlId} className="text-small font-semibold text-ink">
         {label}
-        {required ? <span className="ml-0.5 text-ember">*</span> : null}
+        {required ? <span className="ml-0.5 text-primary">*</span> : null}
       </label>
       <FieldContext.Provider
         value={{

@@ -65,7 +65,13 @@ git tag -a vX.Y.Z -m "BiliNote vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-push tag **会自动触发 [`.github/workflows/release-extension.yml`](.github/workflows/release-extension.yml)**：构建插件并把 `.zip` / `.xpi` / `.crx` 挂到对应 GitHub Release。
+push tag **会自动触发三条流水线**：
+
+- [`.github/workflows/release-web.yml`](.github/workflows/release-web.yml) —— 构建 `BillNote_frontend/dist`，打成 `bilinote-web-X.Y.Z.tar.gz` 挂到 Release（静态前端产物，部署见 README「部署形态」）。
+- [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) —— 构建并推送 `ghcr.io/<repo>:X.Y.Z` 一体镜像（`Dockerfile.complete`，amd64 + arm64）。
+- [`.github/workflows/release-extension.yml`](.github/workflows/release-extension.yml) —— 构建插件并把 `.zip` / `.xpi` / `.crx` 挂到对应 GitHub Release。
+
+没有 tag 时两条 Web/镜像流水线也能 `workflow_dispatch` 手动跑（版本号落 `0.0.0`，只留 artifact）。
 
 ## 5. 创建 GitHub Release（如果还没有）
 
@@ -102,10 +108,6 @@ CI 默认会创建 / 更新 `vX.Y.Z` 对应的 Release。如果你想自己写 r
 3. 上传 `bilinote-extension-X.Y.Z.xpi`
 4. 选择"在 AMO 公开"或"自托管"
 5. 提交审核
-
-### 桌面端 (Tauri)
-
-仓库已有 GitHub Actions 在 `v*` tag 时构建桌面端安装包并自动挂到 GitHub Release，无需额外操作。
 
 ## 7. 清理
 

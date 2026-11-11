@@ -1,0 +1,56 @@
+{
+  "screens": [
+    "settings-general-1440-light.png",
+    "settings-general-1024-light.png",
+    "settings-general-768-light.png",
+    "settings-general-375-light.png",
+    "settings-model-1024-dark.png",
+    "settings-media-375-dark.png",
+    "settings-save-saved-1024-light.png",
+    "settings-proxy-roundtrip-1024-light.png",
+    "settings-media-confirm-1024-light.png",
+    "settings-ocr-test-busy-1024-light.png",
+    "settings-ocr-load-error-1024-light.png",
+    "settings-transcriber-375-touch.png"
+  ],
+  "metrics": {
+    "light-1440-overflow": 0,
+    "light-1440-nav": {
+      "nav": "flex",
+      "select": "inline-block"
+    },
+    "light-1024-overflow": 0,
+    "light-1024-nav": {
+      "nav": "flex",
+      "select": "inline-block"
+    },
+    "light-768-overflow": 0,
+    "light-768-nav": {
+      "nav": "none",
+      "select": "inline-block"
+    },
+    "light-375-overflow": 0,
+    "light-375-nav": {
+      "nav": "none",
+      "select": "inline-block"
+    },
+    "dark-1024-class": true,
+    "dark-1024-bg": "rgb(17, 23, 25)",
+    "dark-1024-overflow": 0,
+    "dark-375-overflow": 0,
+    "save-feedback": true,
+    "proxy-persisted-url": "http://127.0.0.1:7890",
+    "proxy-persisted-enabled": "true",
+    "media-confirm-text": "确认清理？\n\n将删除 0 项资源，此操作不可撤销。\n\n只删除已超过保留期的文件，保留期内的资源不受影响。\n\n取消\n确认",
+    "ocr-test-busy": {
+      "ariaBusy": "true",
+      "disabled": true
+    },
+    "ocr-load-error-alert": "读取设置失败，未加载到可编辑内容\n\n为免把空值当成配置写回，已禁用该分区的保存。请确认后端可用后重试。\n\n重试",
+    "ocr-load-error-inputs": 1,
+    "ocr-load-error-save": 0,
+    "touch-small-targets": [],
+    "touch-overflow": 0
+  },
+  "errors": []
+}

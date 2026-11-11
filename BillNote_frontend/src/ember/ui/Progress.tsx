@@ -10,7 +10,7 @@ type ProgressProps = {
 }
 
 /**
- * 4px rounded track with a terracotta fill.
+ * 4px rounded track with a Accent fill.
  * The fill is driven by transform:scaleX so only a GPU property animates.
  *
  * 没有 label 时进度条仍然需要可访问名 —— 读屏用户听不到"某某，44%"，只听到一个
@@ -40,7 +40,7 @@ export function Progress({ value, label, className }: ProgressProps) {
         aria-label={accessibleLabel}
       >
         <div
-          className="ember-progress-fill h-full w-full rounded-full bg-ember"
+          className="ember-progress-fill h-full w-full rounded-full bg-primary"
           style={{ transform: `scaleX(${clamped})` }}
         />
       </div>

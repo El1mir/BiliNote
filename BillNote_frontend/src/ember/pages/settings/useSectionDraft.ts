@@ -53,3 +53,9 @@ export function useHasDraft(key: string): boolean {
   useSyncExternalStore(subscribeDrafts, draftsVersion, () => 0)
   return draftKeys().includes(key)
 }
+
+/** 有草稿的分区集合（窄屏下拉的未保存标记用；订阅版本号，内容每次渲染取最新）。 */
+export function useDraftKeySet(): ReadonlySet<string> {
+  useSyncExternalStore(subscribeDrafts, draftsVersion, () => 0)
+  return new Set(draftKeys())
+}

@@ -18,7 +18,7 @@ type TabsProps = {
 }
 
 /**
- * Underline tabs — active tab is terracotta with a 2px bottom border.
+ * Underline tabs — active tab is Accent with a 2px bottom border.
  *
  * WAI-ARIA tabs 模式：tablist 内只有当前 tab 可 Tab 进入（roving tabindex），
  * 左右方向键在 tab 之间移动并聚焦，Home/End 跳到首尾。鼠标点击仍然直接切换。
@@ -67,13 +67,13 @@ export function Tabs({ items, value, onChange, idBase, className }: TabsProps) {
             onKeyDown={event => onKeyDown(event, index)}
             className={cn(
               'ember-press relative -mb-px inline-flex items-center gap-1.5 rounded-t-control px-3 py-2 text-small font-semibold',
-              active ? 'text-ember' : 'text-ink-soft hover:bg-surface hover:text-ink',
+              active ? 'text-primary' : 'text-ink-soft hover:bg-surface hover:text-ink',
             )}
           >
             {item.label}
             {item.badge}
             {active ? (
-              <span aria-hidden="true" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-ember" />
+              <span aria-hidden="true" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
             ) : null}
           </button>
         )

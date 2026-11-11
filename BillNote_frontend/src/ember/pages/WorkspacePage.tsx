@@ -4,7 +4,11 @@ import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useTaskStore } from '@/store/taskStore'
 import { retryFailedTasks } from '@/services/note'
-import { retryResultKind, retrySelectedFailedTasks } from '@/ember/features/workspace/retryFailed'
+import {
+  retryResultKind,
+  retryScopeForTask,
+  retrySelectedFailedTasks,
+} from '@/ember/features/workspace/retryFailed'
 import { useTaskPolling } from '@/hooks/useTaskPolling'
 import { useI18n } from '@/ember/i18n/context'
 import { AppShell } from '@/ember/shell/AppShell'
@@ -34,6 +38,7 @@ export function WorkspacePage() {
   const tasks = useTaskStore(state => state.tasks)
   const currentTaskId = useTaskStore(state => state.currentTaskId)
   const loadTasks = useTaskStore(state => state.loadTasks)
+  const tasksLoadError = useTaskStore(state => state.tasksLoadError)
   const setCurrentTask = useTaskStore(state => state.setCurrentTask)
   const [listLoading, setListLoading] = useState(true)
   const noteGroups = useNoteGroups()
@@ -149,6 +154,8 @@ export function WorkspacePage() {
           <GroupPanel state={noteGroups} totalCount={tasks.length} />
           <TaskList
             loading={listLoading}
+            error={tasksLoadError}
+            onReload={() => void loadTasks()}
             activeGroupId={noteGroups.activeGroupId}
             onDragTasks={noteGroups.setDraggingIds}
             onDragEnd={() => noteGroups.setDropTargetId(null)}
@@ -186,7 +193,8 @@ export function WorkspacePage() {
             <TaskProgressCard
               task={currentTask}
               onRetry={() => {
-                void loadTasks()
+                const { scope, groupId } = retryScopeForTask(currentTask)
+                return retryFailedInScope([currentTask.id], scope, groupId)
               }}
             />
             <NotePanel task={currentTask} />

@@ -7,11 +7,11 @@ export type ButtonSize = 'sm' | 'md' | 'lg'
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary:
-    'bg-ember text-white border border-transparent hover:bg-ember-hover hover:shadow-ember disabled:hover:bg-ember',
+    'bg-primary text-on-primary border border-transparent hover:bg-primary-hover hover:shadow-primary disabled:hover:bg-primary',
   secondary:
-    'bg-transparent text-ink border border-line hover:bg-surface hover:border-ink-mute disabled:hover:bg-transparent',
+    'bg-transparent text-ink border border-line-strong hover:bg-surface hover:border-ink-mute disabled:hover:bg-transparent',
   ghost: 'bg-transparent text-ink-soft border border-transparent hover:bg-surface hover:text-ink',
-  destructive: 'bg-danger text-white border border-transparent hover:opacity-90',
+  destructive: 'bg-danger text-on-danger border border-transparent hover:opacity-90',
 }
 
 const SIZE: Record<ButtonSize, string> = {
@@ -27,7 +27,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 /**
- * Ember Studio button — 8px radius, semibold, 150ms transition.
+ * BiliNote workbench button — 8px radius, semibold, 150ms transition.
  * Press feedback scales to 0.975; hover glow is reserved for the primary variant.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

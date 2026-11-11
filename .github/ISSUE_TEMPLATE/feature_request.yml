@@ -31,7 +31,6 @@ body:
         - 后端 (backend/)
         - Web 前端 (BillNote_frontend/)
         - 浏览器插件 (BillNote_extension/)
-        - Tauri 桌面端
         - 不确定
   - type: textarea
     id: extra

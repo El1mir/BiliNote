@@ -11,7 +11,7 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
 
 /**
  * Native select styled to the Ember input spec — 8px radius, surface fill,
- * terracotta focus ring. Native keeps keyboard and mobile behaviour free.
+ * Accent focus ring. Native keeps keyboard and mobile behaviour free.
  *
  * 焦点环用 focus-visible（鼠标点击不留环）；在 <Field> 内时自动继承
  * id / aria-describedby / aria-invalid，调用方显式传入的值优先。
@@ -29,8 +29,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         aria-describedby={describedBy ?? field?.describedBy}
         aria-invalid={invalid ?? (field?.invalid ? true : undefined)}
         className={cn(
-          'rounded-control border-line bg-surface text-body text-ink h-10 w-full appearance-none border py-0 pr-9 pl-3',
-          'transition-[border-color,box-shadow] duration-[var(--dur-hover)] ease-[var(--ease)] focus-visible:border-ember focus-visible:ring-[3px] focus-visible:ring-ember-ring focus-visible:outline-none',
+          'rounded-control border-line-strong bg-surface text-body text-ink h-10 w-full appearance-none border py-0 pr-9 pl-3',
+          'transition-[border-color,box-shadow] duration-[var(--dur-hover)] ease-[var(--ease)] focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary-ring focus-visible:outline-none',
           'aria-[invalid=true]:border-danger',
           'disabled:cursor-not-allowed disabled:opacity-50',
           className

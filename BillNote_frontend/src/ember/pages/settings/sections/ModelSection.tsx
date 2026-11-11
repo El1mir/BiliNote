@@ -11,7 +11,8 @@ import { Dialog } from '@/ember/ui/Dialog'
 import { EmptyState } from '@/ember/ui/EmptyState'
 import { Badge } from '@/ember/ui/Badge'
 import { Skeleton } from '@/ember/ui/Skeleton'
-import { SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { SaveStatus, SettingsLoadError, SettingsSection } from '@/ember/pages/settings/Section'
+import { useSaveFeedback } from '@/ember/pages/settings/saveFeedback'
 import { ProviderDialog } from '@/ember/pages/settings/sections/ProviderDialog'
 import { ProviderModels } from '@/ember/pages/settings/sections/ProviderModels'
 import { GlobalModelPicker } from '@/ember/pages/settings/sections/GlobalModelPicker'
@@ -35,7 +36,7 @@ export function ModelSection() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<ProviderSummary | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [savingGlobal, setSavingGlobal] = useState(false)
+  const { state: globalSaveState, saving: savingGlobal, run: runGlobalSave } = useSaveFeedback()
   const global = useAsync(getGlobalModelOptions)
 
   const providers: ProviderSummary[] = data ?? []
@@ -46,16 +47,10 @@ export function ModelSection() {
   const selectGlobal = async (value: string) => {
     const parsed = parseGlobalModelValue(value)
     if (!parsed) return
-    setSavingGlobal(true)
-    try {
+    await runGlobalSave(async () => {
       await activateGlobalModel(parsed.providerId, parsed.modelName)
-      toast.success(t('settings.model.globalSaved'))
       global.reload()
-    } catch {
-      toast.error(t('settings.saveFailed'))
-    } finally {
-      setSavingGlobal(false)
-    }
+    })
   }
 
   return (
@@ -75,6 +70,7 @@ export function ModelSection() {
         saving={savingGlobal}
         onSelect={value => void selectGlobal(value)}
       />
+      <SaveStatus state={globalSaveState} />
 
       {loading && !data ? (
         <div className="flex flex-col gap-3">

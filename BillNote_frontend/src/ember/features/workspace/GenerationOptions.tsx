@@ -306,7 +306,7 @@ export function GenerationOptions({ value, onChange, idPrefix = '' }: Props) {
                 />
               </Field>
             </div>
-            <p className="rounded-control border-line bg-canvas text-caption text-ink-soft border px-3 py-2">
+            <p className="rounded-control border border-line bg-raised px-3 py-2 text-caption text-ink-soft">
               {label('workspace.multimodalHint')}
             </p>
           </div>

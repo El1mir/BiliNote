@@ -24,7 +24,7 @@ export function NotFoundPage() {
             // an <a> inside a <button>, which is invalid and breaks middle-click.
             <Link
               to="/"
-              className="ember-press inline-flex h-10 shrink-0 items-center justify-center rounded-control border border-transparent bg-ember px-4 text-body font-semibold whitespace-nowrap text-white hover:bg-ember-hover hover:shadow-ember"
+              className="ember-press inline-flex h-10 shrink-0 items-center justify-center rounded-control border border-transparent bg-accent px-4 text-body font-semibold whitespace-nowrap text-on-accent hover:bg-accent-hover hover:shadow-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {t('notFound.back')}
             </Link>

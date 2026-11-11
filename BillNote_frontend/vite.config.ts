@@ -11,9 +11,10 @@ function readAppVersion() {
   const fallbackVersion = '0.0.0'
 
   try {
-    const tauriConfigPath = path.resolve(__dirname, 'src-tauri/tauri.conf.json')
-    const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, 'utf-8')) as { version?: string }
-    return tauriConfig.version || fallbackVersion
+    const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')) as {
+      version?: string
+    }
+    return pkg.version || fallbackVersion
   }
   catch {
     return fallbackVersion
@@ -27,20 +28,14 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, envDir)
 
   /**
-   * Asset base. The two consumers disagree, so this cannot be a constant:
-   *
-   * - Web (nginx / docker-compose): index.html is served for EVERY route, so a
-   *   relative './assets/x.js' resolves against the current path. A deep link
-   *   like /settings/general asks for /settings/assets/x.js, gets index.html
-   *   back with 200, and the app dies on a module parse error — a blank page on
-   *   reload, for every route except '/'. Absolute '/' is the only correct base.
-   * - Tauri (pnpm build --mode tauri): the bundle is loaded from the app's own
-   *   asset protocol and keeps working with relative paths, so './' is kept.
-   *
-   * Keyed on `mode` because that is what src-tauri/tauri.conf.json passes in
-   * its beforeBuildCommand — no extra env var for a packager to forget.
+   * Asset base. index.html is served for EVERY route by nginx / docker-compose,
+   * so a relative ./assets/x.js resolves against the current path. A deep link
+   * like /settings/general would ask for /settings/assets/x.js, get index.html
+   * back with 200, and die on a module parse error — a blank page on reload for
+   * every route except '/'. Absolute '/' is the only correct base now that the
+   * desktop target is gone.
    */
-  const assetBase = mode === 'tauri' ? './' : '/'
+  const assetBase = '/'
   const apiBaseUrl = env.VITE_API_BASE_URL || 'http://127.0.0.1:8483'
   const port = parseInt(env.VITE_FRONTEND_PORT || '3015', 10)
   const appVersion = env.VITE_APP_VERSION || process.env.VITE_APP_VERSION || readAppVersion()

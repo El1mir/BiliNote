@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
-import { RefreshCw, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, RefreshCw, TriangleAlert } from 'lucide-react'
 import { cn } from '@/ember/lib/cn'
 import { useI18n } from '@/ember/i18n/context'
 import { Button } from '@/ember/ui/Button'
 import { Card } from '@/ember/ui/Card'
+import type { SaveState } from '@/ember/pages/settings/saveFeedback'
 
 type SettingsSectionProps = {
   title: ReactNode
@@ -62,6 +63,33 @@ export function SettingsLoadError({ detail, onRetry, className }: SettingsLoadEr
         </Button>
       </div>
     </Card>
+  )
+}
+
+type SaveStatusProps = {
+  state: SaveState
+}
+
+/**
+ * 保存结果的内联状态：与保存按钮并排放，role=status 让读屏也知道结果。
+ * saving 不在这里画——按钮已经在转圈；idle 什么都不渲染，免得抬头抖动。
+ */
+export function SaveStatus({ state }: SaveStatusProps) {
+  const { t } = useI18n()
+  if (state !== 'saved' && state !== 'error') return null
+
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className={cn(
+        'inline-flex items-center gap-1.5 text-caption',
+        state === 'saved' ? 'text-ink-soft' : 'text-danger',
+      )}
+    >
+      {state === 'saved' ? <CheckCircle2 className="size-3.5" /> : <TriangleAlert className="size-3.5" />}
+      {state === 'saved' ? t('settings.saved') : t('settings.saveFailed')}
+    </span>
   )
 }
 

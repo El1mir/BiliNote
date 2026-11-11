@@ -217,6 +217,13 @@ interface TaskStore {
    * 这个方法不抛异常（失败只 console.warn），调用方不需要 try/catch。
    */
   loadTasks: () => Promise<void>
+  /**
+   * 上一次 loadTasks 的失败原因（诊断用，不参与状态机）。
+   *
+   * 列表接口挂了以前只会 console.warn，界面看起来像"还没有历史记录" —— 把网络故障
+   * 伪装成空态是最误导人的一种失败。这里只记一行文案给界面渲染错误态，成功即清空。
+   */
+  tasksLoadError: string | null
   removeTask: (id: string) => void
   /**
    * 批量删除（spec 010）：整批只打一次后端请求，返回后端逐条结果。
@@ -318,6 +325,7 @@ const taskFromServerRow = (row: TaskListRow): Task => ({
 
 export const useTaskStore = create<TaskStore>()((set, get) => ({
   tasks: [],
+  tasksLoadError: null,
   currentTaskId: null,
 
   addPendingTask: (
@@ -437,6 +445,8 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
         | undefined
       // 正常是 `{tasks, total}`；历史上有的接口会自己再套一层，这里两者都兼容。
       const rows: TaskListRow[] = Array.isArray(payload) ? payload : (payload?.tasks ?? [])
+      // 请求成功但一行都没有，是真空态而不是失败态：先把上一次的错误清掉。
+      set({ tasksLoadError: null })
       if (!Array.isArray(rows) || rows.length === 0) return
 
       set(state => {
@@ -463,6 +473,7 @@ export const useTaskStore = create<TaskStore>()((set, get) => ({
       })
     } catch (e) {
       console.warn('任务列表重载失败', e)
+      set({ tasksLoadError: e instanceof Error ? e.message : String(e) })
     }
   },
 
