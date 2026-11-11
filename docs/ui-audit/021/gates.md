@@ -126,6 +126,24 @@ Result: all pairs pass
 
 后续复核以本段输出为准；`contrast.txt` 是同一脚本早先一次运行的落盘副本。
 
+## 交付树复跑（HEAD d82c628，W7 工件全部入库后）
+
+在提交了 W7 证据的树上再跑一遍，确认已提交状态与门禁一致（命令与 exit 全部为本次实测）：
+
+| 命令 | exit | 输出摘要 |
+|---|---|---|
+| `pnpm exec vitest run`（BillNote_frontend） | 0 | Test Files 30 passed (30) · Tests 197 passed (197) · Duration 8.37s |
+| `pnpm exec tsc -b` | 0 | 无诊断 |
+| `pnpm lint` | 0 | `eslint .` 无 error / warning |
+| `node scripts/i18n-contract.cjs` | 0 | `i18n contract OK — 572 keys, zh-CN and en-US aligned` |
+| `pnpm build` | 0 | `✓ built in 18.18s`（仅 rollup chunk-size 提示） |
+| `pnpm typecheck`（BillNote_extension） | 0 | `tsc --noEmit` 无诊断 |
+| `CI=1 pnpm exec vitest run` | 0 | Tests 10 passed (10) · Duration 4.55s |
+| `pnpm build`（BillNote_extension） | 0 | `✓ built in 1.66s`，产物写 `../extension/dist` |
+| `pnpm test:e2e` | 未复跑 | 环境阻塞未变（chromium-1129 缺失、官方下载无进展）；结论维持红 / BLOCKED，见上节 |
+
+截图与对比度证据未重拍：本轮只验证已提交树的门禁可复现，产物字节未变。
+
 ## 偏差与限制
 
 - e2e 的浏览器是 chromium-1181 复制成 chromium-1129 目录后运行的（Playwright 版本检查通过，协议兼容）；这是**本机环境替代**，CI 上仍应安装官方 chromium-1129。
