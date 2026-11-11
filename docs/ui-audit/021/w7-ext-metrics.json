@@ -1,0 +1,42 @@
+[
+  {
+    "file": "w7-ext-popup-light-400x600",
+    "w": 400,
+    "h": 600,
+    "dark": false,
+    "sw": 400,
+    "cw": 400
+  },
+  {
+    "file": "w7-ext-options-light-1280x800",
+    "w": 1280,
+    "h": 800,
+    "dark": false,
+    "sw": 1280,
+    "cw": 1280
+  },
+  {
+    "file": "w7-ext-popup-dark-400x600",
+    "w": 400,
+    "h": 600,
+    "dark": true,
+    "sw": 400,
+    "cw": 400
+  },
+  {
+    "file": "w7-ext-options-dark-1280x800",
+    "w": 1280,
+    "h": 800,
+    "dark": true,
+    "sw": 1280,
+    "cw": 1280
+  },
+  {
+    "file": "w7-ext-sidepanel-light-360x800",
+    "w": 360,
+    "h": 800,
+    "dark": false,
+    "sw": 360,
+    "cw": 360
+  }
+]

@@ -1,6 +1,6 @@
 # 021 · 工作台重设计（Workbench redesign）
 
-状态：approved · 创建：2026-11-10 · 来源：父任务 T-066
+状态：implemented · 创建：2026-11-10 · 来源：父任务 T-066
 
 ## 背景
 
@@ -54,6 +54,8 @@
 - [x] T-070 阅读区：`reader.css` 衬线 16/28、68ch 列、代码块主题映射（`codeTheme.ts`）、
       灯箱改 `Dialog`（Escape/遮罩/焦点回归）、转写搜索命中数（`transcriptSearch.ts`）
 - [x] `tests/021-workbench-redesign/reader.test.tsx`：10 例静态/纯函数回归
+- [x] T-075 W7 集成验收：`docs/ui-audit/021/{gates.md,w7-acceptance.md,tauri-residue.txt}` 与
+      `docs/ui-audit/021/w7-*.png`（四档宽度 × 双主题、阅读区、设置、引导、扩展三面）
 
 ## 验收证据
 
@@ -61,3 +63,11 @@
 - `pnpm exec vitest run tests/021-workbench-redesign` → 2 files / 7 tests
 - 全量门禁：vitest 28 files / 177 tests、tsc、lint、i18n contract（572 keys）、build 全 exit 0
 - T-070 阅读区浏览器证据：`docs/ui-audit/evidence/t070/`（1440/1024、浅/深、灯箱、转写搜索与空态）
+
+## W7（T-075）集成验收结论
+
+- 8 条验收逐条证据见 `docs/ui-audit/021/w7-acceptance.md`；门禁命令与 exit code 见 `docs/ui-audit/021/gates.md`。
+- 前端四条（vitest 30 files/197 tests、tsc、lint、build）与扩展三条（typecheck、vitest 4/10、build）全 exit 0。
+- 扩展 `pnpm test:e2e` exit 1：`e2e/basic.spec.ts` 仍断言 vitesse-webext 模板的「Open Options」按钮与模板 logo，UI 已在 spec 017 重写 → 陈旧用例，需单独修复卡（本 spec 不改测试）。
+- 扩展 typecheck 需在 `BillNote_extension/tsconfig.json` 的 `types` 保留 `webextension-polyfill`，否则 `src/logic/cookies.ts:15` 报 TS7006（本卡已修）。
+- 浏览器/扩展截图均基于 mock 后端，不替代真实生成链路。

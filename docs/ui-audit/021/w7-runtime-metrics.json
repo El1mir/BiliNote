@@ -1,0 +1,140 @@
+[
+  {
+    "name": "w7-375-light",
+    "w": 375,
+    "scrollWidth": 365,
+    "clientWidth": 365,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-768-light",
+    "w": 768,
+    "scrollWidth": 758,
+    "clientWidth": 758,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-1024-light",
+    "w": 1024,
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-1440-light",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-reader-1440-light",
+    "w": 1440,
+    "scrollWidth": 1430,
+    "clientWidth": 1430,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "reader-column-light",
+    "width": 600.578125,
+    "font": "\"Source Serif 4\", \"Noto Serif SC\", Georgia, \"Songti SC\", serif",
+    "lineHeight": "21.994px"
+  },
+  {
+    "name": "w7-settings-1440-light",
+    "w": 1440,
+    "scrollWidth": 1430,
+    "clientWidth": 1430,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-375-dark",
+    "w": 375,
+    "scrollWidth": 365,
+    "clientWidth": 365,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-768-dark",
+    "w": 768,
+    "scrollWidth": 758,
+    "clientWidth": 758,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-1024-dark",
+    "w": 1024,
+    "scrollWidth": 1024,
+    "clientWidth": 1024,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-1440-dark",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-reader-1440-dark",
+    "w": 1440,
+    "scrollWidth": 1430,
+    "clientWidth": 1430,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "reader-column-dark",
+    "width": 600.578125,
+    "font": "\"Source Serif 4\", \"Noto Serif SC\", Georgia, \"Songti SC\", serif",
+    "lineHeight": "21.994px"
+  },
+  {
+    "name": "w7-settings-1440-dark",
+    "w": 1440,
+    "scrollWidth": 1430,
+    "clientWidth": 1430,
+    "canvas": "rgb(17, 23, 25)",
+    "ink": "rgb(237, 244, 243)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-onboarding-1440-light",
+    "w": 1440,
+    "scrollWidth": 1440,
+    "clientWidth": 1440,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  },
+  {
+    "name": "w7-transcript-empty-1440-light",
+    "w": 1440,
+    "scrollWidth": 1430,
+    "clientWidth": 1430,
+    "canvas": "rgb(244, 246, 247)",
+    "ink": "rgb(23, 33, 38)",
+    "fonts": "Inter, -apple-system, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif"
+  }
+]
