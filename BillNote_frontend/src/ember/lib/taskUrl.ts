@@ -5,9 +5,8 @@
  * 笔记。store 里的 `currentTaskId` 只是它的内存镜像，用来让列表高亮和阅读区
  * 不必各自解析地址栏。
  *
- * Web（BrowserRouter）与桌面（HashRouter）共用这一份实现：两者都通过
- * react-router 的 `useSearchParams` 暴露 search 串，所以这里只做纯字符串处理，
- * 不碰 `window.location`，两种 Router 下行为一致。
+ * 只通过 react-router 的 `useSearchParams` 读取 search 串，所以这里只做纯字符串
+ * 处理，不碰 `window.location` —— 离开 Router 也能单测，换路由实现也不用改。
  */
 
 /** 查询参数名。用 query 而不是 `/note/:id`：工作区只有一块阅读区，多一条路由反而多一层空态。 */

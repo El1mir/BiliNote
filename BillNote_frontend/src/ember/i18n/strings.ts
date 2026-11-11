@@ -72,7 +72,8 @@ const zhCN = {
   'onboarding.finish': '完成，进入 BiliNote',
   'onboarding.footer': '这些设置之后都能在「设置」里修改。',
   'onboarding.step1.title': '后端连通性',
-  'onboarding.step1.description': '桌面端会自动启动 Python 后端进程，这里检查它是否已经能响应。',
+  'onboarding.step1.description':
+    '后端服务需要先启动（Docker、pnpm dev 或你自己的部署），这里检查它是否已经能响应。',
   'onboarding.step1.checking': '检测中…',
   'onboarding.step1.ready': '后端已就绪，可以继续。',
   'onboarding.step1.notReady':
@@ -699,7 +700,7 @@ const enUS: Dictionary = {
   'onboarding.footer': 'Everything here can be changed later in Settings.',
   'onboarding.step1.title': 'Backend connection',
   'onboarding.step1.description':
-    'The desktop build starts the Python backend itself — this checks that it is answering yet.',
+    'The backend must already be running (Docker, pnpm dev, or your own service) — this checks whether it is answering.',
   'onboarding.step1.checking': 'Checking…',
   'onboarding.step1.ready': 'The backend is ready — you can continue.',
   'onboarding.step1.notReady':

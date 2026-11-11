@@ -53,11 +53,17 @@
 
 本版本还没有提供release，只能通过拉取源码启动，并更换了包管理系统到uv
 
-## 📦 桌面版下载
+## 📦 部署形态
 
-本项目提供了 Windows 和 macOS 桌面客户端，可在 [Releases](https://github.com/JefferyHcool/BiliNote/releases) 页面下载最新版本。
+本版本以 **Web 应用 + 浏览器扩展** 两种形态提供，不再发布 Windows / macOS 桌面安装包：
 
-> Windows 用户请注意：一定要在没有中文路径的环境下运行。
+- **Web**：`docker-compose up` 起后端 + 前端 + nginx，浏览器访问 `http://localhost:3015`；
+  本地开发也可在 `BillNote_frontend/` 下 `pnpm dev`（默认 3015，代理 `/api` 到 8483）。
+- **浏览器扩展**：`BillNote_extension/` 下 `pnpm build`，在 `chrome://extensions/` 加载解包目录
+  `BillNote_extension/extension/`。
+
+桌面版（原 Tauri 客户端）已彻底移除：`BillNote_frontend/src-tauri/`、`@tauri-apps/*` 依赖、
+PyInstaller sidecar 与桌面安装包流水线都不再存在。历史版本说明见下方更新记录与 [CHANGELOG.md](./CHANGELOG.md)。
 
 ## 💎 BiliNote AI笔记系统一对一搭建服务
 

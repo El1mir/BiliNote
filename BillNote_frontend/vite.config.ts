@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
    * like /settings/general would ask for /settings/assets/x.js, get index.html
    * back with 200, and die on a module parse error — a blank page on reload for
    * every route except '/'. Absolute '/' is the only correct base now that the
-   * desktop (Tauri) target is gone.
+   * desktop target is gone.
    */
   const assetBase = '/'
   const apiBaseUrl = env.VITE_API_BASE_URL || 'http://127.0.0.1:8483'

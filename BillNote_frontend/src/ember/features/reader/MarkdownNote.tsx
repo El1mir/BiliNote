@@ -70,7 +70,7 @@ function buildComponents({ onOpenImage, dark, viewImageLabel }: ComponentOptions
     ),
     a: ({ node: _node, href, children, ...props }) => {
       // 站内锚点（模型写的目录链接）必须留在本页滚动。给 _blank 会新开一个空白页，
-      // HashRouter 下还会被当成路由跳转，直接把读者带离笔记。
+      // 交给路由则会被当成跳转，直接把读者带离笔记。
       if (href && href.startsWith('#')) {
         return (
           <a

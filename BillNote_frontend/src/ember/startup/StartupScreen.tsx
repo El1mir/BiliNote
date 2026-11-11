@@ -32,7 +32,7 @@ type Props = {
  * read the default locale can still change it before anything else loads.
  *
  * 桌面端 sidecar 已移除：这里只处理 HTTP 就绪探测的等待与失败，不再有
- * 重启进程、复制 stderr、安装路径提示这些 Tauri 专属路径。
+ * 重启进程、复制 stderr、安装路径提示这些桌面端专属路径。
  */
 export function StartupScreen({ loading, failed, lastError, reason, onRetry }: Props) {
   const { t } = useI18n()
