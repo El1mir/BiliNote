@@ -149,3 +149,40 @@ Result: all pairs pass
 - e2e 的浏览器是 chromium-1181 复制成 chromium-1129 目录后运行的（Playwright 版本检查通过，协议兼容）；这是**本机环境替代**，CI 上仍应安装官方 chromium-1129。
 - `pnpm exec playwright install chromium` 在本机不可用（无输出、无进展），未在 CI 验证。
 - 浏览器截图与扩展截图用的是 mock 后端（见 `w7-acceptance.md`），不能替代真实后端生成链路。
+
+## 遗留：CI 复跑扩展 e2e（官方 chromium-1129）
+
+记录于 2026-11-11，来源 T-077。上一节「test:e2e 未复跑 / 红」的结论已被 T-076 的重写与本机复跑取代，但**仍缺官方浏览器环境下的复跑**，故保留此债务。
+
+### 已经做的
+
+- T-076（提交 `532fc7e`）改写 `BillNote_extension/e2e/basic.spec.ts`：删 `example test`（断言模板 `Vitesse WebExt` h1），popup 断言真实「生成笔记」按钮，options 断言「后端地址」标题与「模型供应商」导航；模板断言 `Open Options` / `extension icon` 已不存在。
+- 本机 `CI=1 pnpm test:e2e` → **2 passed (17.3s)，exit 0**。
+
+### 本机替代做法（为什么本机结果不等于 CI 结果）
+
+- `@playwright/test@1.46.1` 固定要求 `chromium-1129`；本机 `%LOCALAPPDATA%/ms-playwright` 只有 chromium 1169/1181/1208/1234/1248。
+- `pnpm exec playwright install chromium` 在本机长期无进展（40 分钟无输出，已终止）。
+- 为拿到真实用例结果，把已装 `chromium-1181` 目录**复制**为 `chromium-1129`，于是 Playwright 版本检查通过、协议兼容，用例得以执行；跑完即删除该替代目录，不入库。
+- 因此本机 `2 passed` 只证明**用例断言正确、可执行**，不证明 CI 环境等价：浏览器内核版本不同（1181 vs 1129），扩展 API 行为、`--headless=new` 与 MV3 service worker 时序都可能有差异。
+
+### CI 动作（最终判据）
+
+```
+cd BillNote_extension
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium        # 必须装到官方 chromium-1129
+pnpm build                                  # e2e 读 extension/ 产物
+CI=1 pnpm test:e2e                          # 以退出码与用例数为准
+```
+
+判定口径：官方 chromium-1129 上 `2 passed` 且 exit 0 才算 e2e 门禁闭合；若红，贴完整失败栈，不得以本机替代运行的结果视为通过。
+
+### 当前状态
+
+| 项 | 状态 |
+|---|---|
+| 用例断言 | 已修正（T-076，`532fc7e`） |
+| 本机运行（chromium-1181 替代） | 2 passed，exit 0 |
+| 官方 chromium-1129 复跑 | **未做（BLOCKED：本机无法安装该版本）** |
+| CI 上的最终复跑 | 待 CI 安装官方 chromium-1129 后执行 |
