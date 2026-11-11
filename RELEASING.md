@@ -65,7 +65,13 @@ git tag -a vX.Y.Z -m "BiliNote vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-push tag **会自动触发 [`.github/workflows/release-extension.yml`](.github/workflows/release-extension.yml)**：构建插件并把 `.zip` / `.xpi` / `.crx` 挂到对应 GitHub Release。
+push tag **会自动触发三条流水线**：
+
+- [`.github/workflows/release-web.yml`](.github/workflows/release-web.yml) —— 构建 `BillNote_frontend/dist`，打成 `bilinote-web-X.Y.Z.tar.gz` 挂到 Release（静态前端产物，部署见 README「部署形态」）。
+- [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) —— 构建并推送 `ghcr.io/<repo>:X.Y.Z` 一体镜像（`Dockerfile.complete`，amd64 + arm64）。
+- [`.github/workflows/release-extension.yml`](.github/workflows/release-extension.yml) —— 构建插件并把 `.zip` / `.xpi` / `.crx` 挂到对应 GitHub Release。
+
+没有 tag 时两条 Web/镜像流水线也能 `workflow_dispatch` 手动跑（版本号落 `0.0.0`，只留 artifact）。
 
 ## 5. 创建 GitHub Release（如果还没有）
 

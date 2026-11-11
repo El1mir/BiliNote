@@ -65,6 +65,26 @@
 桌面版（原 Tauri 客户端）已彻底移除：`BillNote_frontend/src-tauri/`、`@tauri-apps/*` 依赖、
 PyInstaller sidecar 与桌面安装包流水线都不再存在。历史版本说明见下方更新记录与 [CHANGELOG.md](./CHANGELOG.md)。
 
+### 发布产物
+
+打 `vX.Y.Z` tag 会触发三条流水线，产物各自挂在 GitHub Release 或镜像仓：
+
+| 流水线 | 产物 |
+|---|---|
+| [release-web.yml](./.github/workflows/release-web.yml) | `bilinote-web-X.Y.Z.tar.gz`（`BillNote_frontend/dist` 静态文件） |
+| [docker-build.yml](./.github/workflows/docker-build.yml) | `ghcr.io/jefferyhcool/bilinote:X.Y.Z`（后端 + 前端 + nginx 一体镜像） |
+| [release-extension.yml](./.github/workflows/release-extension.yml) | 插件 `bilinote-extension-X.Y.Z.zip` / `.xpi` / `.crx` |
+
+手动发布：
+
+1. **Docker（推荐）**：`docker pull ghcr.io/jefferyhcool/bilinote:X.Y.Z`，或拉源码后
+   `docker compose up -d`（`docker-compose.yml` 会本地构建 backend / frontend）。
+2. **静态前端**：下载 `bilinote-web-X.Y.Z.tar.gz` 解压到 nginx 站点根目录；
+   `index.html` 里引用的是绝对路径 `/assets/...`，所以站点必须挂在域名根路径，
+   并把 `/api` 与 `/static` 反代到后端（开发代理见 `vite.config.ts`）。
+3. **源码部署**：`backend/` 下 `uv run python main.py`（8483）+ `BillNote_frontend/`
+   下 `pnpm dev`（3015）。完整步骤见 [快速开始](#-快速开始)。
+
 ## 💎 BiliNote AI笔记系统一对一搭建服务
 
 提供 **BiliNote AI笔记系统一对一搭建服务**：专人一对一远程协助，从环境部署、模型配置到上手使用全程陪跑，帮你快速跑通整套系统。扫码添加微信，备注「搭建服务」即可咨询：

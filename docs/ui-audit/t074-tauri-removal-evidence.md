@@ -59,3 +59,62 @@ base 仍为 `/`（`vite.config.ts:38`），构建产物直接引用根路径：
 `pnpm dev`）+ 浏览器扩展（`BillNote_extension` 解包加载），并明确桌面版已移除
 （`src-tauri/`、`@tauri-apps/*`、sidecar、安装包流水线不再存在）。历史版本说明保留在
 「更新记录」与 `CHANGELOG.md`。
+## 第二轮补充（m06424）：残留清点、Web 发布流水线、死依赖
+
+### 1. 残留清点（命令与结果）
+
+```
+git grep -il tauri                    # 只剩文档与历史材料
+git grep -n -i -E 'tauri' -- BillNote_frontend/src   # 0
+Select-String BillNote_frontend/package.json -Pattern tauri   # 0
+Select-String BillNote_frontend/pnpm-lock.yaml -Pattern tauri # 0
+git grep -n -E 'HashRouter|__TAURI_INTERNALS__|isTauri' -- BillNote_frontend/src  # 0
+```
+
+仍出现 `tauri` 的位置（全部属于「CHANGELOG / 迁移说明 / 历史证据」）：
+
+| 文件 | 性质 |
+|---|---|
+| `CHANGELOG.md`、`README.md` 更新记录、`CLAUDE.md` | 迁移说明与历史记录 |
+| `backend/main.py:95` | 注释：「桌面端（Tauri）已移除 … 不再放行」 |
+| `backend/tests/014-*` 的 after-result / make_after_report | 历史测量报告快照 |
+| `docs/ui-audit/evidence/*`、`docs/ui-audit/t072-*`、`docs/ui-audit/t074-*` | 历史证据 |
+| `specs/005`、`specs/014`、`specs/017`、`specs/018`、`specs/021`、`wayfinder/*` | 历史规格 |
+
+不存在 `src-tauri/`、`@tauri-apps/*`、`tauri.localhost` 的代码或配置引用；Router 只有
+`BrowserRouter`（`EmberApp.tsx:2,45`）。
+
+### 2. Web 发布流水线
+
+新增 `.github/workflows/release-web.yml`：`v*` tag 或 `workflow_dispatch` 触发。
+
+- pnpm 10 + Node 20，`pnpm install --frozen-lockfile`，`VITE_APP_VERSION` 由 tag 推导
+  （无 tag 落 `0.0.0`）。
+- `pnpm build` 后把 `dist` 打成 `bilinote-web-X.Y.Z.tar.gz`，`actions/upload-artifact@v4`
+  上传；tag 触发时 `softprops/action-gh-release@v2` 挂到对应 Release。
+- 后端镜像仍由既有 `docker-build.yml` 发布到 `ghcr.io/<repo>:X.Y.Z`，插件由
+  `release-extension.yml` 发布；README「发布产物」表与 `RELEASING.md` 第 4 节同步列出。
+
+校验：`yaml.safe_load` 解析通过（jobs=build-web，steps=10）；本机无 Actions runner，
+流水线未在 CI 上实跑，只做了 YAML 解析 + 本机 `pnpm build` 对等命令验证。
+
+### 3. 死依赖
+
+```
+cd BillNote_frontend && pnpm remove react-medium-image-zoom
+# dependencies: - react-medium-image-zoom 5.4.1   exit 0
+git grep -n 'react-medium-image-zoom'   # 只剩 MarkdownNote.tsx:144 说明注释与文档/历史规格
+```
+
+`package.json` −1 行、`pnpm-lock.yaml` −14 行；`MarkdownNote.tsx:144` 的注释保留（说明
+灯箱为什么不再用该库）。
+
+### 4. 门禁（第二轮，`BillNote_frontend/`）
+
+```
+pnpm exec tsc -b            → 0
+pnpm lint                   → 0
+node scripts/i18n-contract.cjs → 0（572 keys）
+pnpm exec vitest run        → 30 files / 197 tests, 0
+pnpm build                  → 0（✓ built in 10.38s）
+```

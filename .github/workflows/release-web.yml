@@ -1,0 +1,84 @@
+name: Release Web
+
+# Web 发布：打 v* tag 时构建前端静态产物（dist）并挂到对应 GitHub Release。
+# 后端镜像由 docker-build.yml 独立发布到 ghcr.io；两边的版本号都从 tag 推导。
+# 手动补发：Actions → Release Web → Run workflow（无 tag 时版本号落在 0.0.0）。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-web:
+    name: Build web bundle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: BillNote_frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=0.0.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: BillNote_frontend/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (VITE_APP_VERSION from tag)
+        env:
+          VITE_APP_VERSION: ${{ steps.version.outputs.value }}
+        run: pnpm build
+
+      - name: Pack dist
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          tar -czf "bilinote-web-${VERSION}.tar.gz" -C dist .
+          ls -lh "bilinote-web-${VERSION}.tar.gz"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilinote-web-${{ steps.version.outputs.value }}
+          path: BillNote_frontend/bilinote-web-*.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        # 只在 tag 触发时挂 Release；workflow_dispatch 只留 artifact。
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: BillNote_frontend/bilinote-web-*.tar.gz
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+
+      - name: Print deploy hints
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          echo "Web bundle: bilinote-web-${VERSION}.tar.gz (static files, serve behind nginx)"
+          echo "Backend image: ghcr.io/${{ github.repository }}:${VERSION}"
+          echo "Self-host: docker compose up -d   (repo root, backend + frontend + nginx)"

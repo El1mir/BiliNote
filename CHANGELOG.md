@@ -12,6 +12,7 @@
   - 构建：删除 `backend/build.bat` / `backend/build.sh`（PyInstaller sidecar，只服务桌面打包）与 `.github/workflows/main.yml`（桌面安装包 Release 流水线）；`vite.config.ts` 的版本号改从 `package.json` 读，`base` 固定为 `/`。
   - 后端：`CORS_ORIGIN_REGEX` 不再放行 `tauri://localhost` 与 `tauri.localhost`，只保留 localhost 与扩展 origin。
   - 文档：README / CLAUDE.md / RELEASING.md 移除桌面构建与发布说明。
+  - 删除死依赖 `react-medium-image-zoom@5.4.1`：阅读区灯箱改用 `ember/ui/Dialog`（Escape / 遮罩关闭 / 焦点回归都由 `useOverlayFocus` 保证），源码里只剩 `MarkdownNote.tsx` 一句说明它为何被替换的注释。
 
 ### Changed
 
@@ -58,6 +59,7 @@
 - 全量后端回归 **777 passed**（历史基线 653，无退化）；pyright 与 ruff 对本次改动零新增问题。
 - 新增 `specs/015-note-preset-scene-and-detail/`（spec + 4 张实现工单）与 `backend/tests/015-note-preset-scene-and-detail/`（后端 40 用例，含一份把前端 / 扩展 / 后端三处词表钉在一起的同步测试，以及一份用 `string.Formatter` 钉住 `BASE_PROMPT` 占位符集合的契约测试；前端 `BillNote_frontend/tests/015-note-preset-scene-and-detail/` 另有一份词表测试）。全量后端回归 **817 passed**（历史基线 777）。
 - `GLOSSARY.md` 再补一组概念：**场景 / 详略**（笔记呈现方式的两个正交维度，组合数相乘而非相加）。
+- 补 Web 发布流水线 `.github/workflows/release-web.yml`：`v*` tag 或手动触发时 `pnpm build` 出 `BillNote_frontend/dist`，打包 `bilinote-web-X.Y.Z.tar.gz`，上传 artifact 并挂到对应 GitHub Release（`VITE_APP_VERSION` 由 tag 推导）；`workflow_dispatch` 无 tag 时版本落 `0.0.0`，只留 artifact。README「部署形态」与 `RELEASING.md` 第 4 节同步写明三条流水线的产物与手动部署步骤（原 `main.yml` 桌面打包流水线已随 Tauri 移除删除）。
 
 ## [2.4.4] - 2026-06-23
 
