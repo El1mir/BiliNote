@@ -1,20 +1,16 @@
-import { expect, isDevArtifact, name, test } from './fixtures'
+import { expect, test } from './fixtures'
 
-test('example test', async ({ page }, testInfo) => {
-  testInfo.skip(!isDevArtifact(), 'contentScript is in closed ShadowRoot mode')
-
-  await page.goto('https://example.com')
-
-  await page.locator(`#${name} button`).click()
-  await expect(page.locator(`#${name} h1`)).toHaveText('Vitesse WebExt')
-})
-
+// 扩展三面（spec 017 重写后的真实 UI）——原 vitesse-webext 模板断言
+// （Vitesse WebExt h1 / Open Options / extension icon）已随模板 UI 一起删除。
 test('popup page', async ({ page, extensionId }) => {
   await page.goto(`chrome-extension://${extensionId}/dist/popup/index.html`)
-  await expect(page.locator('button')).toHaveText('Open Options')
+
+  await expect(page.getByRole('button', { name: '生成笔记' })).toBeVisible()
 })
 
 test('options page', async ({ page, extensionId }) => {
   await page.goto(`chrome-extension://${extensionId}/dist/options/index.html`)
-  await expect(page.locator('img')).toHaveAttribute('alt', 'extension icon')
+
+  await expect(page.getByRole('heading', { name: '后端地址' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '模型供应商' })).toBeVisible()
 })
