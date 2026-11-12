@@ -1,4 +1,5 @@
 import logging
+import os
 
 from sqlalchemy import inspect, text
 
@@ -31,6 +32,26 @@ def init_db():
     if engine_module._INIT_DB_DONE:
         return
     engine = get_engine()
+
+    # spec 022 D4：启动时把统一数据根打进日志，并提示旧版 data/data 残留。
+    # 不自动迁移历史文件——迁移会改写用户数据，必须由人决定。
+    from app.utils.path_helper import get_data_dir
+
+    data_root = get_data_dir()
+    logger.info("媒体数据根目录（DATA_DIR）：%s", data_root)
+    legacy_root = os.path.join(data_root, "data")
+    try:
+        legacy_entries = os.listdir(legacy_root) if os.path.isdir(legacy_root) else []
+    except OSError:
+        legacy_entries = []
+    if legacy_entries:
+        logger.warning(
+            "检测到旧版数据目录 %s 非空（%d 项）；spec 022 不自动迁移，"
+            "需要时请手动把文件移入 %s",
+            legacy_root,
+            len(legacy_entries),
+            data_root,
+        )
 
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name == "sqlite":
@@ -207,4 +228,5 @@ def init_db():
                     connection.execute(text("DROP TABLE note_groups"))
                     NoteGroup.__table__.create(bind=connection)
     engine_module._INIT_DB_DONE = True
-    backfill_legacy_resources()
+    inserted = backfill_legacy_resources()
+    logger.info("媒体资源历史回填完成：新增 %d 条", inserted)

@@ -101,18 +101,24 @@ def test_judge_splits_batch_in_half_on_large_request_failure(tmp_path, monkeypat
     assert any(not item["ok"] for item in record), "夹具必须真的制造出过一次超限失败"
 
 
-def test_judge_skips_single_image_that_still_fails(tmp_path, monkeypatch):
-    """拆到单张仍失败时只跳过该帧，不让整篇笔记失败。"""
+def test_judge_degrades_when_every_batch_fails(tmp_path, monkeypatch):
+    """拆到单张仍失败时降级为保留全部候选，不让整篇笔记失败。
+
+    spec 022 D6 改写了 spec 008 §5.6b 的旧契约：任务级重试会重做下载/转写/总结，
+    代价极高而结果大概率一样，所以「判定层拿不到任何条目」降级为保留全部候选，
+    由调用方把 degraded 写进任务 detail。
+    """
     monkeypatch.setenv("NOTE_OUTPUT_DIR", str(tmp_path))
     record: list = []
-    # 上限设成 0：任何请求都失败。拆到单张后应当放弃并跳过，而不是抛出去。
+    # 上限设成 0：任何请求都失败，所有批次都解析不出条目。
     gpt = UniversalGPT(_Client(record, fail_over_bytes=0), "glm-4.6")
 
-    with pytest.raises(Exception):
-        # 所有条目都拿不到时，调用方仍按判定失败处理（spec 008 §5.6b）。
-        gpt.judge_note_frames(
-            segments=[],
-            candidates=[12.0],
-            duration=600.0,
-            image_urls=_urls(2),
-        )
+    outcome = gpt.judge_note_frames(
+        segments=[],
+        candidates=[12.0],
+        duration=600.0,
+        image_urls=_urls(2),
+    )
+
+    assert outcome.degraded == "parse_failed"
+    assert outcome.approved, "降级必须保留全部候选，而不是悄悄变成无插图笔记"

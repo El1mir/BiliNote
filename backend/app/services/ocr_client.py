@@ -31,7 +31,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import random
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -123,6 +126,72 @@ def _is_non_retryable(status_code: Optional[int], code: Any) -> bool:
         return True
     return False
 
+# ---- 重试与全局并发（spec 022 D5） ----------------------------------------
+#
+# 真机 429 来自「多任务各自开 OCR 线程」的叠加，而不是单任务并发设得高：
+# 单任务上限由 ocr_stage_concurrency 控制，但多个任务同时跑时总数仍会翻倍。
+# 所以这里再加一道**进程级**信号量，重试则负责吸收短暂的配额抖动。
+OCR_MAX_CONCURRENCY_DEFAULT = 4
+OCR_MAX_ATTEMPTS = 3
+OCR_RETRY_BASE_SECONDS = 0.5
+OCR_RETRY_MAX_SLEEP_SECONDS = 30.0
+
+_OCR_SEMAPHORE: Optional[threading.BoundedSemaphore] = None
+_OCR_SEMAPHORE_SIZE = 0
+_OCR_SEMAPHORE_LOCK = threading.Lock()
+
+
+def ocr_max_concurrency() -> int:
+    """进程级 OCR 并发上限（env OCR_MAX_CONCURRENCY，默认 4）。
+
+    非法值回退默认而不是抛错：这是护栏，不是业务参数，配置写错不该让整个
+    OCR 功能不可用。
+    """
+    try:
+        return max(1, int(os.getenv("OCR_MAX_CONCURRENCY", str(OCR_MAX_CONCURRENCY_DEFAULT))))
+    except (TypeError, ValueError):
+        return OCR_MAX_CONCURRENCY_DEFAULT
+
+
+def _ocr_semaphore() -> threading.BoundedSemaphore:
+    """懒建全局信号量；运行期改了上限就重建（旧持有者仍能正常 release）。"""
+    global _OCR_SEMAPHORE, _OCR_SEMAPHORE_SIZE
+    size = ocr_max_concurrency()
+    with _OCR_SEMAPHORE_LOCK:
+        if _OCR_SEMAPHORE is None or _OCR_SEMAPHORE_SIZE != size:
+            _OCR_SEMAPHORE = threading.BoundedSemaphore(size)
+            _OCR_SEMAPHORE_SIZE = size
+        return _OCR_SEMAPHORE
+
+
+def _is_retryable_ocr_error(exc: "OcrError") -> bool:
+    """这个 OCR 错误重试一次有没有意义？
+
+    只重试 429 / 5xx / 超时与连接失败。鉴权、参数、内容被拒、体积超限都在
+    OcrError.non_retryable 里被排除——它们只有改了配置才会好。
+    """
+    if exc.non_retryable:
+        return False
+    status = exc.status_code
+    if status is None:
+        # 超时/连接失败被包成「OCR 请求失败：...」；其余无状态码错误不重试。
+        return "请求失败" in exc.message
+    return int(status) == 429 or int(status) >= 500
+
+
+def _retry_delay(exc: "OcrError", attempt: int) -> float:
+    """本次重试前等多久：上游给了 Retry-After 就听它的，否则指数退避 + 抖动。"""
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is not None:
+        try:
+            delay = float(retry_after)
+        except (TypeError, ValueError):
+            delay = None
+        if delay is not None:
+            return max(0.0, min(delay, OCR_RETRY_MAX_SLEEP_SECONDS))
+    delay = OCR_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+    return min(delay, OCR_RETRY_MAX_SLEEP_SECONDS) + random.uniform(0, 0.25)
+
 # 共享 session 及其懒加载锁
 _SHARED_SESSION: Optional[requests.Session] = None
 _SHARED_SESSION_LOCK = threading.Lock()
@@ -162,12 +231,15 @@ class OcrError(RuntimeError):
         detail: str = "",
         status_code: Optional[int] = None,
         code: Optional[str] = None,
+        retry_after: Optional[float] = None,
     ):
         super().__init__(message)
         self.message = message
         self.detail = detail
         self.status_code = status_code
         self.code = code
+        # 上游 Retry-After（秒）；重试等待优先用它，缺失时才走指数退避。
+        self.retry_after = retry_after
         # 「重试也不会变好」的错误。调用方（note.generate 的顶层 except）会读取
         # 这个属性并转成 `last_error_non_retryable`，让重试循环立刻停下。
         # 典型就是 401/403：key 不对，只有用户改配置才可能成功，
@@ -567,9 +639,12 @@ class OcrClient:
     # ---------------- 对外入口 ----------------
 
     def recognize_image(self, image_path: Union[str, Path]) -> OcrResult:
-        """对一张本地图片（或 PDF）做一次 OCR。
+        """对一张本地图片（或 PDF）做一次 OCR，带有限重试。
 
-        失败一律抛 :class:`OcrError`，消息面向用户、`detail` 保留上游原文。
+        spec 022 D5：失败一律抛 :class:`OcrError`（消息面向用户、detail 保留原文），
+        但 429 / 5xx / 超时最多重试到 OCR_MAX_ATTEMPTS 次；鉴权、参数、内容被拒
+        这类「改了配置才会好」的错误立刻抛。每次尝试占一个进程级 OCR 名额，
+        所以多个任务叠加时的真实并发也不会超过 OCR_MAX_CONCURRENCY。
         """
         path = Path(image_path)
         if not path.is_file():
@@ -579,6 +654,27 @@ class OcrClient:
 
         self._check_page_limit(path)
 
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                with _ocr_semaphore():
+                    return self._recognize_once(path)
+            except OcrError as exc:
+                if attempt >= OCR_MAX_ATTEMPTS or not _is_retryable_ocr_error(exc):
+                    raise
+                delay = _retry_delay(exc, attempt)
+                logger.warning(
+                    "OCR 调用失败（第 %d/%d 次），%.1fs 后重试：%s",
+                    attempt,
+                    OCR_MAX_ATTEMPTS,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+
+    def _recognize_once(self, path: Path) -> OcrResult:
+        """单次 OCR 调用；重试与全局名额由 recognize_image 负责。"""
         payload = self._build_layout_parsing_request(path)
         parse = self._parse_layout_parsing
 
@@ -658,11 +754,21 @@ class OcrClient:
             parts.append(hint)
         if message:
             parts.append(message)
+        retry_after = None
+        if response is not None:
+            headers = getattr(response, "headers", None)
+            raw_retry_after = headers.get("Retry-After") if headers is not None else None
+            if raw_retry_after:
+                try:
+                    retry_after = float(raw_retry_after)
+                except (TypeError, ValueError):
+                    retry_after = None
         error = OcrError(
             "：".join([parts[0], "，".join(parts[1:])]) if len(parts) > 1 else parts[0],
             detail=body_text,
             status_code=status_code,
             code=str(code) if code else None,
+            retry_after=retry_after,
         )
         if error.non_retryable:
             logger.error(

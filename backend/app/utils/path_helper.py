@@ -5,17 +5,39 @@ from pathlib import Path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 
 
-def get_data_dir():
-    if getattr(sys, 'frozen', False):
+def _backend_root() -> str:
+    """开发态的 backend 目录；冻结态就是 exe 所在目录。"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 
-        base_dir = os.path.dirname(sys.executable)
+
+def get_data_dir() -> str:
+    """统一的媒体数据根目录（spec 022 D4）。
+
+    规则：
+    - DATA_DIR 是绝对路径：直接用；
+    - DATA_DIR 是相对路径：相对 backend 解析（与「cd backend && python main.py」
+      的工作目录语义一致，但不再依赖进程 cwd）；
+    - 未设置：<backend>/data（冻结态 <exe_dir>/data）。
+
+    历史 bug（R3）：这里曾把 base 取成 <backend>/data 后又拼一次 data，
+    返回 <backend>/data/data，而下载器、导出、媒体登记分别按 <backend>/data
+    解析——媒体资源登记因「路径越界」全部失败。现在只在这一处定义根目录。
+    """
+    base = _backend_root()
+    configured = (os.getenv("DATA_DIR") or "").strip()
+    if configured:
+        path = (
+            configured
+            if os.path.isabs(configured)
+            else os.path.join(base, configured)
+        )
     else:
-
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
-
-    data_path = os.path.join(base_dir, "data")
-    os.makedirs(data_path, exist_ok=True)
-    return data_path
+        path = os.path.join(base, "data")
+    path = os.path.abspath(path)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def get_model_dir(subdir: str = "whisper") -> str:

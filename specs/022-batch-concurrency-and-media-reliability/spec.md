@@ -128,8 +128,8 @@ def _run_with_parallel_gate(execute_fn):
         return execute_fn()          # 不再经 task_serial_executor.run
 ```
 
-- `task_serial_executor` 模块保留导出名做兼容（别处可能 import），但 note 路由不再依赖它；
-  若全仓无引用则删除模块与其测试（W1 内决定，不晚于 W1 收尾）。
+- `task_serial_executor` 模块及其测试已删除（W1 收尾）：全仓引用只有 note 路由与那个测试，
+  没有别的兼容导出需要保留。CLAUDE.md 的架构说明同步改成「闸门是唯一上限」。
 - `_ParallelGate.limit` 作为并发事实来源；合并扇出直接读它。
 
 ### 6.2 合并 checkpoint
@@ -224,9 +224,9 @@ DATA_DIR 绝对路径      → 原样使用
 | 包 | 范围 | 验收命令 | 证据格式 |
 |---|---|---|---|
 | W0 | spec + README 索引 | `git diff --check`；人工核对 6 段齐全、索引行存在 | 本文件 + `specs/README.md` 行号 |
-| W1 | note.py gate/合并/断点、task_serial_executor.py、tests/009 test_parallel_scheduler.py、tests/test_task_serial_executor.py | `pytest tests/022.../w1 tests/009.../test_parallel_scheduler.py tests/test_task_serial_executor.py -q` | pytest 摘要；最大在途计数断言；checkpoint 文件列表；章节顺序断言 |
+| W1 | note.py gate/合并/断点、services/note.py 的 OCR workers/判定接线、删除 task_serial_executor.py、tests/009 test_parallel_scheduler.py、tests/001 test_task_retry.py | `pytest tests/022.../w1 tests/009.../test_parallel_scheduler.py tests/001.../test_task_retry.py -q` | pytest 摘要；最大在途计数断言；checkpoint 文件列表；章节顺序断言 |
 | W2 | path_helper.py、media_resource_service.py、init_db.py | `pytest tests/022.../w2 tests/007.../test_media_resources.py -q` | 临时 DATA_DIR 下 media_resources.path；`_roots()` 断言；init_db 回填计数；日志无登记失败 |
-| W3 | ocr_client.py、note.py `_run_ocr_stage`/`_judge_note_frames`、universal_gpt.py、ocr_assist.py | `pytest tests/022.../w3 -q` + 既有 008 相关用例 | 429→200 请求次数；12 路并发最大在途；degraded detail；聚合告警条数 |
+| W3 | ocr_client.py、universal_gpt.py、ocr_assist.py（note.py 接线归 W1，见 Q7） | `pytest tests/022.../w3 -q` + 既有 008 相关用例 | 429→200 请求次数；12 路并发最大在途；degraded detail；聚合告警条数 |
 | W4 | openai_asr.py | `pytest tests/022.../w4 -q` | `warnings.catch_warnings(record=True)` 断言无 Pydantic 告警；时间轴断言 |
 | W5 | 集成 | 上述全量 + 真实 3–5 条短视频合并 | 日志片段（并发>1、顺序、无五类报错）；任务结果 Markdown |
 
