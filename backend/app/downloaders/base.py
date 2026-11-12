@@ -4,7 +4,7 @@ from typing import Mapping, Optional
 from app.enmus.note_enums import DownloadQuality
 from app.models.notes_model import AudioDownloadResult
 from app.models.transcriber_model import TranscriptResult
-from os import getenv
+from app.utils.path_helper import get_data_dir
 
 QUALITY_MAP = {"fast": "32", "medium": "64", "slow": "128"}
 
@@ -66,7 +66,8 @@ class Downloader(ABC):
     def __init__(self):
         # TODO 需要修改为可配置
         self.quality = QUALITY_MAP["fast"]
-        self.cache_data = getenv("DATA_DIR") or "data"
+        # spec 022 D4：与下载落盘、媒体登记共用同一个数据根。
+        self.cache_data = get_data_dir()
 
     @abstractmethod
     def download(

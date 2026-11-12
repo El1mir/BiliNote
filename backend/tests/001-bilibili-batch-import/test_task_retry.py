@@ -9,12 +9,15 @@ def _run_with(execute, generator):
     # 重试次数与退避基数现在是「设置 → 通用」里的可配置项，走 runtime_limits
     # 门面读取（改完立刻生效，不必重启）。以前这些用例改的是 note_module 上的
     # 模块常量，那个常量如今只是文档与兜底，改它不再影响执行路径。
+    # spec 022 D1 之后没有外层线程池：任务体直接在并入门闩下执行，
+    # 这里把门闩换成直通，免得用例去读设置库。
     with mock.patch.object(note_module.runtime_limits, "note_max_retries", lambda: 3), \
          mock.patch.object(
              note_module.runtime_limits, "note_retry_backoff_seconds", lambda: 0.0
          ), \
-         mock.patch.object(note_module, "task_serial_executor") as executor:
-        executor.run.side_effect = lambda fn: fn()
+         mock.patch.object(
+             note_module, "_run_with_parallel_gate", lambda fn: fn()
+         ):
         return note_module._execute_note_with_retry("t1", generator, execute)
 
 

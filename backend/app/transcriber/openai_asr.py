@@ -91,6 +91,62 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
+def _coerce_int(value: Any) -> Optional[int]:
+    """把 "0" / 0.0 这类数值写法收敛成 int；认不出来返回 None。
+
+    spec 022 D7：部分上游把 ``id``/``seek`` 写成字符串，Pydantic 在序列化时会
+    逐条报 "Expected int ... input_value='0'"。解析层先把它们规整掉，比在
+    model_dump 里关掉告警更彻底——下游读到的也确实是数字。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            try:
+                number = float(text)
+            except ValueError:
+                return None
+            return int(number) if number.is_integer() else None
+    return None
+
+
+def _normalize_raw_payload(raw: Any) -> Any:
+    """把 raw 响应里 segments[].id / seek 的字符串数值规整成 int。
+
+    只改这两个已知字段，其余原样保留：raw 是排查材料，不是业务数据，
+    不做猜测性改写。
+    """
+    if not isinstance(raw, dict):
+        return raw
+    segments = raw.get("segments")
+    if not isinstance(segments, list):
+        return raw
+    normalized = []
+    for seg in segments:
+        if not isinstance(seg, dict):
+            normalized.append(seg)
+            continue
+        item = dict(seg)
+        for key in ("id", "seek"):
+            if key in item:
+                coerced = _coerce_int(item[key])
+                if coerced is not None:
+                    item[key] = coerced
+        normalized.append(item)
+    raw = dict(raw)
+    raw["segments"] = normalized
+    return raw
+
+
 def _is_format_error(exc: Exception) -> bool:
     """只有明确是 response_format 不被支持时才降级，避免把 401/超时也当成格式问题。"""
     msg = str(exc).lower()
@@ -539,7 +595,7 @@ class OpenAIASRTranscriber(Transcriber):
         if self.api_style == "chat":
             full_text = self._chat_text(transcription)
             language = None
-            raw = self._to_dict(transcription)
+            raw = _normalize_raw_payload(self._to_dict(transcription))
         # response_format="text" 时 SDK 直接返回字符串
         elif isinstance(transcription, str):
             full_text = transcription.strip()
@@ -548,7 +604,7 @@ class OpenAIASRTranscriber(Transcriber):
         else:
             full_text = str(_get(transcription, "text") or "").strip()
             language = _get(transcription, "language")
-            raw = self._to_dict(transcription)
+            raw = _normalize_raw_payload(self._to_dict(transcription))
 
         segments = []
         for seg in (_get(transcription, "segments") or []):
@@ -596,13 +652,30 @@ class OpenAIASRTranscriber(Transcriber):
 
     @staticmethod
     def _to_dict(obj: Any) -> Optional[dict]:
+        """把 SDK 对象转成 dict；已是 dict 时直接用。
+
+        spec 022 D7：model_dump 传 warnings=False。上游偶尔把 segments[].id / seek
+        写成字符串，Pydantic 会为每条打一条 UserWarning，几十秒的转写能把日志
+        刷成噪音，而告警本身不影响结果。字段规整在 _normalize_raw_payload 里做。
+        """
         if isinstance(obj, dict):
             return obj
-        for method in ("model_dump", "to_dict"):
-            fn = getattr(obj, method, None)
-            if callable(fn):
+        model_dump = getattr(obj, "model_dump", None)
+        if callable(model_dump):
+            try:
+                return model_dump(warnings=False)
+            except TypeError:
+                # 老版 Pydantic 不认识 warnings 参数
                 try:
-                    return fn()
+                    return model_dump()
                 except Exception:
-                    continue
+                    pass
+            except Exception:
+                pass
+        to_dict = getattr(obj, "to_dict", None)
+        if callable(to_dict):
+            try:
+                return to_dict()
+            except Exception:
+                return None
         return None

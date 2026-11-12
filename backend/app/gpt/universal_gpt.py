@@ -242,12 +242,14 @@ class UniversalGPT(GPT):
           - `plan_frame_timestamps` 决定「抽哪些帧」，服务于 hybrid 采样的配额；
           - 本方法决定「抽出来的帧里哪些真的进笔记」，是插图逻辑的唯一准入闸门。
 
-        解析不出结构化结果时抛 WorthJudgementError，**绝不**返回空清单——否则一次
-        网络抖动就会让整篇笔记静默地一张图都没有（spec 008 §5.6b）。模型明确判定
-        「都不值得」时返回空 approved，那是合法结果。
+        网络/鉴权失败向上抛。spec 022 D6 起，解析不出结构化结果**不再**抛到任务级：
+        任务级重试会重做下载/转写/总结，代价极高而结果大概率一样。显式空清单记
+        degraded=empty_frames，全部批次解析失败记 degraded=parse_failed，两者都
+        返回「全部候选」（受 note_max_images 截断），由上层写进任务 detail。
         """
         from app.services.ocr_assist import (
             WorthJudgementError,
+            _degraded_outcome,
             build_judge_system_prompt,
             parse_worth_judgement,
         )
@@ -282,7 +284,11 @@ class UniversalGPT(GPT):
         if not image_urls:
             response = self._chat_completion_create(_build_messages([]))
             text = response.choices[0].message.content or ""
-            return parse_worth_judgement(text, candidates, max_images=limit)
+            try:
+                return parse_worth_judgement(text, candidates, max_images=limit)
+            except WorthJudgementError as exc:
+                logger.warning("判定层单次调用解析失败，降级为保留全部候选：%s", exc)
+                return _degraded_outcome(candidates, "parse_failed", limit)
 
         # base 必须带一张图：_build_messages([]) 在无图时把 content 装配成字符串，
         # 往里追加图片会因为没有 list 可 append 而静默丢图（体积估算恒为空）。
@@ -305,11 +311,15 @@ class UniversalGPT(GPT):
             )
 
         if not items:
-            # 每一块都解析不出条目时按「判定失败」处理：静默返回空清单会让整篇
-            # 笔记一张图都没有，而且完全看不出出过错（spec 008 §5.6b）。
-            raise WorthJudgementError(
-                "判定结果里找不到帧列表（既不是数组，也没有 frames 字段）"
+            # spec 022 D6：全部批次都解析不出条目时降级，而不是让整任务失败。
+            # 保留全部候选至少能保证笔记有插图，degraded 让这件事在任务 detail
+            # 里可见——比「静默无图」和「白白重跑三次」都好。
+            logger.warning(
+                "判定层全部批次解析失败（图片=%d 批次=%d），降级为保留全部候选",
+                len(image_urls),
+                len(batches),
             )
+            return _degraded_outcome(candidates, "parse_failed", limit)
 
         # 在**完整候选清单**上只解析一次：这样 max_images 上限、去重、排序和
         # 统计字段都是全局口径，而不是「每块各算一遍再拼起来」。

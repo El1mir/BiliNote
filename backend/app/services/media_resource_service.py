@@ -511,10 +511,10 @@ def _note_export_dir() -> Path:
     覆盖，默认 `<backend>/data/note_output`）。同样刻意不 import：那个模块会拉起
     markdown_pdf 等导出依赖。
     """
-    base_dir = Path(__file__).resolve().parents[2]
-    data_dir = os.getenv("DATA_DIR", "data")
-    data_path = Path(data_dir) if os.path.isabs(data_dir) else base_dir / data_dir
-    return (data_path / "note_output").resolve()
+    from app.utils.path_helper import get_data_dir
+
+    # spec 022 D4：导出目录与下载/媒体登记同根，避免再各自解析 DATA_DIR。
+    return (Path(get_data_dir()) / "note_output").resolve()
 
 
 def _task_status(task_id: str | None, cache: dict[str, str | None]) -> str | None:

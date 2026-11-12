@@ -59,7 +59,7 @@ Load unpacked at `chrome://extensions/` → select `BillNote_extension/extension
 - `app/routers/` — API routes: `note.py` (generation), `note_group.py` (note groups), `provider.py`, `model.py`, `config.py`
 - `app/services/` — Business logic:
   - `note.py` — `NoteGenerator` orchestrates the full pipeline (download → transcribe → LLM → notes)
-  - `task_serial_executor.py` — task queue
+  - 并发调度没有独立队列模块：`routers/note.py` 的 `_ParallelGate` 是唯一并发上限（设置里的并行数，热更新），任务体直接执行；批量入口用固定 8 worker 的分发池接住请求
   - `cookie_manager.py` — per-platform cookie storage; injected into yt-dlp by downloaders (e.g. Bilibili)
   - `transcriber_config_manager.py` — persisted transcriber settings
 - `app/downloaders/` — Platform adapters with a shared `base.py` interface; only the Bilibili adapter is registered for generation (`SUPPORT_PLATFORM_MAP` in `app/services/constant.py`), while source intake (`app/services/source_intake.py`) stays platform-neutral so more adapters can be added without touching the intake contract.

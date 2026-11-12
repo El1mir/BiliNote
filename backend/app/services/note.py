@@ -287,6 +287,10 @@ class NoteGenerator:
         self.frame_candidates: list[float] | None = None  # 抽帧实际产出的时间点
         self.picked_frames: list[float] | None = None  # 挑选层挑中的时间点
         self.approved_shots: list | None = None  # 判定通过、必须编入笔记的截图点
+        # 画面判定的降级原因（spec 022 D6）：empty_frames / parse_failed / None。
+        # 降级时 approved_shots 是「全部候选」而不是空清单，任务不失败，
+        # 但用户必须能从任务 detail 里看出这次插图没有经过模型确认。
+        self.judgement_degraded: str | None = None
         # 判定通过的每张图各自 OCR 出来的完整内容（m04445：无论 OCR 返回什么，
         # 都作为参考喂给总结模型）。键是时间点秒数，值是结构化参考 dict。
         self.ocr_texts: dict | None = None
@@ -756,7 +760,18 @@ class NoteGenerator:
                 )
 
             # 6. 完成
-            self._update_status(task_id, TaskStatus.SUCCESS)
+            self._update_status(
+                task_id,
+                TaskStatus.SUCCESS,
+                detail=(
+                    {
+                        "judgement_degraded": True,
+                        "judgement_degraded_reason": self.judgement_degraded,
+                    }
+                    if self.judgement_degraded
+                    else None
+                ),
+            )
             logger.info(f"笔记生成成功 (task_id={task_id})")
             return NoteResult(
                 markdown=markdown or "", transcript=transcript, audio_meta=audio_meta
@@ -1088,9 +1103,11 @@ class NoteGenerator:
     ) -> list:
         """第二次调用：让 LLM 看网格图，判定哪些候选帧值得编入笔记。
 
-        返回值就是「允许编入笔记」的全部来源。异常一律向上抛（网络失败、解析失败
-        都算），因为静默返回空清单会让整篇笔记在用户毫无察觉的情况下没有插图
-        （spec 008 §5.6b）。
+        返回值就是「允许编入笔记」的全部来源。网络失败、鉴权失败一律向上抛；
+        但 spec 022 D6 起，**解析失败/模型给出空清单**不再抛到任务级：任务级重试
+        会重做下载、转写、总结，代价极高而结果大概率一样。降级时返回全部候选
+        （受 note_max_images 截断），并把原因记在 self.judgement_degraded
+        （empty_frames / parse_failed），由任务 detail 对用户可见。
 
         ``candidates`` 缺省时退回 ``self.frame_candidates``（抽帧实际产出的时间点），
         但 OCR 辅助模式下应当由 `_pick_note_frames` 的挑选结果显式传入——判定集合
@@ -1124,6 +1141,8 @@ class NoteGenerator:
             except Exception:
                 logger.warning("探测视频时长失败，判定提示词里的时长按未知处理")
 
+        from app.services.ocr_assist import WorthDecision, WorthJudgementError
+
         try:
             outcome = gpt.judge_note_frames(
                 transcript.segments if transcript else [],
@@ -1131,13 +1150,61 @@ class NoteGenerator:
                 duration=duration,
                 image_urls=self.video_img_urls,
             )
+        except WorthJudgementError as exc:
+            # spec 022 D6：解析失败（含模型显式返回空清单）降级为「保留全部候选」，
+            # 不再触发任务级重试 —— 重试会重做下载/转写/总结，代价极高且结果大概率一样。
+            cap = max(1, runtime_limits.note_max_images())
+            approved = [
+                WorthDecision(time=float(point))
+                for point in candidates[:cap]
+                if point is not None
+            ]
+            self.judgement_degraded = str(exc) or "判定期望结果无法解析"
+            logger.warning(
+                "画面价值判定降级（%s）：保留 %d 个候选画面继续生成",
+                exc,
+                len(approved),
+            )
+            self._update_status(
+                task_id,
+                TaskStatus.SUMMARIZING,
+                stage=TaskStage.SUMMARIZING,
+                message="画面判定降级：保留全部候选画面",
+                detail={
+                    "judgement_degraded": True,
+                    "judgement_degraded_reason": self.judgement_degraded,
+                    "candidates": len(candidates),
+                },
+            )
+            return approved
         except Exception as exc:
             logger.error(f"画面价值判定失败：{exc}")
             self._handle_exception(task_id, exc)
             raise
 
+        degraded = getattr(outcome, "degraded", None)
+        if degraded:
+            # spec 022 D6：保留全部候选继续出笔记，只降级插图质量，不让整任务失败。
+            self.judgement_degraded = degraded
+            logger.warning(
+                "画面价值判定降级（%s）：保留 %d 个候选画面继续生成",
+                degraded,
+                len(outcome.approved),
+            )
+            self._update_status(
+                task_id,
+                TaskStatus.SUMMARIZING,
+                stage=TaskStage.SUMMARIZING,
+                message="画面判定降级：保留全部候选画面",
+                detail={
+                    "judgement_degraded": True,
+                    "judgement_degraded_reason": degraded,
+                    "candidates": len(candidates),
+                },
+            )
+
         logger.info("画面价值判定：%s", outcome.describe())
-        approved = list(outcome.approved)
+        approved = [c for c in (outcome.approved or []) if c is not None]
         if not approved:
             logger.warning("画面价值判定：没有任何候选帧被判为值得编入笔记")
         return approved
@@ -1375,12 +1442,22 @@ class NoteGenerator:
                 return item, None, None, exc
 
         if ocr_client is not None:
+            # spec 022 D5：三个上限取小 —— 用户设置（单任务意图）、进程级全局
+            # 信号量（多任务叠加时的真实配额压力）、本次待处理张数。
+            workers = max(
+                1, min(runtime_limits.ocr_stage_concurrency(), len(staged))
+            )
+            try:
+                from app.services.ocr_client import ocr_max_concurrency
+            except ImportError:
+                # W3 落地前没有全局信号量：退回单任务设置，不改变现行为。
+                pass
+            else:
+                workers = max(1, min(workers, ocr_max_concurrency()))
             with ThreadPoolExecutor(
                 # 每帧一次 ffmpeg 抽图 + 一次视觉模型调用：并发太高会同时压垮 CPU
                 # 与上游配额，所以并发数由用户在设置页控制（默认 4）。
-                max_workers=max(
-                    1, min(runtime_limits.ocr_stage_concurrency(), len(staged))
-                )
+                max_workers=workers
             ) as pool:
                 # map 保序：回填顺序与串行版本一致，日志里的编号仍然对得上。
                 recognized = list(pool.map(_recognize, staged))

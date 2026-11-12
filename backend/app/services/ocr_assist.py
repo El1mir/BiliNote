@@ -146,11 +146,14 @@ WORTH_JUDGE_PROMPT = """你是一个笔记插图审核员。下面会给你一�
 
 
 class WorthJudgementError(RuntimeError):
-    """判定调用或解析失败。
+    """判定调用失败（网络/鉴权）或输出完全不可识别。
 
-    与「模型明确判定没有值得编入的画面」严格区分（spec 008 §5.6b）：
-    前者是错误——任务应当失败，而不是静默产出一篇没有插图的笔记；
-    后者是合法结果，只是本次不插图。
+    与「模型明确判定没有值得编入的画面」严格区分：后者是合法结果，只是本次
+    不插图。spec 008 §5.6b 原本要求前者也让任务失败，以免静默产出无插图笔记；
+    spec 022 D6 起不再如此——任务级重试会重做下载/转写/总结，代价极高而结果
+    大概率一样，所以解析失败与显式空清单都降级为「保留全部候选」，由调用方
+    （universal_gpt / services.note）记录 degraded 原因，任务继续跑完。
+    这里保留异常类型，是因为「完全没有可解析内容」仍要能被上层识别。
     """
 
 
@@ -182,15 +185,19 @@ class JudgementOutcome:
     rejected_out_of_candidates: int = 0
     rejected_duplicate: int = 0
     dropped_by_cap: int = 0
+    # spec 022 D6：降级原因（empty_frames 显式空清单 / parse_failed 全部批次解析失败）。
+    # 非空表示 approved 是「全部候选」的兜底结果，不是模型确认过的清单。
+    degraded: Optional[str] = None
 
     def describe(self) -> str:
+        suffix = f"，降级({self.degraded})" if self.degraded else ""
         return (
             f"候选判定 {self.total} 条：true={self.worth_true} false={self.worth_false}，"
             f"丢弃(字段非法)={self.rejected_invalid} "
             f"丢弃(不在候选清单)={self.rejected_out_of_candidates} "
             f"丢弃(重复)={self.rejected_duplicate} "
             f"超出上限={self.dropped_by_cap}，"
-            f"最终通过={len(self.approved)}"
+            f"最终通过={len(self.approved)}{suffix}"
         )
 
 
@@ -349,6 +356,44 @@ def extract_judgement_items(text: str) -> List[Any]:
     return []
 
 
+def _degraded_outcome(
+    candidates: Iterable[Any],
+    reason: str,
+    max_images: int | None = None,
+) -> JudgementOutcome:
+    """判定降级：把全部候选帧当作「值得编入」（spec 022 D6）。
+
+    去重、排序、上限截断都走与正常路径相同的口径，只是 worth 全部视为 true，
+    并在 reason 里写明这是降级兜底，免得用户以为模型真的确认过这些画面。
+    """
+    outcome = JudgementOutcome(degraded=reason)
+    times: List[float] = []
+    seen: set = set()
+    for candidate in candidates or []:
+        seconds = _as_seconds(candidate)
+        if seconds is None:
+            continue
+        key = _safe_int(round(seconds))
+        if key in seen:
+            continue
+        seen.add(key)
+        times.append(float(seconds))
+    times.sort()
+    outcome.total = len(times)
+    limit = max(
+        0, _safe_int(max_images if max_images is not None else max_note_images())
+    )
+    decisions = [
+        WorthDecision(time=t, reason="画面判定降级：保留全部候选") for t in times
+    ]
+    if len(decisions) > limit:
+        outcome.dropped_by_cap = len(decisions) - limit
+        decisions = decisions[:limit]
+    outcome.approved = decisions
+    outcome.worth_true = len(decisions)
+    return outcome
+
+
 def parse_worth_judgement(
     text: str,
     candidates: Iterable[Any],
@@ -359,7 +404,11 @@ def parse_worth_judgement(
     :param text: 模型返回的原始文本
     :param candidates: 候选时间点（秒），即 ``VideoReader.candidate_timestamps``
     :param max_images: 通过判定的帧数上限
-    :raises WorthJudgementError: 完全解析不出列表时（调用失败 / 输出不可识别）
+    :raises WorthJudgementError: 文本完全不是 JSON / 找不到帧列表字段时
+
+    spec 022 D6：显式空清单（frames 为空数组）不再视为「不插图」，而是降级为
+    「保留全部候选」——空清单与「模型什么都没说清楚」在输出上无法区分，而
+    一篇文章因为一次空回复丢掉全部插图，比多留几张图更糟。
     """
     data = load_llm_json(text)
     if data is None:
@@ -379,6 +428,9 @@ def parse_worth_judgement(
             items = [data]
     if items is None:
         raise WorthJudgementError("判定结果里找不到帧列表（既不是数组，也没有 frames 字段）")
+    if not items:
+        # spec 022 D6：显式空清单降级为保留全部候选。
+        return _degraded_outcome(candidates, "empty_frames", max_images)
 
     index = build_candidate_index(candidates)
     outcome = JudgementOutcome()

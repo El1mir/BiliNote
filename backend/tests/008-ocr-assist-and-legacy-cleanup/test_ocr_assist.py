@@ -138,12 +138,19 @@ def test_approved_is_sorted_by_time():
 
 
 # --------------------------------------------------------------------------
-# 「模型说没有」与「解析失败」必须分开（spec §5.6b）
+# 「模型说没有」与「解析失败」都降级（spec 022 D6 取代 spec 008 §5.6b）
 # --------------------------------------------------------------------------
-def test_empty_frames_is_a_legitimate_empty_result():
+def test_empty_frames_degrades_to_all_candidates():
+    """spec 022 D6：显式空清单不再表示「不插图」。
+
+    空清单与「模型什么都没说清楚」在输出上无法区分，一篇文章因为一次空回复
+    丢掉全部插图，比多留几张图更糟。降级原因记 empty_frames，上层写进 detail。
+    """
     outcome = judge([])
-    assert outcome.approved == []
-    assert outcome.total == 0
+    assert outcome.degraded == "empty_frames"
+    assert [d.time for d in outcome.approved] == CANDIDATES
+    assert outcome.total == len(CANDIDATES)
+    assert outcome.worth_false == 0
 
 
 def test_unparseable_output_raises_instead_of_silently_returning_empty():
