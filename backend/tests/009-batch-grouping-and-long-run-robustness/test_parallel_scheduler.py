@@ -9,13 +9,14 @@
    ``_execute_note_with_retry → _run_with_parallel_gate`` 获取。
    所以假任务体必须**显式调用** ``note_module._run_with_parallel_gate(...)``，
    否则测出来的并发只受池子大小约束，等于没测闸门。
-3. 端到端观察到的并发 = ``min(闸门 limit, 分发池 8, task_serial_executor 5)``。
+3. 端到端观察到的并发 = ``min(闸门 limit, 分发池 8)`` —— spec 022 D1 删掉了
+   ``task_serial_executor`` 那层固定 5 线程的池，闸门是唯一上限。
 
 ⚠️ ticket 02 改动点 1 写的是「先在**池外** ``gate.acquire()`` 再提交线程池」，
 但实现里 ``_dispatch_note_task`` 完全没碰闸门 —— 任务**已经占住分发池 worker
 之后**才在 ``_run_with_parallel_gate`` 里等门闩。闸门「在池外」这条约束成立的
-只是 ``_run_with_parallel_gate`` 内部那一层（gate 在 ``task_serial_executor``
-池外）。这里按**真实实现**断言，不去迁就工单描述。
+只是 ``_run_with_parallel_gate`` 内部那一层（gate 在任务体外面）。这里按
+**真实实现**断言，不去迁就工单描述。
 
 ``_PARALLEL_GATE`` 是模块级单例，跨用例泄漏状态，所以 fixture 每个用例前后都
 把它置回 None；``_safe_max_parallel_notes`` 被替换成读一个可变的 holder，
@@ -119,10 +120,9 @@ def test_dispatch_pool_itself_is_a_small_bounded_container(gate_env, monkeypatch
     assert pool._max_workers <= MAX_PARALLEL_NOTES_LIMIT
     # 闸门 limit=1 时任务体只能一个接一个地进 —— 同时刻最多 1 个。
     assert probe.max_seen == 1
-    # 但「用过的线程名」可能不止一个：闸门内层还叠着 task_serial_executor 的池
-    # （TASK_MAX_WORKERS，默认 5），它会在自己的 worker 之间轮换。这不是泄漏，
-    # 只是串行复用；数量仍必须被内层池的大小卡住，而不是按任务数增长。
-    assert len(probe.thread_names) <= 5
+    # spec 022 D1 之后闸门里直接执行任务体，不再有内层线程池轮换：
+    # 用到的线程名只会来自分发池，必须被池大小卡住，而不是按任务数增长。
+    assert len(probe.thread_names) <= MAX_PARALLEL_NOTES_LIMIT
 
 
 def test_gate_limit_hot_update_takes_effect_without_restart(gate_env, monkeypatch):
@@ -172,7 +172,7 @@ def test_long_batch_smoke_200_items(gate_env, monkeypatch):
         len(probe.thread_names) <= MAX_PARALLEL_NOTES_LIMIT + 5
     ), f"200 条任务用到了 {len(probe.thread_names)} 个不同线程，说明在按任务数造线程"
 
-    # 全部跑完后线程数要回落到接近提交前的水位（给池子 + 执行池的常驻余量）。
+    # 全部跑完后线程数要回落到接近提交前的水位（给分发池的常驻余量）。
     for _ in range(50):
         if threading.active_count() <= baseline_threads + 20:
             break

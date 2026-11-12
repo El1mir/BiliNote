@@ -35,7 +35,6 @@ from app.services.note import NoteGenerator
 from app.services.source_intake import resolve_bilibili_inputs
 from app.services.task_cleanup import TaskInFlightError
 from app.services.task_read_model import TaskReadModel  # pyright: ignore[reportMissingImports]
-from app.services.task_serial_executor import task_serial_executor
 from app.utils.llm_rate_limit import (
     RATE_LIMIT_RESUME_INTERVAL_SECONDS,
     clear_rate_limit,
@@ -735,20 +734,20 @@ def _expand_video_entry(
 
 
 def _run_with_parallel_gate(execute_fn):
-    """把任务提交给执行池，并在「最大笔记并行任务数」闸门下排队。
+    """在「最大笔记并行任务数」闸门下直接执行任务体。
 
-    这个闸门与 ``task_serial_executor`` 的线程池是两件事：线程池的
-    ``max_workers``（``TASK_MAX_WORKERS``，默认 5）是**进程级**的硬上限，启动后
-    不可改；而用户在「设置 → 通用设置」里改的并行数必须**立即生效**，不能要求
-    重启后端。所以这里每次执行前都重新读一次设置，用一把进出门闩
-    （:class:`_ParallelGate`）把在途任务数限制在最新的设定值上。
+    spec 022 D1：闸门就是**唯一**的并发上限。以前这里还会把任务体再交给
+    ``task_serial_executor`` 的线程池，而那个池的 max_workers 是启动期固定值
+    （默认 5），于是用户设 6/7/8 时实际并发被静默压到 5，设置形同虚设。
+    现在每次执行前重读一次设置（闸门热更新），设置值就是实际在途上限。
 
-    注意闸门要加在**线程池外面**：先拿到门闩再提交，否则任务已经在线程池里
-    占着 worker 空转等门闩，会把池子撑满，反而让别的任务连排队的机会都没有。
+    不加外层线程池不会无限开线程：调用方是固定大小的分发池
+    （``_get_dispatch_pool``，默认 8 个 worker），合并任务另有自己的
+    ``min(gate.limit, len(items))`` 扇出池，两者都远小于任务总数。
     """
     gate = _get_parallel_gate()
     with gate:
-        return task_serial_executor.run(execute_fn)
+        return execute_fn()
 
 
 #: 429 退避等满上限后交还队列的哨兵（spec 012）。
@@ -764,7 +763,7 @@ def _execute_note_with_retry(task_id: str, generator, execute_fn):
     429 走**独立的一条路**（spec 012）：不消耗 NOTE_MAX_RETRIES 预算、不计熔断、
     不判失败。撞上 429 就等全局冷却窗口（默认 5 分钟）再试；连续等到上限
     （默认 1 小时）仍是 429 就返回 :data:`RATE_LIMIT_PARKED`，把 worker 线程让出来，
-    由调用方交还队列 —— 配额恢复可能要几小时，而 worker 只有 TASK_MAX_WORKERS 个。
+    由调用方交还队列 —— 配额恢复可能要几小时，而闸门名额只有设置里的并行数个。
     """
     # 每次进入重试循环都重读：用户在设置页改完重试次数/退避，下一条任务即生效。
     max_retries = runtime_limits.note_max_retries()
@@ -1403,6 +1402,141 @@ def _polish_merged_markdown(
     return polished or markdown
 
 
+#: 合并任务断点目录的格式版本；结构变更时递增，旧断点自动失效。
+MERGE_CHECKPOINT_VERSION = 1
+#: 孤儿断点目录的保留期（与媒体保留期一致）。
+MERGE_CHECKPOINT_RETENTION_SECONDS = 7 * 24 * 3600
+
+
+def _merge_checkpoint_dir(task_id: str) -> str:
+    return os.path.join(NOTE_OUTPUT_DIR, "checkpoints", f"{task_id}.merge")
+
+
+def _read_merge_checkpoint(task_id: str, index: int, url: str) -> dict | None:
+    """读一条断点；url/index 对不上或文件损坏都当没命中（重跑该条）。"""
+    path = os.path.join(_merge_checkpoint_dir(task_id), f"{index}.json")
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning(f"读取合并断点失败（忽略该条）：{path}：{exc}")
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("version") != MERGE_CHECKPOINT_VERSION:
+        return None
+    if payload.get("index") != index or str(payload.get("url") or "") != url:
+        return None
+    return payload
+
+
+def _transcript_to_checkpoint(transcript) -> dict | None:
+    if transcript is None:
+        return None
+    return {
+        "language": getattr(transcript, "language", None),
+        "full_text": getattr(transcript, "full_text", "") or "",
+        "segments": [
+            {
+                "start": _as_float(getattr(seg, "start", 0)),
+                "end": _as_float(getattr(seg, "end", 0)),
+                "text": str(getattr(seg, "text", "") or ""),
+            }
+            for seg in (getattr(transcript, "segments", None) or [])
+        ],
+    }
+
+
+def _write_merge_checkpoint(task_id: str, index: int, entry) -> None:
+    """原子写一条断点：先写 .tmp 再 os.replace，进程中途被杀也不会留下半截 JSON。"""
+    directory = _merge_checkpoint_dir(task_id)
+    path = os.path.join(directory, f"{index}.json")
+    payload = {
+        "version": MERGE_CHECKPOINT_VERSION,
+        "index": index,
+        "url": entry.source_url,
+        "title": entry.title,
+        "markdown": entry.markdown,
+        "duration": entry.duration,
+        "video_id": entry.video_id,
+        "cover_url": entry.cover_url,
+        "source_url": entry.source_url,
+        "transcript": _transcript_to_checkpoint(entry.transcript),
+    }
+    try:
+        os.makedirs(directory, exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except OSError as exc:
+        # 断点写失败不该让这一条白跑：本次结果仍在内存里，只是重跑时会重生成。
+        logger.warning(f"写入合并断点失败（该条仍会并入本次结果）：{path}：{exc}")
+
+
+def _merged_entry_from_checkpoint(payload: dict):
+    from app.models.transcriber_model import TranscriptResult, TranscriptSegment
+    from app.services.note_merge import MergedEntry
+
+    transcript = None
+    raw_transcript = payload.get("transcript")
+    if isinstance(raw_transcript, dict):
+        transcript = TranscriptResult(
+            language=raw_transcript.get("language"),
+            full_text=str(raw_transcript.get("full_text") or ""),
+            segments=[
+                TranscriptSegment(
+                    start=_as_float(seg.get("start")),
+                    end=_as_float(seg.get("end")),
+                    text=str(seg.get("text") or ""),
+                )
+                for seg in (raw_transcript.get("segments") or [])
+                if isinstance(seg, dict)
+            ],
+        )
+    return MergedEntry(
+        title=str(payload.get("title") or ""),
+        markdown=str(payload.get("markdown") or ""),
+        duration=_as_float(payload.get("duration")),
+        video_id=str(payload.get("video_id") or ""),
+        cover_url=payload.get("cover_url"),
+        transcript=transcript,
+        source_url=str(payload.get("source_url") or payload.get("url") or ""),
+    )
+
+
+def _cleanup_merge_checkpoints(task_id: str) -> None:
+    try:
+        shutil.rmtree(_merge_checkpoint_dir(task_id))
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        logger.warning(f"清理合并断点失败（不影响任务终态）：{exc}")
+
+
+def _sweep_stale_merge_checkpoints() -> None:
+    """删除超过保留期的孤儿断点目录（进程异常退出才会留下）。"""
+    root = os.path.join(NOTE_OUTPUT_DIR, "checkpoints")
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return
+    now = time.time()
+    for name in names:
+        path = os.path.join(root, name)
+        try:
+            if now - os.path.getmtime(path) > MERGE_CHECKPOINT_RETENTION_SECONDS:
+                shutil.rmtree(path)
+                logger.info(f"删除过期合并断点目录：{path}")
+        except OSError:
+            continue
+
+
+
 def _run_merged_note_task(
     *,
     task_id: str,
@@ -1429,11 +1563,17 @@ def _run_merged_note_task(
     ocr_assist: bool | None,
     park_kwargs: dict,
 ):
-    """合并任务执行：逐条生成 → 合并 → 存成**一条**任务（spec 018 §5.2）。
+    """合并任务执行：并发生成各条 → 按输入顺序合并 → 存成**一条**任务。
 
-    为什么逐条串行而不是并发：合并要按用户勾选顺序排列章节，而且并发跑多个
-    视频会让「最大笔记并行任务数」的语义变得不可预期（一条任务吃掉 N 个槽位）。
-    每次子生成仍各自过并行闸门，所以别的任务不会被这条长任务饿死。
+    spec 022 D2：以前这里逐条串行（一条合并任务永远只用 1 个槽位），193 条合集
+    跑成「逐条排队」。现在按 ``min(闸门 limit, 待生成条数)`` 扇出，每条子任务
+    仍各自过同一把并行闸门——所以合并任务不会突破全局并发上限，也不会因为
+    「父任务先占了槽位」而把自己的扇出堵死（父任务不进闸门，见 run_note_task
+    的 merge_items 分叉）。
+
+    spec 022 D3：每条成功生成后原子写一份断点；429 停放后重新派发时先读断点，
+    已完成且 url 对得上的条目直接复用，不再重新下载/转写/总结。断点目录在任务
+    到达终态（成功或全部失败）后删除；停放不是终态，必须保留。
     """
     from app.enmus.task_status_enums import TaskStage
     from app.models.notes_model import NoteResult
@@ -1445,29 +1585,51 @@ def _run_merged_note_task(
         merge_transcripts,
     )
 
-    entries: list[MergedEntry] = []
-    failures: list[MergedFailure] = []
     total = len(items)
     status_writer = NoteGenerator()
+    _sweep_stale_merge_checkpoints()
 
-    for index, raw in enumerate(items, start=1):
-        item = raw if isinstance(raw, dict) else {}
-        url = str(item.get("url") or "")
-        label = str(item.get("title") or "") or f"第 {index} 个视频"
-        if not url:
-            failures.append(MergedFailure(title=label, reason="链接为空"))
-            continue
+    # 结果按输入序号落位：合并章节顺序 = 用户勾选顺序，与完成先后无关。
+    results: dict[int, Any] = {}
+    parked = threading.Event()
+    keep_checkpoints = False
+    state_lock = threading.Lock()
 
+    def _record(index: int, outcome: Any, label: str) -> None:
+        """记一条完成结果并推进进度；进度按「已完成/总数」单调递增。"""
+        with state_lock:
+            results[index] = outcome
+            completed = len(results)
+            try:
+                status_writer._update_status(
+                    task_id,
+                    TaskStatus.DOWNLOADING,
+                    stage=TaskStage.DOWNLOADING_VIDEO,
+                    message=f"合并生成 {completed}/{total}：{label}",
+                    progress=min(90, int(completed / max(total, 1) * 90)),
+                )
+            except Exception as exc:  # noqa: BLE001 - 进度写失败不该打断合并
+                logger.debug(f"写入合并进度失败（{task_id}）：{exc}")
+
+    def _load_cached(index: int, url: str, label: str) -> bool:
+        payload = _read_merge_checkpoint(task_id, index, url)
+        if payload is None:
+            return False
         try:
-            status_writer._update_status(
-                task_id,
-                TaskStatus.DOWNLOADING,
-                stage=TaskStage.DOWNLOADING_VIDEO,
-                message=f"合并生成 {index}/{total}：{label}",
-                progress=int((index - 1) / max(total, 1) * 90),
-            )
-        except Exception as exc:  # noqa: BLE001 - 进度写失败不该打断合并
-            logger.debug(f"写入合并进度失败（{task_id}）：{exc}")
+            entry = _merged_entry_from_checkpoint(payload)
+        except Exception as exc:  # noqa: BLE001 - 断点坏了就重跑该条
+            logger.warning(f"合并断点内容损坏，重跑该条：{exc}")
+            return False
+        logger.info(f"合并断点命中，跳过重新生成：task_id={task_id} index={index}")
+        _record(index, entry, label)
+        return True
+
+    def _run_one(index: int, item: dict, url: str, label: str) -> None:
+        if parked.is_set():
+            # 已有条目撞上 429 配额耗尽：不再启动新条目，已有的靠断点保住。
+            return
+        if _load_cached(index, url, label):
+            return
 
         sub_task_id = f"{task_id}-s{index}"
         generator = NoteGenerator()
@@ -1502,32 +1664,88 @@ def _run_merged_note_task(
         _cleanup_merged_subtask_files(sub_task_id)
 
         if note == RATE_LIMIT_PARKED:
-            # 配额一直恢复不了：交还队列。已合并的部分不落盘，重跑时会重新生成。
             logger.warning(
-                f"合并任务 {task_id} 因 429 交还队列（第 {index}/{total} 条）"
+                f"合并任务 {task_id} 因 429 停住扇出"
+                f"（已完成 {len(results)}/{total} 条，断点保留）"
             )
-            _park_rate_limited_task(task_id, park_kwargs)
+            parked.set()
             return
 
         if not note or not getattr(note, "markdown", None):
             logger.warning(f"合并子任务失败 task_id={task_id} url={url}")
-            failures.append(MergedFailure(title=label, reason="生成失败"))
-            continue
+            _record(index, MergedFailure(title=label, reason="生成失败"), label)
+            return
 
         audio = getattr(note, "audio_meta", None)
-        entries.append(
-            MergedEntry(
-                title=(getattr(audio, "title", "") or label),
-                markdown=note.markdown,
-                duration=_as_float(getattr(audio, "duration", 0)),
-                video_id=str(
-                    getattr(audio, "video_id", "") or item.get("video_id") or ""
-                ),
-                cover_url=getattr(audio, "cover_url", None),
-                transcript=getattr(note, "transcript", None),
-                source_url=url,
-            )
+        entry = MergedEntry(
+            title=(getattr(audio, "title", "") or label),
+            markdown=note.markdown,
+            duration=_as_float(getattr(audio, "duration", 0)),
+            video_id=str(
+                getattr(audio, "video_id", "") or item.get("video_id") or ""
+            ),
+            cover_url=getattr(audio, "cover_url", None),
+            transcript=getattr(note, "transcript", None),
+            source_url=url,
         )
+        _write_merge_checkpoint(task_id, index, entry)
+        _record(index, entry, label)
+
+    # spec 022 D2：扇出 = min(闸门 limit, 待生成条数)。父任务本身不持闸门，
+    # 子任务各自过闸门，所以全局在途数仍被设置值卡住。
+    gate = _get_parallel_gate()
+    workers = max(1, min(gate.limit, total))
+    futures: list = []
+    try:
+        with ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="merge-fanout"
+        ) as pool:
+            for index, raw in enumerate(items, start=1):
+                item = raw if isinstance(raw, dict) else {}
+                url = str(item.get("url") or "")
+                label = str(item.get("title") or "") or f"第 {index} 个视频"
+                if not url:
+                    _record(index, MergedFailure(title=label, reason="链接为空"), label)
+                    continue
+                futures.append(pool.submit(_run_one, index, item, url, label))
+
+            # 等待期间发现 429：取消还没开始的条目，避免它们继续抢配额。
+            while not parked.is_set():
+                if all(future.done() for future in futures):
+                    break
+                time.sleep(0.2)
+            if parked.is_set():
+                for future in futures:
+                    future.cancel()
+
+        for future in futures:
+            if future.cancelled():
+                continue
+            try:
+                future.result()
+            except Exception as exc:  # noqa: BLE001 - 单条异常不该毁掉整篇合并
+                logger.error(f"合并子任务线程异常（task_id={task_id}）：{exc}")
+
+        if parked.is_set():
+            # 停放不是终态：断点必须留着，重新派发时跳过已完成的条目。
+            keep_checkpoints = True
+            _park_rate_limited_task(task_id, park_kwargs)
+            return
+    finally:
+        # 断点只在「成功保存」后删除（下面 SUCCESS 分支），失败/停放都必须留着。
+        if parked.is_set():
+            keep_checkpoints = True
+
+    entries = [
+        results[index]
+        for index in sorted(results)
+        if isinstance(results[index], MergedEntry)
+    ]
+    failures = [
+        results[index]
+        for index in sorted(results)
+        if isinstance(results[index], MergedFailure)
+    ]
 
     if not entries:
         status_writer._update_status(
@@ -1579,6 +1797,7 @@ def _run_merged_note_task(
         logger.debug(f"写入保存进度失败（{task_id}）：{exc}")
 
     save_note_to_file(task_id, merged_note)
+    _cleanup_merge_checkpoints(task_id)
     _get_circuit_breaker().record_success()
 
     message = f"已合并 {len(entries)}/{total} 个视频"

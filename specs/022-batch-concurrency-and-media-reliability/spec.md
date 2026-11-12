@@ -281,7 +281,8 @@ DATA_DIR 绝对路径      → 原样使用
 ## 11. 实现清单
 
 - [ ] W0 spec 与索引（本文件）
-- [ ] W1 调度器收敛 + 合并扇出 + checkpoint
+- [x] W1 调度器收敛 + 合并扇出 + checkpoint + 判定降级
+  （`backend/tests/022-batch-concurrency-and-media-reliability/w1/`：parallel_gate / merge_fanout / merge_checkpoint / judge_degrade）
 - [ ] W2 数据根修复与遗留回填
 - [ ] W3 OCR 重试/全局闸门 + 判定降级
 - [ ] W4 ASR 序列化告警
